@@ -310,7 +310,7 @@ export function simulateCycle(state, ctx = {}) {
     const worst = wear
       .map((w) => ({ w, cond: state.silo.rooms[w.id].condition }))
       .sort((a, b) => a.cond - b.cond)
-      .slice(0, 4);
+      .slice(0, BAL.silo.condition.maintenanceTargets);
     const share = maintenance / Math.max(1, worst.length);
     for (const { w } of worst) w.delta += share;
   }

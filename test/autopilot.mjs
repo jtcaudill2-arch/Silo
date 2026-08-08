@@ -14,7 +14,7 @@
 import { BAL } from '../src/config/balance.js';
 import { getRoom } from '../src/data/rooms.js';
 import { autoAssign } from '../src/sim/jobs.js';
-import { canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade } from '../src/sim/build.js';
+import { canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade, canRepair, repair } from '../src/sim/build.js';
 import { canStart, isComplete } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { readEnvironment } from '../src/sim/population.js';
@@ -74,7 +74,23 @@ export function autopilot(state) {
     }
   }
 
-  // ---- 2. the build queue, in the order a player would panic ----------
+  // ---- 2. repair first. A sabotaged generator will kill the silo long
+  //         before the Maintenance Bay catches up with it, and a damaged
+  //         life-support room beats any new construction. -----------------
+  const CRITICAL = new Set(['generator_hall', 'reactor', 'water_reclaimer', 'air_filtration', 'hydroponics']);
+  const damaged = Object.values(state.silo.rooms)
+    .filter((r) => r.condition < (CRITICAL.has(r.type) ? 58 : 42))
+    .sort((a, b) => {
+      const critA = CRITICAL.has(a.type) ? 0 : 1;
+      const critB = CRITICAL.has(b.type) ? 0 : 1;
+      return critA - critB || a.condition - b.condition;
+    })[0];
+  if (damaged) {
+    const fix = canRepair(state, damaged.id);
+    if (fix.ok) actions.push(...repair(state, damaged.id));
+  }
+
+  // ---- 3. the build queue, in the order a player would panic ----------
   const count = (type) => Object.values(state.silo.rooms).filter((r) => r.type === type).length;
 
   const runway = (key) => {

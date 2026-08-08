@@ -30,6 +30,7 @@ import { researchPanel } from './ui/panels/research.js';
 import { militaryPanel } from './ui/panels/military.js';
 import { airlockPanel } from './ui/panels/airlock.js';
 import { radioPanel } from './ui/panels/radio.js';
+import { policyPanel } from './ui/panels/policy.js';
 import { logPanel } from './ui/panels/log.js';
 
 const boot = document.getElementById('boot');
@@ -120,6 +121,7 @@ async function main() {
     .register(militaryPanel)
     .register(airlockPanel)
     .register(radioPanel)
+    .register(policyPanel)
     .register(resourcesPanel)
     .register(logPanel);
   shell.buildNav();

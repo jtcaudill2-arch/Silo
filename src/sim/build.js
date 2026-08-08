@@ -303,6 +303,98 @@ export function upgrade(state, roomId) {
   ];
 }
 
+// --------------------------------------------------------------- repair ---
+
+/**
+ * Restore a room's condition directly, for scrap and parts.
+ *
+ * The Maintenance Bay handles ordinary wear across the silo, but it cannot
+ * pull a sabotaged generator back from 28 before the lights go out — and
+ * without this the player would watch a critical room die with no lever to
+ * touch. Repair is that lever: expensive, immediate, and always available.
+ */
+/** Cost of restoring `points` of condition. Priced off the room's build cost. */
+export function repairCost(room, points) {
+  const def = getRoom(room.type);
+  const share = (points / BAL.silo.condition.start) * BAL.silo.repair.fractionOfBuildCost;
+  const out = {};
+  for (const [k, v] of Object.entries(def?.buildCost || { scrap: 50 })) {
+    const amount = Math.ceil(v * share * room.width);
+    if (amount > 0) out[k] = amount;
+  }
+  return out;
+}
+
+/**
+ * How much of a room the silo can currently afford to fix. Partial repair
+ * matters: a sabotaged generator at 28 condition has to be improvable with
+ * whatever is in the store, not only with the full amount.
+ */
+export function affordableRepairPoints(state, room) {
+  const missing = BAL.silo.condition.start - room.condition;
+  if (missing < 1) return 0;
+  // Binary search would be overkill; the cost is linear in points.
+  const full = repairCost(room, missing);
+  let ratio = 1;
+  for (const [k, v] of Object.entries(full)) {
+    if (v <= 0) continue;
+    ratio = Math.min(ratio, (state.resources[k] || 0) / v);
+  }
+  return Math.floor(missing * Math.max(0, Math.min(1, ratio)));
+}
+
+export function canRepair(state, roomId) {
+  const room = state.silo.rooms[roomId];
+  if (!room) return { ok: false, reason: 'No such room.' };
+  const missing = BAL.silo.condition.start - room.condition;
+  if (missing < 1) return { ok: false, reason: 'Nothing to repair.' };
+  const points = affordableRepairPoints(state, room);
+  const fullCost = repairCost(room, missing);
+  if (points < 1) {
+    const short = shortfall(state, fullCost);
+    return {
+      ok: false,
+      reason: `Not enough ${short}. A full repair costs ${describeCost(fullCost)}.`,
+      cost: fullCost,
+      missing,
+    };
+  }
+  return {
+    ok: true,
+    cost: repairCost(room, points),
+    fullCost,
+    points,
+    missing,
+    partial: points < missing,
+  };
+}
+
+export function repair(state, roomId, requestedPoints) {
+  const check = canRepair(state, roomId);
+  if (!check.ok) return [];
+  const room = state.silo.rooms[roomId];
+  const def = getRoom(room.type);
+  const points = Math.max(1, Math.min(requestedPoints ?? check.points, check.points));
+  const cost = repairCost(room, points);
+  const deltas = {};
+  for (const [k, v] of Object.entries(cost)) deltas[k] = -v;
+  const next = Math.min(BAL.silo.condition.start, room.condition + points);
+  return [
+    { type: 'RESOURCE_DELTA', deltas },
+    { type: 'ROOM_PATCH', id: roomId, patch: { condition: next, breached: false } },
+    {
+      type: 'LOG',
+      entry: {
+        kind: 'alert',
+        text:
+          next >= BAL.silo.condition.start
+            ? `${def?.name || room.type} on floor ${room.floor} has been repaired back to full condition.`
+            : `${def?.name || room.type} on floor ${room.floor} patched up to ${Math.round(next)}. It needs more than you could spare.`,
+      },
+    },
+  ];
+}
+
 // ------------------------------------------------------------- demolish ---
 
 export function canDemolish(state, roomId) {

@@ -68,7 +68,13 @@ export const BAL = {
       penaltyBelow: 40, // output penalty starts scaling below this
       failAt: 0,
       breachChancePerDayAtZero: 0.06,
-      maintenanceRestorePerCyclePerCrew: 1.4,
+      maintenanceRestorePerCyclePerCrew: 2.6,
+      maintenanceTargets: 6, // how many of the worst rooms a crew covers
+    },
+    repair: {
+      // Fraction of the room's build cost charged to restore it fully.
+      // Always cheaper than rebuilding, and scales with the room's value.
+      fractionOfBuildCost: 0.55,
     },
     upgrade: {
       maxLevel: 5,
@@ -347,6 +353,11 @@ export const BAL = {
       investigationDays: 3,
       wrongVerdictOrder: -8,
       rightVerdictOrder: 5,
+      // Evidence points at the culprit on average and at an innocent often
+      // enough that a verdict is a real decision, not a formality.
+      evidenceSignal: 0.5,
+      evidenceNoise: 0.38,
+      evidencePerDeputy: 0.05,
     },
   },
 

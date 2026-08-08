@@ -385,6 +385,67 @@ const orderReducers = {
   ORDER_STREAK(state, a) {
     state.order.daysBelowThreshold = a.days;
   },
+  DISSENT_SET(state, a) {
+    state.order.dissentPressure = a.value;
+  },
+
+  MORALE_ALL(state, a) {
+    for (const id of state.citizenIds) {
+      const c = state.citizens[id];
+      if (!c || c.status === 'dead') continue;
+      c.morale = clamp(c.morale + a.amount, BAL.citizens.morale.min, BAL.citizens.morale.max);
+    }
+  },
+
+  CRIME_ADD(state, a) {
+    state.order.crimes.unshift({ ...a.crime, day: a.crime.day ?? state.clock.day });
+    if (state.order.crimes.length > 30) state.order.crimes.pop();
+    pushLog(state, { kind: 'alert', text: a.crime.text });
+  },
+
+  INVESTIGATION_OPEN(state, a) {
+    state.order.investigations.unshift(a.investigation);
+    if (state.order.investigations.length > 10) state.order.investigations.pop();
+    pushLog(state, {
+      kind: 'alert',
+      text: "The Sheriff's office has opened an investigation. Three names are on the list.",
+    });
+    emit('alert', { kind: 'warn', glyph: '§', text: 'Investigation opened' });
+  },
+
+  INVESTIGATION_PATCH(state, a) {
+    const inv = state.order.investigations.find((i) => i.id === a.id);
+    if (inv) Object.assign(inv, a.patch);
+  },
+
+  /**
+   * Exile removes somebody without killing them. They are still a person and
+   * they still leave a hole — the grief hit applies exactly as a death does.
+   */
+  CITIZEN_EXILE(state, a) {
+    const c = state.citizens[a.id];
+    if (!c || c.status === 'dead') return;
+    c.status = 'dead'; // gone from the silo's point of view
+    c.causeOfDeath = 'exiled';
+    c.deathDay = state.clock.day;
+    c.history.push({ day: state.clock.day, text: 'Exiled from Silo 12.' });
+    if (c.job) {
+      const room = state.silo.rooms[c.job.roomId];
+      if (room) room.staff = room.staff.filter((x) => x !== c.id);
+      c.job = null;
+    }
+    state.citizenIds = state.citizenIds.filter((x) => x !== c.id);
+    state.stats.causes.exiled = (state.stats.causes.exiled || 0) + 1;
+    for (const [otherId, val] of Object.entries(c.relationships || {})) {
+      const other = state.citizens[otherId];
+      if (!other || other.status === 'dead') continue;
+      if (val >= BAL.citizens.relationships.friendThreshold) {
+        other.morale = clamp(other.morale + BAL.citizens.morale.friendDeathHit, 0, 100);
+      }
+    }
+    pushLog(state, { kind: 'death', text: a.text, data: { citizenId: c.id, cause: 'exiled' } });
+  },
+
   POLICY_TOGGLE(state, a) {
     const cur = state.order.policies;
     if (cur.includes(a.id)) state.order.policies = cur.filter((p) => p !== a.id);

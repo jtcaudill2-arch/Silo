@@ -11,7 +11,7 @@ import { getRoom } from '../data/rooms.js';
 import { roomCapability, roomDraw, staffSlots } from '../sim/economy.js';
 import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
-import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost } from '../sim/build.js';
+import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost, canRepair, repair } from '../sim/build.js';
 import { el, modal, row, button, fmt, fmtDelta, meter, chip, emptyState, sectionLabel, toast, humanise } from './dom.js';
 
 export function openRoom(store, roomId, shell) {
@@ -177,6 +177,34 @@ export function openRoom(store, roomId, shell) {
           : 'Below safe condition. Output is falling and at zero this room can breach.'
       )
     );
+
+    // ---- repair -----------------------------------------------------------
+    if (r.condition < BAL.silo.condition.start - 1) {
+      const fix = canRepair(s, roomId);
+      body.appendChild(
+        el(
+          'div.pad',
+          button(
+            fix.ok
+              ? fix.partial
+                ? `Patch up (+${Math.round(fix.points)} condition, ${describeCost(fix.cost)})`
+                : `Repair to full (${describeCost(fix.cost)})`
+              : 'Cannot repair',
+            {
+              class: 'wide' + (r.condition < BAL.silo.condition.penaltyBelow ? ' primary' : ''),
+              disabled: !fix.ok,
+              title: fix.ok ? '' : fix.reason,
+              onclick: () => {
+                store.dispatchAll(repair(store.state, roomId));
+                toast(`${def.name} repaired.`);
+                rerender();
+              },
+            }
+          )
+        )
+      );
+      if (!fix.ok) body.appendChild(el('div.note.warn', fix.reason));
+    }
 
     // ---- upgrade ----------------------------------------------------------
     const up = canUpgrade(s, roomId);

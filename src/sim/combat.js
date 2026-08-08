@@ -396,7 +396,10 @@ export function applyResolution(state, res, { context = 'expedition', kiaKind = 
       type: 'CITIZEN_DIE',
       id,
       cause: kiaKind,
-      text: `${fullName(c)}, ${Math.floor(c.age)}, was ${kiaKind} ${context === 'uprising' ? 'in the uprising' : 'on the surface'}.`,
+      text:
+        context === 'uprising'
+          ? `${fullName(c)}, ${Math.floor(c.age)}, was killed holding the admin floor.`
+          : `${fullName(c)}, ${Math.floor(c.age)}, was ${kiaKind} on the surface.`,
     });
   }
   if (res.casualties.length) {

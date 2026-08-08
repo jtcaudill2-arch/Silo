@@ -307,6 +307,7 @@ const played = run('opening — six-room start, played', {
   // Excavation and upgrade are driven directly rather than inferred from the
   // autopilot's choices: whether a heuristic player happens to want another
   // floor is not a fact about the game, but whether digging one works is.
+  store.dispatch({ type: 'RESOURCE_DELTA', deltas: { scrap: 600, parts: 80, alloy: 60, chits: 400 } });
   const beforeDug = s.silo.floors.filter((f) => f.excavated).length;
   // The gate research may not have landed yet at short --days; grant it, since
   // what's under test is whether digging works, not how fast a heuristic
@@ -349,7 +350,7 @@ const played = run('opening — six-room start, played', {
     console.log(
       `  built ${built} rooms (${merged} merged wide), ` +
         `dug ${s.silo.floors.filter((f) => f.excavated).length} floors, ` +
-        `${done} research nodes, ${Math.floor(s.research.points)} RP banked`
+        `${s.research.completed.length} research nodes, ${Math.floor(s.research.points)} RP banked`
     );
     console.log('  researched: ' + s.research.completed.join(', '));
   }

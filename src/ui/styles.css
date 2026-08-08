@@ -1068,3 +1068,60 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 }
 .call-sub { font-size: 12.5px; color: var(--bone-dim); }
 .call-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* --------------------------------------------------------------- order --- */
+.order-head {
+  display: flex; align-items: center; gap: 14px; padding: 12px;
+  background: var(--concrete-deeper); border-bottom: 1px solid var(--hairline);
+}
+.order-value { font-size: 38px; line-height: 1; color: var(--bone); flex: 0 0 auto; }
+.order-value.good { color: var(--verdigris); }
+.order-value.warn { color: var(--sodium); }
+.order-value.bad { color: var(--rust); }
+.order-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.order-label {
+  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--bone-faint);
+}
+.order-prose { font-size: 12.5px; color: var(--bone-dim); }
+
+.policy {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--hairline);
+}
+.policy.active { background: var(--sodium-dim); border-left: 2px solid var(--sodium); }
+.policy.locked { opacity: .5; }
+.policy-switch {
+  flex: 0 0 18px; font-family: var(--font-mono); font-size: 15px;
+  color: var(--bone-faint); padding-top: 1px;
+}
+.policy.active .policy-switch { color: var(--sodium); }
+.policy-main { flex: 1; min-width: 0; }
+.policy-name { font-size: 13.5px; }
+.policy-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.policy-trade { display: flex; flex-direction: column; gap: 1px; margin-top: 5px; }
+.policy-benefit { font-size: 11.5px; color: var(--verdigris); }
+.policy-cost { font-size: 11.5px; color: var(--rust); }
+.policy-why { font-size: 11.5px; color: var(--sodium); margin-top: 4px; }
+
+.crime {
+  display: flex; gap: 9px; padding: 6px 12px;
+  border-bottom: 1px solid var(--hairline); font-size: 12.5px;
+}
+.crime-day { flex: 0 0 32px; font-size: 10.5px; color: var(--bone-faint); }
+.crime-text { flex: 1; }
+
+.investigation {
+  background: var(--rust-dim); border-left: 3px solid var(--rust);
+  padding: 11px 12px; display: flex; flex-direction: column; gap: 7px;
+}
+.inv-title {
+  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--rust);
+}
+.inv-sub { font-size: 12.5px; color: var(--bone-dim); }
+.suspect { display: flex; align-items: center; gap: 8px; }
+.suspect-main { flex: 1; min-width: 0; }
+.suspect-name { font-size: 12.5px; }
+.suspect-ev { flex: 0 0 30px; text-align: right; font-size: 12px; color: var(--bone-faint); }
+.inv-foot { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
