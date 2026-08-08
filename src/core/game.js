@@ -23,6 +23,9 @@ import * as events from '../sim/events.js';
 import { streamFor } from './rng.js';
 import { getRoom } from '../data/rooms.js';
 
+/** "water" -> "Water". The UI's own humanise lives in the DOM layer. */
+const humanise = (k) => k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+
 export class Game {
   constructor(store) {
     this.store = store;
@@ -99,8 +102,115 @@ export class Game {
     this.dailyOrder();
     store.dispatchAll(order.simulateDay(this.state));
     store.dispatchAll(events.simulateDay(this.state));
+    this.checkRunway();
     this.checkFailure();
     emit('day', dayNo);
+  }
+
+  /**
+   * Warn when something people drink or breathe is running out.
+   *
+   * A stockpile pinned at its cap hides a negative flow completely: the strip
+   * reads 800/800 and keeps reading it until the day the tank starts visibly
+   * falling, and from there a silo of two hundred has about three days. Played
+   * by hand it looks like this — full food, full water, order at fifty on day
+   * seventy; a hundred and eighty-five dead of thirst by day eighty-eight,
+   * with nothing in the log between the two except flavour text.
+   *
+   * The information was always on screen. Nobody can be expected to integrate
+   * it in their head every shift, so the silo says it out loud instead, once
+   * per crossing, in days rather than units.
+   */
+  checkRunway() {
+    const A = BAL.alerts;
+    const state = this.state;
+    const warned = state.flags.runwayWarned || {};
+    const next = { ...warned };
+    const actions = [];
+
+    for (const key of A.runwayWatch) {
+      const flow = state.flows?.[key];
+      const net = flow ? flow.in - flow.out : 0;
+      const stock = state.resources[key] ?? 0;
+      const days = net < 0 ? stock / (-net * BAL.time.CYCLES_PER_DAY) : Infinity;
+
+      if (days <= A.runwayWarnDays) {
+        // Re-warn as it gets worse, not every single day it stays bad.
+        const band = days <= A.runwayCriticalDays ? 'critical' : 'low';
+        if (warned[key] === band) continue;
+        next[key] = band;
+        const whole = Math.max(0, Math.floor(days));
+        actions.push({
+          type: 'LOG',
+          entry: {
+            kind: 'alert',
+            text:
+              band === 'critical'
+                ? `${humanise(key)} runs out in ${whole === 0 ? 'under a day' : `${whole} day${whole === 1 ? '' : 's'}`}. ` +
+                  'People start dying after that, and there is no warning shorter than this one.'
+                : `${humanise(key)} is falling. About ${whole} days left at the current rate — ` +
+                  'the tank is still full, and that is the problem.',
+          },
+        });
+        emit('alert', {
+          kind: band === 'critical' ? 'bad' : 'warn',
+          glyph: '⌛',
+          text: `${humanise(key)}: ${whole}d left`,
+        });
+      } else if (warned[key]) {
+        delete next[key];
+        actions.push({
+          type: 'LOG',
+          entry: { kind: 'plain', text: `${humanise(key)} is back in surplus.` },
+        });
+      }
+    }
+
+    // Rooms wear out on the same silence. A generator hall that fails takes
+    // every producing room with it, and the tanks are empty three days later.
+    const wornWarned = state.flags.wornWarned || {};
+    const nextWorn = { ...wornWarned };
+    for (const room of Object.values(state.silo.rooms)) {
+      if (room.buildingUntilCycle && state.clock.cycle < room.buildingUntilCycle) continue;
+      const def = getRoom(room.type);
+      const band =
+        room.condition <= A.conditionCriticalAt ? 'critical' :
+        room.condition <= A.conditionWarnAt ? 'worn' : null;
+      if (!band) {
+        if (wornWarned[room.id]) delete nextWorn[room.id];
+        continue;
+      }
+      if (wornWarned[room.id] === band) continue;
+      nextWorn[room.id] = band;
+      const where = `${def?.name || room.type} on floor ${room.floor}`;
+      actions.push({
+        type: 'LOG',
+        entry: {
+          kind: 'alert',
+          text:
+            band === 'critical'
+              ? `${where} is at ${Math.round(room.condition)} and close to failing outright. ` +
+                'Repair it or plan to do without it.'
+              : `${where} is wearing out — condition ${Math.round(room.condition)}. ` +
+                'Maintenance crews slow this down; they do not stop it.',
+        },
+      });
+      emit('alert', {
+        kind: band === 'critical' ? 'bad' : 'warn',
+        glyph: '⚙',
+        text: `${def?.name || room.type}: ${Math.round(room.condition)}%`,
+        floor: room.floor,
+      });
+    }
+    if (Object.keys(nextWorn).length !== Object.keys(wornWarned).length ||
+        Object.keys(nextWorn).some((k) => nextWorn[k] !== wornWarned[k])) {
+      actions.push({ type: 'FLAG_SET', flags: { wornWarned: nextWorn } });
+    }
+
+    if (actions.length) {
+      actions.push({ type: 'FLAG_SET', flags: { runwayWarned: next } });
+      this.store.dispatchAll(actions);
+    }
   }
 
   /**

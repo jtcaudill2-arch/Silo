@@ -596,6 +596,22 @@ export const BAL = {
   },
 
   // ------------------------------------------------------- conquest ---
+  // ---------------------------------------------------------- alerts ---
+  alerts: {
+    // Things whose exhaustion kills people, watched by days-of-runway rather
+    // than by level — a full tank with a negative flow reads as safe and is
+    // not, and by the time the number visibly moves there are days left.
+    runwayWatch: ['water', 'food', 'fuel'],
+    runwayWarnDays: 8,
+    runwayCriticalDays: 3,
+    // A room wears out silently and then stops, and if it was the generator
+    // hall the whole silo stops with it — production ends, the tanks drain in
+    // three days, and the first the log says about it is "has failed
+    // completely", which by then is an obituary rather than a warning.
+    conditionWarnAt: 35,
+    conditionCriticalAt: 18,
+  },
+
   conquest: {
     scoutRunsRequired: 2,
     scoutFailAlertRep: -12,

@@ -67,6 +67,25 @@ export const BRIEFING = [
     ],
   },
   {
+    id: 'wear',
+    heading: 'Everything here is wearing out',
+    body: [
+      'Every room loses condition every shift it runs, and a room at zero does not ' +
+        'degrade gracefully — it stops. If the room that stops is a generator hall, every ' +
+        'other room stops with it, and the tanks you were so pleased about run dry in three ' +
+        'days. I have watched a silo go from full stores and good order to nobody left ' +
+        'inside a fortnight, and the cause was one machine nobody had looked at in a year.',
+      'Build a Maintenance Bay early. A crew in one slows the decay across the worst rooms ' +
+        'in the silo, which is not the same as stopping it. You will still have to order ' +
+        'repairs by hand, and repairs cost scrap and parts, and the time to order one is ' +
+        'when the condition figure is in the thirties, not when the log tells you the room ' +
+        'has failed. By then the log is not warning you about anything.',
+      'The silo will tell you when a room is wearing out and when a store is running down, ' +
+        'in days rather than units. Believe the days. A tank that reads full and is falling ' +
+        'is a worse position than a tank that reads low and is rising.',
+    ],
+  },
+  {
     id: 'outside',
     heading: 'The surface',
     body: [
