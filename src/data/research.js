@@ -62,7 +62,7 @@ export const ARTIFACTS = {
   optics_array: { id: 'optics_array', name: 'Optics Array', band: 'deep', desc: 'Lenses ground to a tolerance you have no tools for.' },
   reactor_core: { id: 'reactor_core', name: 'Reactor Core Fragment', band: 'deep', desc: 'Hot. Very hot. Worth it.' },
   medical_press: { id: 'medical_press', name: 'Medical Press', band: 'deep', desc: 'Synthesises compounds a chem lab cannot.' },
-  suit_weave: { id: 'suit_weave', name: 'Shielded Weave', band: 'deep', desc: 'The reason their suits outlasted yours.' },
+  suit_weave: { id: 'suit_weave', name: 'Shielded Weave', band: 'mid', desc: 'The reason their suits outlasted yours.' },
   compact_seal: { id: 'compact_seal', name: 'Compact Seal', band: 'approach', desc: 'The document that bound twenty silos, stamped and countersigned.' },
   origin_shard: { id: 'origin_shard', name: 'Origin Shard', band: 'scar', desc: 'It is not a recording. It is an index.' },
 };

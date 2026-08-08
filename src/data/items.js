@@ -110,7 +110,14 @@ export const LOOT = {
   },
   2: {
     resources: { scrap: [40, 120], alloy: [4, 18], parts: [4, 16], meds: [2, 12], fuel: [10, 40] },
-    artifacts: { intact_servo: 0.22, sealed_canister: 0.2, alloy_ingot: 0.16 },
+    // Shielded weave drops here as well as in the deep, and it has to: the
+    // deep band needs tier-3 suits, tier-3 suits need weave, and weave used
+    // to come only from the deep. Tier 3 required tier 3, the whole late
+    // tree sat above it, and all three endings were unreachable — on any
+    // seed, by any player, forever. Every suit tier must be fundable by the
+    // band the tier below it can already reach. Rarer here than in the deep,
+    // so a mid-band silo bootstraps slowly and a deep-band one re-supplies.
+    artifacts: { intact_servo: 0.22, sealed_canister: 0.2, alloy_ingot: 0.16, suit_weave: 0.12 },
     chance: { survivor: 0.3 },
   },
   3: {

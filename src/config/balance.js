@@ -276,7 +276,18 @@ export const BAL = {
       maxAge: 45,
       relationshipThreshold: 60,
       requiredOrder: 40,
-      foodSurplusRequired: 40,
+      // Days of food in the larder before anybody starts a family. Per
+      // head, deliberately: the old rule wanted 40 units of surplus in
+      // absolute terms, which a silo of two hundred and a silo of two
+      // thousand both satisfy from a full larder — so it read like a brake
+      // and was nothing of the kind. Because the food cap only rises when
+      // you build depots, this makes storage the real ceiling on population
+      // and makes growing the silo a decision rather than a certainty.
+      foodDaysRequired: 4,
+      // Free beds at which the birth rate is at full strength. Below this
+      // it tapers to nothing rather than switching off at exactly zero, so
+      // a silo slows as it fills instead of running flat into the wall.
+      roomyBeds: 14,
       gestationDays: 12, // ~1 game year
       chancePerDayPerCouple: 0.022,
       housingRequired: true,

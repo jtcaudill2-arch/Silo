@@ -420,8 +420,19 @@ function simulateBirths(state, env) {
 
   // Conception requires everything the spec lists, all at once.
   if (state.order.value < B.requiredOrder) return actions;
-  if (env.foodSurplus < B.foodSurplusRequired) return actions;
   if (env.housingFree <= 0 && B.housingRequired) return actions;
+
+  // Density dependence. Every gate above this is an absolute threshold, and
+  // absolute thresholds get *easier* to clear as a silo grows — couples
+  // scale with the headcount, so births did too, and growth compounded with
+  // nothing at all pushing back. Left alone it peaks around two and a half
+  // thousand people on day 677, overruns its housing, loses order, and dies
+  // in an uprising followed by mass dehydration. A population has to feel
+  // the room it is in.
+  const pop = Math.max(1, state.citizenIds.length);
+  const larderDays = env.foodSurplus / (pop * BAL.resources.perCitizen.foodPerDay);
+  if (larderDays < B.foodDaysRequired) return actions;
+  const roomy = Math.min(1, env.housingFree / B.roomyBeds);
 
   const rng = streamFor(state.meta.seed, 'conception', day);
   const candidates = state.citizenIds
@@ -460,7 +471,7 @@ function simulateBirths(state, env) {
       bestVal = val;
     }
     if (!best) continue;
-    if (!rng.chance(B.chancePerDayPerCouple)) continue;
+    if (!rng.chance(B.chancePerDayPerCouple * roomy)) continue;
 
     used.add(c.id);
     used.add(best.id);
