@@ -8,7 +8,7 @@
  */
 
 import { BAL } from '../config/balance.js';
-import { el, clear, fmt, fmtDelta, fmtClock } from './dom.js';
+import { el, clear, fmt, fmtDelta, fmtClock, closeTopModal } from './dom.js';
 import { on } from '../core/events.js';
 
 /** Resources shown in the top strip, in this order. */
@@ -291,6 +291,14 @@ export class Shell {
   onKey(e) {
     if (e.target.matches('input, textarea, select')) return;
     if (e.key === 'Escape') {
+      // Innermost thing first. This used to close the panel and leave any
+      // open dialog stranded on top of it, so a citizen card or a crew
+      // assignment could not be dismissed from the keyboard at all — and the
+      // thing that did close was the one behind it.
+      if (closeTopModal()) {
+        e.preventDefault();
+        return;
+      }
       if (this.activePanel) {
         e.preventDefault();
         this.close();

@@ -386,6 +386,26 @@ try {
   else ok(`ending progress listed: ${ends.join(', ')}`);
   await page.click('.panel-close');
 
+  // ---- 6a2. Escape dismisses the innermost thing --------------------------
+  // It used to close the panel and strand the dialog on top of it, which left
+  // a keyboard user with no way to dismiss a citizen card at all.
+  await page.click('.nav-btn[data-panel="population"]');
+  await page.waitForSelector('.roster-row', { timeout: 4000 });
+  await page.click('.roster-row');
+  await page.waitForSelector('.modal', { timeout: 4000 });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.modal', { state: 'detached', timeout: 4000 });
+  const afterEsc = await page.evaluate(() => ({
+    modal: !!document.querySelector('.modal'),
+    panel: !document.getElementById('panel-host').hidden,
+  }));
+  if (afterEsc.modal) fail('Escape did not close the dialog');
+  else if (!afterEsc.panel) fail('Escape closed the panel out from under the dialog');
+  else ok('Escape closes the dialog and leaves the panel open');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('panel-host').hidden, { timeout: 4000 });
+  ok('a second Escape closes the panel');
+
   // ---- 6b. a scripted crisis stops the clock and puts its prose up --------
   await page.evaluate(() => {
     const { store } = window.DEEPWATER;

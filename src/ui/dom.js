@@ -160,22 +160,26 @@ export function modal({ title, body, actions, onClose, wide }) {
   );
   const wrap = el('div', scrim, box);
   root.appendChild(wrap);
-  modalStack.push(wrap);
 
   function close() {
     wrap.remove();
-    modalStack = modalStack.filter((w) => w !== wrap);
+    modalStack = modalStack.filter((entry) => entry.wrap !== wrap);
     onClose?.();
   }
+  // The stack carries the closer, not just the node. Popping the node alone
+  // skipped onClose, so a dialog dismissed by key left its caller's cleanup
+  // unrun — the crisis dialog, for one, restores the clock speed in there.
+  modalStack.push({ wrap, close });
   // Focus the first control so keyboard users land inside the dialog.
   (box.querySelector('button, [tabindex]') || box).focus?.();
   return { close, node: box };
 }
 
 export function closeTopModal() {
-  const top = modalStack.pop();
-  if (top) top.remove();
-  return !!top;
+  const top = modalStack[modalStack.length - 1];
+  if (!top) return false;
+  top.close();
+  return true;
 }
 
 let toastTimer = null;
