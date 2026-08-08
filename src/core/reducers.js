@@ -728,6 +728,158 @@ const expeditionReducers = {
   },
 };
 
+// ---------------------------------------------------------------- world ---
+
+const worldReducers = {
+  WORLD_PATCH(state, a) {
+    for (const p of a.patches) {
+      const silo = state.world.silos[p.id];
+      if (!silo) continue;
+      for (const [k, v] of Object.entries(p)) {
+        if (k === 'id') continue;
+        if (k === 'power') silo.power = { ...silo.power, ...v };
+        else silo[k] = v;
+      }
+    }
+  },
+
+  SILO_PATCH(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (silo) Object.assign(silo, a.patch);
+  },
+
+  SILO_TREATY(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (!silo) return;
+    silo.treaties ??= [];
+    if (a.remove) silo.treaties = silo.treaties.filter((t) => t.kind !== a.remove);
+    if (a.add && a.treaty) {
+      silo.treaties = silo.treaties.filter((t) => t.kind !== a.treaty.kind);
+      silo.treaties.push(a.treaty);
+    }
+  },
+
+  /**
+   * Silos remember. Entries decay but never vanish — the floor keeps a
+   * fraction of the original weight forever (spec §12.2).
+   */
+  SILO_MEMORY(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (!silo) return;
+    silo.memory ??= [];
+    silo.memory.push({ ...a.entry, original: a.entry.weight });
+    if (silo.memory.length > 40) silo.memory.shift();
+  },
+
+  MEMORY_DECAY(state, a) {
+    const floor = BAL.diplomacy.memoryFloorFraction;
+    for (const silo of Object.values(state.world.silos)) {
+      for (const m of silo.memory || []) {
+        const min = (m.original ?? m.weight) * floor;
+        if (m.weight > 0) m.weight = Math.max(min, m.weight - a.rate);
+        else if (m.weight < 0) m.weight = Math.min(min, m.weight + a.rate);
+      }
+    }
+  },
+
+  WORLD_WAR(state, a) {
+    const A = state.world.silos[a.a];
+    const B = state.world.silos[a.b];
+    if (!A || !B) return;
+    A.treaties = [...(A.treaties || []), { kind: 'war', with: B.id, since: a.at }];
+    B.treaties = [...(B.treaties || []), { kind: 'war', with: A.id, since: a.at }];
+  },
+
+  TRANSMISSION(state, a) {
+    state.world.transmissions.unshift(a.transmission);
+    if (state.world.transmissions.length > 60) state.world.transmissions.pop();
+    if (a.transmission.text) {
+      pushLog(state, { kind: 'radio', text: a.transmission.text });
+    }
+  },
+
+  WORLD_EVENT_QUEUE(state, a) {
+    state.world.pending ??= [];
+    state.world.pending.push(a.event);
+  },
+
+  WORLD_EVENT_RESOLVE(state, a) {
+    state.world.pending = (state.world.pending || []).filter((e) => e !== a.event);
+  },
+
+  DIPLO_TICK(state, a) {
+    state.world.lastDiploDay = a.day;
+  },
+
+  RADIO_TIER(state, a) {
+    state.world.radioTier = Math.max(state.world.radioTier || 0, a.tier);
+  },
+
+  /** Everyone hears about it. Used for treaty-breaking and declarations. */
+  BROADCAST_REPUTATION(state, a) {
+    const except = new Set(a.except || []);
+    for (const silo of Object.values(state.world.silos)) {
+      if (except.has(silo.id) || !silo.known) continue;
+      silo.reputation = clamp(silo.reputation + a.amount, -100, 100);
+    }
+    if (a.reason) {
+      pushLog(state, {
+        kind: 'diplomacy',
+        text: `Word got round about ${a.reason}. Every silo that can hear you thinks a little less of Silo 12.`,
+      });
+    }
+  },
+
+  SATELLITE_ADD(state, a) {
+    state.world.satellites.push({ siloId: a.siloId, since: state.clock.day, order: BAL.conquest.conqueredStartOrder });
+    const silo = state.world.silos[a.siloId];
+    if (silo) {
+      silo.contact = 'satellite';
+      silo.status = 'satellite';
+    }
+    pushLog(state, {
+      kind: 'diplomacy',
+      text: `${silo?.name || 'The silo'} is yours. Its people are not, and will not be for a long time.`,
+    });
+  },
+
+  SATELLITE_TICK(state) {
+    for (const sat of state.world.satellites) {
+      // Occupied populations warm up slowly, and only if you keep a garrison.
+      sat.order = clamp(sat.order + 0.6, 0, 100);
+    }
+  },
+
+  SATELLITE_REVOLT(state, a) {
+    state.world.satellites = state.world.satellites.filter((s) => s.siloId !== a.siloId);
+    const silo = state.world.silos[a.siloId];
+    if (silo) {
+      silo.contact = 'hostile';
+      silo.status = 'struggling';
+      silo.reputation = -100;
+    }
+    pushLog(state, {
+      kind: 'alert',
+      text: `${silo?.name || 'A satellite'} has thrown out your garrison. Everything you spent taking it is gone.`,
+    });
+  },
+
+  PENDING_RAID(state, a) {
+    state.world.pendingRaid = { siloId: a.siloId, strength: a.strength, day: state.clock.day };
+    emit('alert', { kind: 'warn', glyph: '⚑', text: 'Raiders at the airlock' });
+  },
+
+  RAID_RESOLVED(state) {
+    state.world.pendingRaid = null;
+  },
+
+  CONQUEST_PATCH(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (!silo) return;
+    silo.conquest = { ...(silo.conquest || { stage: 'scout', scoutRuns: 0, undermined: false, defenseMult: 1 }), ...a.patch };
+  },
+};
+
 let registered = false;
 
 /** Called once at boot. Later phases add their own reducer files. */
@@ -743,6 +895,7 @@ export function registerCoreReducers() {
     ...researchReducers,
     ...militaryReducers,
     ...expeditionReducers,
+    ...worldReducers,
     ...logReducers,
   });
 }

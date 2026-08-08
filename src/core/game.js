@@ -16,6 +16,8 @@ import * as research from '../sim/research.js';
 import * as build from '../sim/build.js';
 import * as military from '../sim/military.js';
 import * as expedition from '../sim/expedition.js';
+import * as world from '../sim/world.js';
+import * as diplomacy from '../sim/diplomacy.js';
 import { streamFor } from './rng.js';
 import { getRoom } from '../data/rooms.js';
 
@@ -32,6 +34,7 @@ export class Game {
     this.loop.setTick(store.state.clock.tick);
     this.ctx = { jobSkillFor: jobs.jobSkillFor };
     population.setRoomDefLookup(getRoom);
+    world.setRefugeeFactory(population.makeCitizen);
     this.frameHooks = new Set();
   }
 
@@ -87,6 +90,10 @@ export class Game {
     // on the expedition id, so the result is identical whether the player
     // watched it or slept through it (spec §3.4).
     store.dispatchAll(expedition.simulateDay(this.state));
+    store.dispatchAll(world.simulateDay(this.state));
+    store.dispatchAll(diplomacy.simulateTick(this.state));
+    this.resolveWorldEvents(dayNo);
+    this.syncRadioTier();
     this.dailyOrder();
     this.checkFailure();
     emit('day', dayNo);
@@ -146,6 +153,29 @@ export class Game {
       emit: false,
       days: below ? state.order.daysBelowThreshold + 1 : 0,
     });
+  }
+
+  /**
+   * Queued world events land on their day: refugees at the airlock, an ally
+   * calling you in, a raid arriving. They're queued rather than immediate so
+   * a collapse in the world has travel time attached to it.
+   */
+  resolveWorldEvents(dayNo) {
+    const pending = this.state.world.pending || [];
+    if (!pending.length) return;
+    for (const event of pending.slice()) {
+      if (this.state.clock.day < event.day) continue;
+      this.store.dispatchAll(world.applyWorldEvent(this.state, event));
+      this.store.dispatch({ type: 'WORLD_EVENT_RESOLVE', event });
+    }
+  }
+
+  /** Radio range follows research; the world tick reads it. */
+  syncRadioTier() {
+    const tier = research.effects(this.state).radioTier || 0;
+    if (tier > (this.state.world.radioTier || 0)) {
+      this.store.dispatch({ type: 'RADIO_TIER', tier });
+    }
   }
 
   /** Rooms under construction or upgrade come online here, and digs finish. */
