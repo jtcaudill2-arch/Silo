@@ -318,7 +318,12 @@ const citizenReducers = {
       ca.relationships[bId] = next;
       cb.relationships[aId] = next;
     }
-    // Everything drifts back toward indifference a little each day.
+    // Everything drifts back toward indifference a little each day, and an
+    // edge that has arrived at indifference is deleted rather than stored as
+    // a zero. Two people who once passed each other in a corridor and now
+    // feel nothing are not a fact worth persisting: at five hundred
+    // residents the roster was carrying twelve thousand edges, a good share
+    // of them exactly zero, into every autosave and every birth scan.
     if (a.decay) {
       for (const id of state.citizenIds) {
         const c = state.citizens[id];
@@ -327,6 +332,7 @@ const citizenReducers = {
           const v = c.relationships[k];
           if (v > 0) c.relationships[k] = Math.max(0, v - a.decay);
           else if (v < 0) c.relationships[k] = Math.min(0, v + a.decay);
+          if (c.relationships[k] === 0) delete c.relationships[k];
         }
       }
     }
@@ -914,10 +920,15 @@ const worldReducers = {
     });
   },
 
-  SATELLITE_TICK(state) {
-    for (const sat of state.world.satellites) {
-      // Occupied populations warm up slowly, and only if you keep a garrison.
-      sat.order = clamp(sat.order + 0.6, 0, 100);
+  SATELLITE_TICK(state, a) {
+    // Occupied populations warm up slowly, and only if you keep a garrison —
+    // which the caller decides, per satellite. This used to warm every one of
+    // them unconditionally by a hardcoded 0.6, so satellite order climbed to
+    // a hundred no matter what the player did, SATELLITE_REVOLT was never
+    // dispatched by anything, and holding a silo was pure profit forever.
+    for (const { siloId, amount } of a.shifts || []) {
+      const sat = state.world.satellites.find((s) => s.siloId === siloId);
+      if (sat) sat.order = clamp(sat.order + amount, 0, 100);
     }
   },
 

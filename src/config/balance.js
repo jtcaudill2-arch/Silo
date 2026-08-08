@@ -607,7 +607,13 @@ export const BAL = {
     holdGarrisonDays: 30,
     conqueredStartOrder: 5,
     satelliteEfficiency: 0.4,
-    satelliteOrderPerDay: -1,
+    satelliteOrderPerDay: -1, // what each satellite costs *your* order, daily
+    // What happens to the occupied silo's own order. Warming needs a squad
+    // sitting on it; without one the place slides toward throwing you out.
+    // One garrison squad per satellite is the real price of Dominion — six
+    // silos means six squads standing still, fed and paid, forever.
+    satelliteWarmPerDay: 0.6,
+    satelliteDecayPerDay: -1.4,
     revoltOrderThreshold: 20,
   },
 

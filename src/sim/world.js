@@ -237,17 +237,34 @@ function tickSatellites(state) {
   const actions = [];
   if (!state.world.satellites.length) return actions;
 
+  // A garrison is a squad standing on the silo doing nothing else. There are
+  // only so many of those, so past a certain number of satellites some of
+  // them are held by nobody — and an ungarrisoned occupation slides toward
+  // throwing you out. This is what stops Dominion being free: six silos is
+  // six squads permanently off the board, fed and paid every day.
+  const garrisons = state.military.squadIds.filter((id) => {
+    const sq = state.military.squads[id];
+    return sq && !sq.deployed && sq.assignment === 'garrison';
+  }).length;
+
   const deltas = {};
-  for (const sat of state.world.satellites) {
+  const orderShifts = [];
+  const revolts = [];
+  state.world.satellites.forEach((sat, i) => {
     const silo = state.world.silos[sat.siloId];
-    if (!silo) continue;
+    if (!silo) return;
     const eff = BAL.conquest.satelliteEfficiency * (sat.order / 100);
     const scale = (silo.power.economy / 100) * eff;
     const def = siloDef(sat.siloId);
     const yieldKey = specialtyResource(def?.specialty);
     if (yieldKey) deltas[yieldKey] = (deltas[yieldKey] || 0) + 18 * scale;
     deltas.chits = (deltas.chits || 0) + 10 * scale;
-  }
+
+    const held = i < garrisons;
+    const shift = held ? BAL.conquest.satelliteWarmPerDay : BAL.conquest.satelliteDecayPerDay;
+    if (!held && sat.order + shift <= BAL.conquest.revoltOrderThreshold) revolts.push(sat.siloId);
+    else orderShifts.push({ siloId: sat.siloId, amount: shift });
+  });
 
   if (Object.keys(deltas).length) actions.push({ type: 'RESOURCE_DELTA', deltas, emit: false });
   actions.push({
@@ -256,7 +273,8 @@ function tickSatellites(state) {
     reason: 'occupation duty',
     emit: false,
   });
-  actions.push({ type: 'SATELLITE_TICK', emit: false });
+  if (orderShifts.length) actions.push({ type: 'SATELLITE_TICK', shifts: orderShifts, emit: false });
+  for (const siloId of revolts) actions.push({ type: 'SATELLITE_REVOLT', siloId });
   return actions;
 }
 

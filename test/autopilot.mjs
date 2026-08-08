@@ -21,33 +21,64 @@ import { readEnvironment } from '../src/sim/population.js';
 import { computeCaps } from '../src/sim/economy.js';
 import { employableCitizens } from '../src/sim/jobs.js';
 import {
-  formSquad, squadMembers, equipBest, craft, canCraft, craftableItems, unassignedGear,
+  formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear, getItem,
 } from '../src/sim/military.js';
 import { canLaunch, launch, airlockCapacity } from '../src/sim/expedition.js';
 
-/** Research order: unblock the economy first, then reach outward. */
+/**
+ * Research order: unblock the economy, then climb the suit line, then finish.
+ *
+ * The suit line is load-bearing and it is easy to under-rate. The near ruins
+ * drop no artifacts at all, so a silo that never fields tier-2 suits never
+ * recovers a single artifact, and every artifact-gated node — a third of the
+ * tree, including all three endings — sits permanently out of reach while
+ * the lab keeps busy on yield upgrades. This list used to stop at the
+ * economy nodes and reached env_suit_2 only by accident, four hundred days
+ * late, which is exactly what that failure looks like from the inside: no
+ * error, no warning, just a tree that quietly stops having anything in it.
+ */
 const RESEARCH_ORDER = [
+  // Keep the lights on and the people fed.
   'antibiotics',
   'hydroponic_yield_1',
   'deep_excavation_1',
   'radio_range_1',
   'env_suit_1',
   'power_efficiency',
+  'alloy_refining',
+  // Get to the mid waste. Nothing is recoverable below tier 2.
+  'decon_protocols',
+  'env_suit_2',
+  'atmospheric_analysis',
+  // Consolidate while the squad starts bringing things home.
   'food_preservation',
   'blight_resistance',
-  'alloy_refining',
   'shoring',
+  'deep_excavation_2',
   'battery_banks',
   'shift_scheduling',
-  'decon_protocols',
-  'atmospheric_analysis',
-  'treaty_law',
-  'deep_excavation_2',
-  'rad_treatment_1',
+  // Deeper, on both axes.
+  'terrain_mapping',
+  'env_suit_3',
+  'deep_excavation_3',
   'firearms_1',
+  'ballistic_armor_1',
+  'rad_treatment_1',
   'surgery',
-  'protein_vats',
+  'firearms_2',
+  'treaty_law',
   'hydroponic_yield_2',
+  'protein_vats',
+  // The endgame chain. Every ending needs the Origin Record, and the Record
+  // needs both of the long branches finished.
+  'firearms_3',
+  'env_suit_4',
+  'propaganda',
+  'radio_range_2',
+  'encryption',
+  'radio_range_3',
+  'pre_collapse_archives',
+  'origin_record',
 ];
 
 /**
@@ -198,6 +229,11 @@ export function autopilot(state) {
     if (count('schoolhouse') < 1) wants.push('schoolhouse');
     if (foodDays > 25 && waterDays > 25 && count('storage_depot') < 2) wants.push('storage_depot');
     if (count('sheriffs_office') < 1) wants.push('sheriffs_office');
+    // Ammunition. A mid-band run costs 24 rounds and brings none back, so
+    // the armoury's hand-loading bench alone paces expeditions at one per
+    // nine days. Munitions is the room that makes the surface sustainable.
+    if (count('munitions') < 1) wants.push('munitions');
+    if (count('foundry') < 2) wants.push('foundry');
     // Research is the long pole all game; keep adding benches to it.
     if (count('laboratory') < 4 && state.resources.scrap > RESERVE * 3) wants.push('laboratory');
   }
@@ -309,23 +345,37 @@ function runSurface(state) {
     return actions;
   }
 
-  // Kit: craft whatever the squad is short of, best tier available.
+  // Kit: craft whatever the squad is short of *or out of date on*, best tier
+  // available. Upgrading matters as much as filling an empty slot — band
+  // access is decided by the worst suit going out, so one member still in a
+  // tier-1 suit keeps the whole squad in the near ruins, where nothing worth
+  // researching is ever found.
   for (const kind of ['suit', 'weapon', 'armor']) {
-    const missing = members.filter((c) => !c.gear?.[kind]).length;
-    if (!missing) continue;
-    const spare = unassignedGear(state, kind).length;
-    if (spare > 0) {
-      for (const c of members) actions.push(...equipBest(state, c.id));
-      return actions;
-    }
     const buildable = craftableItems(state)
       .filter((i) => i.kind === kind)
       .sort((a, b) => b.tier - a.tier)[0];
+    const bestTier = buildable?.tier ?? 0;
+    const behind = members.filter((c) => {
+      const worn = c.gear?.[kind] ? state.military.gear[c.gear[kind]] : null;
+      return !worn || (getItem(worn.item)?.tier ?? 0) < bestTier;
+    }).length;
+    if (!behind) continue;
+
+    // Something better already on the rack? Issue it before making more.
+    const spare = unassignedGear(state, kind).filter(
+      (g) => (getItem(g.item)?.tier ?? 0) >= bestTier
+    ).length;
+    if (spare > 0) {
+      actions.push(...equipGroup(state, members.map((c) => c.id)));
+      return actions;
+    }
     if (buildable && canCraft(state, buildable.id).ok) {
       actions.push(...craft(state, buildable.id));
       return actions;
     }
-    return actions; // can't kit them; don't send them
+    // Can't improve this slot right now. If everyone at least has something,
+    // that's no reason to keep them indoors — fall through and launch.
+    if (members.some((c) => !c.gear?.[kind])) return actions;
   }
 
   // Don't send a squad you cannot clean when it gets back. The filters have
@@ -333,8 +383,11 @@ function runSurface(state) {
   const deconCost = BAL.expedition.decon.filtersPerMember * members.length;
   if (state.resources.filters < deconCost) return actions;
 
-  // Send them out — the furthest band the suits allow.
-  for (const band of ['mid', 'near']) {
+  // Send them out — the furthest band the suits allow. Reward tier rises
+  // with distance and the near ruins yield no artifacts at all, so a squad
+  // that keeps walking to the same safe rubble is a squad the research tree
+  // never hears from.
+  for (const band of ['scar', 'approach', 'deep', 'mid', 'near']) {
     const check = canLaunch(state, squadId, band);
     if (check.ok) {
       actions.push(...launch(state, squadId, band));

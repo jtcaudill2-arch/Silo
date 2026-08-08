@@ -79,18 +79,60 @@ export function unassignedGear(state, kind) {
   );
 }
 
-/** Give a citizen the best available piece in each slot. */
-export function equipBest(state, citizenId) {
+/**
+ * Give a citizen the best available piece in each slot — including when the
+ * slot is already filled with something worse.
+ *
+ * It used to skip any occupied slot, which quietly made the whole gear
+ * progression cosmetic: research Env-Suit II, craft the suits, and the squad
+ * keeps wearing the tier-1 ones it was issued on day seventy, because every
+ * slot is full. Since band access is decided by the *worst* suit going out,
+ * that squad can never reach the mid waste, never bring an artifact home,
+ * and the research tree dead-ends with nothing startable. Eight hundred days
+ * of play, a hundred and fifty expeditions, and zero artifacts recovered.
+ *
+ * GEAR_ASSIGN already frees whatever was in the slot, so the old piece goes
+ * back in the rack for somebody else.
+ */
+export function equipBest(state, citizenId, claimed = new Set()) {
   const actions = [];
   const c = state.citizens[citizenId];
   if (!c) return actions;
+  const better = (a, b) =>
+    (getItem(b.item)?.tier ?? 0) - (getItem(a.item)?.tier ?? 0) || b.durability - a.durability;
+
   for (const kind of ['weapon', 'armor', 'suit']) {
-    if (c.gear?.[kind]) continue;
-    const pool = unassignedGear(state, kind);
+    // `claimed` is what earlier citizens in this same batch have already been
+    // promised. Actions are built against state as it is *now*, so without it
+    // every member of a squad is handed the same top-ranked rifle, and
+    // GEAR_ASSIGN — which correctly takes a piece off whoever held it —
+    // strips all but the last of them bare.
+    const pool = unassignedGear(state, kind).filter((g) => !claimed.has(g.id));
     if (!pool.length) continue;
-    pool.sort((a, b) => (getItem(b.item)?.tier ?? 0) - (getItem(a.item)?.tier ?? 0) || b.durability - a.durability);
-    actions.push({ type: 'GEAR_ASSIGN', gearId: pool[0].id, citizenId, slot: kind });
+    pool.sort(better);
+    const candidate = pool[0];
+
+    const wornId = c.gear?.[kind];
+    if (wornId) {
+      const worn = state.military.gear[wornId];
+      // Only swap for a strictly better piece. Equal tier and equal wear is
+      // a lateral move that would churn the rack every time this is called.
+      if (worn && better(candidate, worn) >= 0) continue;
+    }
+    claimed.add(candidate.id);
+    actions.push({ type: 'GEAR_ASSIGN', gearId: candidate.id, citizenId, slot: kind });
   }
+  return actions;
+}
+
+/**
+ * Equip a group in one pass, so they compete for the rack instead of all
+ * being issued the same piece. Always use this for a squad.
+ */
+export function equipGroup(state, citizenIds) {
+  const claimed = new Set();
+  const actions = [];
+  for (const id of citizenIds) actions.push(...equipBest(state, id, claimed));
   return actions;
 }
 
@@ -298,4 +340,4 @@ function avg(arr) {
 }
 
 export { bestCraftable, getItem, fullName };
-export default { readiness, simulateDay, simulateCycle, craft, formSquad, equipBest, militarySummary };
+export default { readiness, simulateDay, simulateCycle, craft, formSquad, equipBest, equipGroup, militarySummary };
