@@ -1,0 +1,208 @@
+/**
+ * autopilot.mjs — a competent-but-not-clever player, for regression testing.
+ *
+ * This is not an AI opponent and it is not shipped in the game. It exists so
+ * the harness can drive the *real* six-room opening the way a player would —
+ * building, excavating, researching, re-staffing — and assert that the silo
+ * survives. A pure passive run can only ever prove the opening is lethal; it
+ * can't prove it's solvable, which is the more important claim.
+ *
+ * It plays by simple priority rules and never looks more than one build
+ * ahead, so if the autopilot survives, a thinking player comfortably will.
+ */
+
+import { BAL } from '../src/config/balance.js';
+import { getRoom } from '../src/data/rooms.js';
+import { autoAssign } from '../src/sim/jobs.js';
+import { canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade } from '../src/sim/build.js';
+import { canStart, isComplete } from '../src/sim/research.js';
+import { RESEARCH_LIST } from '../src/data/research.js';
+import { readEnvironment } from '../src/sim/population.js';
+import { computeCaps } from '../src/sim/economy.js';
+
+/** Research order: unblock the economy first, then reach outward. */
+const RESEARCH_ORDER = [
+  'antibiotics',
+  'hydroponic_yield_1',
+  'deep_excavation_1',
+  'radio_range_1',
+  'env_suit_1',
+  'power_efficiency',
+  'food_preservation',
+  'blight_resistance',
+  'alloy_refining',
+  'shoring',
+  'battery_banks',
+  'shift_scheduling',
+  'decon_protocols',
+  'atmospheric_analysis',
+  'treaty_law',
+  'deep_excavation_2',
+  'rad_treatment_1',
+  'firearms_1',
+  'surgery',
+  'protein_vats',
+  'hydroponic_yield_2',
+];
+
+/**
+ * One decision pass. Returns actions; issues at most one construction order
+ * per call so costs are re-checked against real stock each time.
+ */
+export function autopilot(state) {
+  const actions = [];
+  const env = readEnvironment(state);
+  const caps = computeCaps(state);
+  const flow = (k) => {
+    const f = state.flows?.[k];
+    return f ? f.in - f.out : 0;
+  };
+
+  // ---- 1. research: always be researching something -------------------
+  if (!state.research.active) {
+    for (const id of RESEARCH_ORDER) {
+      if (isComplete(state, id)) continue;
+      if (canStart(state, id).ok) {
+        actions.push({ type: 'RESEARCH_SET_ACTIVE', active: { id, progress: 0, cycles: 0 } });
+        break;
+      }
+    }
+    // Fall back to anything at all, so the labs are never idle.
+    if (!actions.length) {
+      const any = RESEARCH_LIST.find((n) => canStart(state, n.id).ok);
+      if (any) actions.push({ type: 'RESEARCH_SET_ACTIVE', active: { id: any.id, progress: 0, cycles: 0 } });
+    }
+  }
+
+  // ---- 2. the build queue, in the order a player would panic ----------
+  const count = (type) => Object.values(state.silo.rooms).filter((r) => r.type === type).length;
+
+  const runway = (key) => {
+    const net = flow(key);
+    if (net >= 0) return Infinity;
+    return state.resources[key] / (-net * BAL.time.CYCLES_PER_DAY);
+  };
+
+  const foodDays = runway('food');
+  const waterDays = runway('water');
+  const fuelDays = runway('fuel');
+  const gen = state.power?.generation || 0;
+  const demand = state.power?.demand || 0;
+  const airHeadroom = state.air.capacity - state.air.load;
+
+  const scrapIncome = flow('scrap');
+  const partsIncome = flow('parts');
+  const powerHeadroom = gen > 0 ? (gen - demand) / gen : 1;
+
+  // The bootstrap. The opening silo has no scrap income and no parts income,
+  // and every single building costs both. Recycling and the Workshop are
+  // therefore not optional and not a matter of taste — without them the
+  // starting stock buys four or five rooms and the silo is then permanently
+  // unable to build anything ever again.
+  const wants = [];
+  if (scrapIncome <= 0 && count('recycling') === 0) wants.push('recycling');
+  if (partsIncome <= 0 && count('workshop') === 0) wants.push('workshop');
+
+  // Anything on this list is about to kill somebody. Sorted by how soon.
+  const urgent = [];
+  if (waterDays < 8) urgent.push({ type: 'water_reclaimer', when: waterDays });
+  if (foodDays < 14) urgent.push({ type: 'hydroponics', when: foodDays });
+  if (fuelDays < 12) urgent.push({ type: 'recycling', when: fuelDays });
+  if (gen > 0 && demand > gen * 0.85) urgent.push({ type: 'generator_hall', when: 4 });
+  if (airHeadroom < 0) urgent.push({ type: 'air_filtration', when: 5 });
+  if (env.housingFree < 0) urgent.push({ type: 'residences', when: 9 });
+  urgent.sort((a, b) => a.when - b.when);
+  wants.push(...urgent.map((u) => u.type));
+
+  // Then the trend fixes: act on a margin that is *shrinking*, not on one
+  // that has already run out. A reclaimer ordered when the tank hits zero
+  // arrives four shifts after the first person dies of thirst.
+  if (flow('water') < 4) wants.push('water_reclaimer');
+  if (flow('food') < 4) wants.push('hydroponics');
+  if (scrapIncome < 5) wants.push('recycling');
+  if (partsIncome < 1.5) wants.push('workshop');
+  if (powerHeadroom < 0.25) wants.push('generator_hall');
+  if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
+
+  // Everything else waits until nothing is on fire and there's a reserve
+  // left over. Spending the last of the scrap on a schoolhouse while the
+  // water runs out is exactly the mistake this ordering exists to prevent.
+  const RESERVE = 170;
+  if (!urgent.length && state.resources.scrap > RESERVE) {
+    if (count('laboratory') < 1) wants.push('laboratory');
+    if (airHeadroom < 30) wants.push('air_filtration');
+    if (env.housingFree < 12) wants.push('residences');
+    if (count('clinic') < 1) wants.push('clinic');
+    if (count('maintenance_bay') < 1) wants.push('maintenance_bay');
+    if (foodDays > 25 && waterDays > 25 && count('storage_depot') < 2) wants.push('storage_depot');
+    if (count('laboratory') < 2) wants.push('laboratory');
+    if (count('cafeteria') < 2) wants.push('cafeteria');
+    if (count('schoolhouse') < 1) wants.push('schoolhouse');
+  }
+
+  for (const type of wants) {
+    const spot = findSpot(state, type);
+    if (!spot) continue;
+    const check = canBuild(state, spot.floor, spot.slot, type);
+    if (!check.ok) continue;
+    actions.push(...build(state, spot.floor, spot.slot, type));
+    break; // one order per pass
+  }
+
+  // ---- 3. excavate when bays are running out --------------------------
+  const freeBays = state.silo.floors
+    .filter((f) => f.excavated)
+    .reduce((n, f) => n + f.slots.filter((s) => s == null).length, 0);
+  // Silos expand: dig when bays are getting tight, or whenever there's scrap
+  // spare for it. Sitting on a full treasury and an unopened tier is not a
+  // thing a player does.
+  if (!state.silo.excavating && (freeBays < 14 || state.resources.scrap > 400)) {
+    const dig = canExcavate(state);
+    if (dig.ok) actions.push(...startExcavation(state));
+  }
+
+  // ---- 4. spend a surplus on upgrades ---------------------------------
+  if (state.resources.scrap > caps.scrap * 0.8 && state.resources.chits > 200) {
+    const target = Object.values(state.silo.rooms)
+      .filter((r) => r.level < BAL.silo.upgrade.maxLevel && r.upgradingUntilCycle === 0)
+      .sort((a, b) => a.level - b.level)[0];
+    if (target && canUpgrade(state, target.id).ok) actions.push(...upgrade(state, target.id));
+  }
+
+  // ---- 5. keep everyone posted ----------------------------------------
+  actions.push(...autoAssign(state));
+
+  return actions;
+}
+
+/** First floor with a free bay that this room type is allowed to occupy. */
+function findSpot(state, typeId) {
+  const def = getRoom(typeId);
+  if (!def) return null;
+  for (const floor of state.silo.floors) {
+    if (!floor.excavated) continue;
+    if (def.tierGate) {
+      const tier = BAL.silo.tiers.find((t) => floor.n >= t.from && floor.n <= t.to);
+      const need = BAL.silo.tiers.findIndex((t) => t.key === def.tierGate);
+      const have = BAL.silo.tiers.findIndex((t) => t.key === tier?.key);
+      if (have < need) continue;
+    }
+    // Prefer a bay next to an identical room, so the autopilot merges rather
+    // than scattering — merging is what the layout puzzle rewards.
+    let fallback = null;
+    for (let slot = 0; slot < BAL.silo.slotsPerFloor; slot++) {
+      if (floor.slots[slot] != null) continue;
+      const neighbours = [slot - 1, slot + 1]
+        .map((i) => (i >= 0 && i < BAL.silo.slotsPerFloor ? floor.slots[i] : null))
+        .map((id) => (id != null ? state.silo.rooms[id] : null));
+      if (def.canMerge && neighbours.some((r) => r && r.type === typeId && r.width < BAL.silo.merge.maxWidth)) {
+        return { floor: floor.n, slot };
+      }
+      if (fallback === null) fallback = slot;
+    }
+    if (fallback !== null) return { floor: floor.n, slot: fallback };
+  }
+  return null;
+}
+
+export default autopilot;

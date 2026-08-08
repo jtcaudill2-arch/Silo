@@ -155,7 +155,76 @@ const siloReducers = {
   NEXT_ROOM_ID(state, a) {
     state.silo.nextRoomId = a.value;
   },
+
+  /** Build assigns the id here, so sim code never invents one. */
+  ROOM_BUILD(state, a) {
+    const id = String(state.silo.nextRoomId++);
+    const room = { ...a.room, id };
+    state.silo.rooms[id] = room;
+    const floor = state.silo.floors[room.floor - 1];
+    for (let i = 0; i < room.width; i++) floor.slots[room.slot + i] = id;
+    insertByDefaultPriority(state, room);
+  },
+
+  /**
+   * Absorb an adjacent bay into an existing room. The merged unit keeps the
+   * original room's crew and condition — you extended it, you didn't rebuild
+   * it — but the new bay comes online on its own construction schedule.
+   */
+  ROOM_MERGE(state, a) {
+    const room = state.silo.rooms[a.id];
+    if (!room) return;
+    const floor = state.silo.floors[room.floor - 1];
+    room.slot = a.slot;
+    room.width = a.width;
+    floor.slots[a.claimSlot] = room.id;
+    for (let i = 0; i < room.width; i++) floor.slots[room.slot + i] = room.id;
+    // A wider room wears proportionally; averaging keeps the new bay from
+    // arriving pre-damaged.
+    room.condition = Math.min(
+      BAL.silo.condition.start,
+      (room.condition * (room.width - 1) + BAL.silo.condition.start) / room.width
+    );
+    room.buildingUntilCycle = 0;
+  },
+
+  EXCAVATION_START(state, a) {
+    state.silo.excavating = { floor: a.floor, untilCycle: a.untilCycle };
+  },
+
+  EXCAVATION_COMPLETE(state, a) {
+    const floor = state.silo.floors[a.floor - 1];
+    if (floor) {
+      floor.excavated = true;
+      floor.shored = a.shored ?? floor.n < BAL.silo.excavation.shoringRequiredBelowFloor;
+    }
+    state.silo.excavating = null;
+    pushLog(state, {
+      kind: 'alert',
+      text: `Floor ${a.floor} is open. Six bays of bare rock and a lighting circuit.`,
+    });
+    emit('alert', { kind: 'good', glyph: '⌗', text: `Floor ${a.floor} excavated`, floor: a.floor });
+  },
 };
+
+/** Default power rank for a newly built room. */
+function insertByDefaultPriority(state, room) {
+  const list = state.silo.powerPriority;
+  const rank = (t) => {
+    const i = BAL.power.defaultPriority.indexOf(t);
+    return i < 0 ? 999 : i;
+  };
+  const mine = rank(room.type);
+  let at = list.length;
+  for (let i = 0; i < list.length; i++) {
+    const other = state.silo.rooms[list[i]];
+    if (other && rank(other.type) > mine) {
+      at = i;
+      break;
+    }
+  }
+  list.splice(at, 0, room.id);
+}
 
 // ------------------------------------------------------------- citizens ---
 
@@ -329,6 +398,13 @@ const researchReducers = {
   RESEARCH_POINTS(state, a) {
     state.research.points += a.amount;
   },
+  RESEARCH_SPEND(state, a) {
+    state.research.points = Math.max(0, state.research.points - a.amount);
+    if (state.research.active) {
+      state.research.active.progress = a.progress;
+      state.research.active.cycles = a.cycles;
+    }
+  },
   RESEARCH_SET_ACTIVE(state, a) {
     state.research.active = a.active;
   },
@@ -343,7 +419,9 @@ const researchReducers = {
     state.research.bonus = a.value;
   },
   ARTIFACT_ADD(state, a) {
-    state.research.artifacts[a.id] = (state.research.artifacts[a.id] || 0) + (a.count || 1);
+    // Negative counts are how research consumes them; never go below zero.
+    const next = (state.research.artifacts[a.id] || 0) + (a.count ?? 1);
+    state.research.artifacts[a.id] = Math.max(0, next);
   },
 };
 

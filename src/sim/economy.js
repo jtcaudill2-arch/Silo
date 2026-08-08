@@ -22,6 +22,7 @@ import { BAL } from '../config/balance.js';
 import { ROOMS, getRoom } from '../data/rooms.js';
 import { workFactor } from './population.js';
 import { traitMod } from '../data/traits.js';
+import { effects as researchEffects, speedMultiplier } from './research.js';
 
 const RES_KEYS = [
   'power', 'water', 'food', 'meds', 'scrap', 'alloy',
@@ -34,6 +35,9 @@ export { RES_KEYS };
 
 export function computeCaps(state) {
   const caps = { ...BAL.resources.baseCaps };
+  const e = researchEffects(state);
+  if (e.foodCap) caps.food += e.foodCap;
+  if (e.batteryCap) caps.power += e.batteryCap;
   for (const id of Object.keys(state.silo.rooms)) {
     const room = state.silo.rooms[id];
     const def = getRoom(room.type);
@@ -110,7 +114,8 @@ export function roomDraw(state, room, capability) {
   const mergeSteps = room.width - 1;
   const discount = 1 - mergeSteps * BAL.silo.merge.powerDiscountPerStep;
   const level = 1 + (room.level - 1) * BAL.silo.upgrade.outputPerLevel * 0.6;
-  const base = def.consumes.power * room.width * discount * level;
+  const efficiency = 1 - (researchEffects(state).powerEfficiency || 0);
+  const base = def.consumes.power * room.width * discount * level * efficiency;
   // A room nobody is crewing still keeps its lights on.
   return capability > 0 ? base : base * 0.25;
 }
@@ -162,10 +167,7 @@ export function simulateCycle(state, ctx = {}) {
     const room = state.silo.rooms[id];
     const def = getRoom(room.type);
     const cap = capability[id];
-    if (cap <= 0) {
-      room.__running = false;
-      continue;
-    }
+    if (cap <= 0) continue;
     // Consumption scales with capability, which already folds in width,
     // level and staffing. Multiplying by width again would double-count it.
     const fuelWant = (def.consumes.fuel || 0) * cap;
@@ -184,7 +186,8 @@ export function simulateCycle(state, ctx = {}) {
   }
 
   // ---- 3. brownout. Walk the player's priority list top down. -----------
-  const battery = Math.min(res.power, BAL.power.batteryDischargePerCycle);
+  const throughput = BAL.power.batteryDischargePerCycle + (researchEffects(state).batteryThroughput || 0);
+  const battery = Math.min(res.power, throughput);
   let budget = generation + battery;
   const powered = {};
   let unpoweredCount = 0;
@@ -210,12 +213,13 @@ export function simulateCycle(state, ctx = {}) {
   const surplus = generation - flows.power.out;
   let batteryDelta;
   if (surplus >= 0) {
-    batteryDelta = Math.min(surplus, BAL.power.batteryChargePerCycle);
+    batteryDelta = Math.min(surplus, BAL.power.batteryChargePerCycle + (researchEffects(state).batteryThroughput || 0));
   } else {
-    batteryDelta = Math.max(surplus, -BAL.power.batteryDischargePerCycle);
+    batteryDelta = Math.max(surplus, -throughput);
   }
 
   // ---- 4. throughput for everything that got power ----------------------
+  const research = researchEffects(state);
   let airCapacity = 0;
   let researchPoints = 0;
   let maintenance = 0;
@@ -239,8 +243,11 @@ export function simulateCycle(state, ctx = {}) {
     const cap = capability[id];
 
     if (def.provides.research) {
-      researchPoints +=
-        BAL.research.pointsPerLabPerCycleBase * cap * (1 + state.research.bonus || 0);
+      researchPoints += BAL.research.pointsPerLabPerCycleBase * cap * speedMultiplier(state);
+    }
+    if (def.provides.researchBonus) {
+      // Archives multiply what the labs already produced this cycle.
+      researchPoints *= 1 + def.provides.researchBonus * room.level;
     }
     if (def.provides.maintenance) {
       maintenance += BAL.silo.condition.maintenanceRestorePerCyclePerCrew * cap;
@@ -263,7 +270,7 @@ export function simulateCycle(state, ctx = {}) {
     }
     for (const [k, v] of Object.entries(def.produces)) {
       if (k === 'power') continue; // charged above
-      bump(k, v * cap * ratio);
+      bump(k, v * cap * ratio * yieldMultiplier(research, k));
     }
   }
 
@@ -369,6 +376,14 @@ function clampToTarget(current, perCycleDelta, cycles) {
   // the target, so the furthest it can legitimately travel is to 0 or 100.
   const room = perCycleDelta > 0 ? BAL.air.max - current : current - BAL.air.min;
   return Math.sign(perCycleDelta) * Math.min(Math.abs(total), Math.max(0, room));
+}
+
+/** Research yield bonuses, by the resource being produced. */
+const YIELD_KEY = { food: 'foodYield', water: 'waterYield', alloy: 'alloyYield' };
+
+function yieldMultiplier(research, resourceKey) {
+  const key = YIELD_KEY[resourceKey];
+  return key ? 1 + (research[key] || 0) : 1;
 }
 
 function crewWearFactor(state, room) {

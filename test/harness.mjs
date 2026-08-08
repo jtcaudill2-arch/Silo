@@ -21,6 +21,8 @@ import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
+import { autopilot } from './autopilot.mjs';
+import { canExcavate, startExcavation, canUpgrade, upgrade } from '../src/sim/build.js';
 import { BAL, TIME } from '../src/config/balance.js';
 
 const args = Object.fromEntries(
@@ -81,7 +83,7 @@ registerCoreReducers();
  * default six-room start is a deliberately unsustainable opening position and
  * is only run as a short smoke test.
  */
-function run(label, { days, seed, scenario, expectSurvival }) {
+function run(label, { days, seed, scenario, expectSurvival, play }) {
   const store = createStore(createNewGame({ seed, scenario, now: 1_700_000_000_000 }));
   store.silent = true; // no UI attached
   const game = new Game(store);
@@ -96,6 +98,11 @@ function run(label, { days, seed, scenario, expectSurvival }) {
 
   for (let d = 0; d < days; d++) {
     game.runDays(1);
+    if (play) {
+      // A player makes several decisions a day, not one; run the pass a few
+      // times so a build order and a research start can land together.
+      for (let i = 0; i < 3; i++) store.dispatchAll(play(store.state));
+    }
     const s = store.state;
     const pop = s.citizenIds.length;
     peakPop = Math.max(peakPop, pop);
@@ -207,7 +214,7 @@ function run(label, { days, seed, scenario, expectSurvival }) {
   }
 
   report(label, samples, s, store, { elapsed, days, seed, peakPop, minPop });
-  return { store, samples };
+  return { store, samples, state: s, game };
 }
 
 function report(label, samples, s, store, info) {
@@ -269,12 +276,78 @@ run('stability — sufficient silo', {
   expectSurvival: true,
 });
 
-run('opening — six-room start', {
+run('opening — six-room start, no intervention', {
   days: Math.min(DAYS, 18),
   seed: SEED,
   scenario: 'default',
   expectSurvival: false,
 });
+
+// The claim that matters for Phase 4: the real opening position is solvable.
+// A passive run can only prove it's lethal.
+const played = run('opening — six-room start, played', {
+  days: DAYS,
+  seed: SEED,
+  scenario: 'default',
+  expectSurvival: true,
+  play: autopilot,
+});
+
+{
+  const store = played.store;
+  const s = store.state;
+  const built = Object.keys(s.silo.rooms).length;
+  const done = s.research.completed.length;
+  const merged = Object.values(s.silo.rooms).filter((r) => r.width > 1).length;
+
+  if (built <= 6) fail(`[played] the autopilot built nothing (${built} rooms)`);
+  if (!done) fail(`[played] no research completed in ${DAYS} days`);
+  if (!merged) fail('[played] nothing ever merged — the merge path is untested');
+
+  // Excavation and upgrade are driven directly rather than inferred from the
+  // autopilot's choices: whether a heuristic player happens to want another
+  // floor is not a fact about the game, but whether digging one works is.
+  const beforeDug = s.silo.floors.filter((f) => f.excavated).length;
+  const dig = canExcavate(s);
+  if (!dig.ok) {
+    fail(`[played] cannot excavate after ${DAYS} days of build-out: ${dig.reason}`);
+  } else {
+    store.dispatchAll(startExcavation(s));
+    if (!s.silo.excavating) fail('[played] excavation was ordered but never started');
+    played.game.runDays(3);
+    const afterDug = s.silo.floors.filter((f) => f.excavated).length;
+    if (afterDug !== beforeDug + 1) {
+      fail(`[played] excavation did not complete (${beforeDug} → ${afterDug} floors)`);
+    } else if (s.silo.excavating) {
+      fail('[played] excavation completed but the dig was never cleared');
+    }
+  }
+
+  // Same for upgrades: drive one and check it actually raises the level.
+  const target = Object.values(s.silo.rooms).find(
+    (r) => r.level < BAL.silo.upgrade.maxLevel && canUpgrade(s, r.id).ok
+  );
+  if (!target) {
+    fail('[played] nothing in the silo could be upgraded — the upgrade path is untested');
+  } else {
+    const before = target.level;
+    store.dispatchAll(upgrade(s, target.id));
+    played.game.runDays(2);
+    if (s.silo.rooms[target.id].level !== before + 1) {
+      fail(`[played] upgrade did not apply (level ${before} → ${s.silo.rooms[target.id].level})`);
+    }
+  }
+
+  if (!QUIET) {
+    console.log('');
+    console.log(
+      `  built ${built} rooms (${merged} merged wide), ` +
+        `dug ${s.silo.floors.filter((f) => f.excavated).length} floors, ` +
+        `${done} research nodes, ${Math.floor(s.research.points)} RP banked`
+    );
+    console.log('  researched: ' + s.research.completed.join(', '));
+  }
+}
 
 console.log('');
 for (const w of warnings) console.log(`  ! ${w}`);

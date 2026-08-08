@@ -12,6 +12,9 @@ import { emit } from './events.js';
 import * as economy from '../sim/economy.js';
 import * as jobs from '../sim/jobs.js';
 import * as population from '../sim/population.js';
+import * as research from '../sim/research.js';
+import * as build from '../sim/build.js';
+import { streamFor } from './rng.js';
 import { getRoom } from '../data/rooms.js';
 
 export class Game {
@@ -64,6 +67,7 @@ export class Game {
 
     store.dispatchAll(economy.simulateCycle(this.state, this.ctx));
     store.dispatchAll(jobs.simulateCycle(this.state));
+    store.dispatchAll(research.simulateCycle(this.state));
     this.advanceConstruction(cycleNo);
 
     emit('cycle', cycleNo);
@@ -74,6 +78,7 @@ export class Game {
     const store = this.store;
     store.dispatchAll(population.simulateDay(this.state, this.ctx));
     store.dispatchAll(jobs.manageSchool(this.state));
+    store.dispatchAll(build.simulateDay(this.state, streamFor(this.state.meta.seed, 'structure', dayNo)));
     this.dailyOrder();
     this.checkFailure();
     emit('day', dayNo);
@@ -135,8 +140,12 @@ export class Game {
     });
   }
 
-  /** Rooms under construction or upgrade come online here. */
+  /** Rooms under construction or upgrade come online here, and digs finish. */
   advanceConstruction(cycleNo) {
+    const dig = this.state.silo.excavating;
+    if (dig && cycleNo >= dig.untilCycle) {
+      this.store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: dig.floor });
+    }
     for (const id of Object.keys(this.state.silo.rooms)) {
       const room = this.state.silo.rooms[id];
       if (room.buildingUntilCycle && cycleNo >= room.buildingUntilCycle) {

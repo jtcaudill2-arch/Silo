@@ -25,6 +25,8 @@ import { openRoom } from './ui/roomView.js';
 import { toast } from './ui/dom.js';
 import { resourcesPanel } from './ui/panels/resources.js';
 import { populationPanel } from './ui/panels/population.js';
+import { buildPanel } from './ui/panels/build.js';
+import { researchPanel } from './ui/panels/research.js';
 import { logPanel } from './ui/panels/log.js';
 
 const boot = document.getElementById('boot');
@@ -108,7 +110,12 @@ async function main() {
 
   // ---- shell --------------------------------------------------------------
   const shell = new Shell(store, game);
-  shell.register(populationPanel).register(resourcesPanel).register(logPanel);
+  shell
+    .register(buildPanel)
+    .register(populationPanel)
+    .register(researchPanel)
+    .register(resourcesPanel)
+    .register(logPanel);
   shell.buildNav();
   shell.setSpeed(1);
   shell.renderChrome();
@@ -118,6 +125,7 @@ async function main() {
     else store.dispatch({ type: 'UI_SET', ui: { cameraFloor: hit.floor } });
   };
   shell.onAlertFloor = (floor, kind) => gauge.flag(floor, kind);
+  shell.onFocusFloor = (n) => renderer.focusFloor(n);
   shell.onOpenRoom = (roomId) => {
     const room = store.state.silo.rooms[roomId];
     if (room) renderer.focusFloor(room.floor);

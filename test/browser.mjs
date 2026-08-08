@@ -207,6 +207,142 @@ try {
   if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'roster.png') });
   await page.click('.panel-close');
 
+  // ---- 6c. build panel: catalogue, placement, and a real construction ----
+  await page.click('.nav-btn[data-panel="build"]');
+  await page.waitForSelector('.build-row', { timeout: 4000 });
+  const catalogue = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.build-row')];
+    return {
+      total: rows.length,
+      buildable: rows.filter((r) => !r.classList.contains('locked')).length,
+      locked: rows.filter((r) => r.classList.contains('locked')).length,
+      // Locked rows must explain themselves, not just grey out.
+      withReasons: rows.filter((r) => r.classList.contains('locked') && r.querySelector('.build-why')).length,
+      bays: document.querySelectorAll('.bay').length,
+      floors: document.querySelectorAll('.floor-pip').length,
+    };
+  });
+  if (catalogue.total < 10) fail(`build catalogue shows only ${catalogue.total} rooms`);
+  if (catalogue.buildable === 0) fail('nothing at all is buildable on the opening floor');
+  if (catalogue.locked !== catalogue.withReasons) {
+    fail(`${catalogue.locked - catalogue.withReasons} locked rooms give no reason why`);
+  }
+  if (catalogue.bays !== 6) fail(`floor shows ${catalogue.bays} bays, expected 6`);
+  if (catalogue.floors !== 14) fail(`floor strip shows ${catalogue.floors} floors, expected 14`);
+  ok(`build catalogue: ${catalogue.buildable} buildable, ${catalogue.locked} locked (all explained)`);
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'build.png') });
+
+  const constructed = await page.evaluate(async () => {
+    const { store } = window.DEEPWATER;
+    const before = Object.keys(store.state.silo.rooms).length;
+    const scrapBefore = store.state.resources.scrap;
+    // Click the first buildable room in the catalogue.
+    const row = [...document.querySelectorAll('.build-row')].find((r) => !r.classList.contains('locked'));
+    const name = row.querySelector('.build-name').textContent;
+    row.click();
+    await new Promise((r) => setTimeout(r, 150));
+    // A multi-bay choice opens a modal; take the first option if so.
+    const opt = document.querySelector('.modal .row.tappable');
+    if (opt) {
+      opt.click();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return {
+      name,
+      before,
+      after: Object.keys(store.state.silo.rooms).length,
+      spent: scrapBefore - store.state.resources.scrap,
+    };
+  });
+  if (constructed.after <= constructed.before && constructed.spent <= 0) {
+    fail(`building "${constructed.name}" did nothing (rooms ${constructed.before} → ${constructed.after})`);
+  } else {
+    ok(`built a ${constructed.name} from the panel (${Math.round(constructed.spent)} scrap spent)`);
+  }
+  await page.click('.panel-close');
+
+  // ---- 6d. research panel -------------------------------------------------
+  // The panel is locked until a Laboratory exists — nothing else in the silo
+  // produces research points. Verify the lock, then satisfy it.
+  const lockedBefore = await page.evaluate(
+    () => document.querySelector('.nav-btn[data-panel="research"]').disabled
+  );
+  if (!lockedBefore) fail('research was reachable with no Laboratory built');
+  else ok('research is locked until a Laboratory exists, and says why');
+
+  await page.evaluate(async () => {
+    const { store, game } = window.DEEPWATER;
+    const { build } = await import('./src/sim/build.js');
+    // Drop a Laboratory into the first free bay on floor 13.
+    const floor = store.state.silo.floors[12];
+    const slot = floor.slots.findIndex((s) => s == null);
+    store.state.resources.scrap += 500;
+    store.state.resources.parts += 60;
+    store.dispatchAll(build(store.state, 13, slot, 'laboratory'));
+    game.runCycles(10); // let construction finish and points accrue
+  });
+
+  await page.click('.nav-btn[data-panel="research"]');
+  await page.waitForSelector('.node-row', { timeout: 4000 });
+  const tree = await page.evaluate(() => {
+    const branches = document.querySelectorAll('.tabs .tab').length;
+    const nodes = [...document.querySelectorAll('.node-row')];
+    return {
+      branches,
+      nodes: nodes.length,
+      startable: nodes.filter((n) => !n.classList.contains('locked') && !n.disabled).length,
+      // Nodes gated on wasteland material must say so in toxin, not just grey.
+      artifactGated: document.querySelectorAll('.node-why.rad').length,
+    };
+  });
+  if (tree.branches !== 6) fail(`research shows ${tree.branches} branches, expected 6`);
+  if (tree.nodes === 0) fail('research branch rendered no nodes');
+  ok(`research tree: ${tree.branches} branches, ${tree.nodes} nodes in view, ${tree.startable} startable`);
+
+  const started = await page.evaluate(async () => {
+    const { store } = window.DEEPWATER;
+    const node = [...document.querySelectorAll('.node-row')].find(
+      (n) => !n.classList.contains('locked') && !n.disabled
+    );
+    if (!node) return { ok: false, why: 'nothing startable' };
+    node.click();
+    await new Promise((r) => setTimeout(r, 150));
+    const begin = [...document.querySelectorAll('.modal-foot .btn')].find((b) => b.textContent === 'Begin');
+    if (!begin) return { ok: false, why: 'no Begin button' };
+    begin.click();
+    await new Promise((r) => setTimeout(r, 150));
+    return { ok: !!store.state.research.active, id: store.state.research.active?.id };
+  });
+  if (!started.ok) fail(`could not start research: ${started.why}`);
+  else ok(`started research from the panel (${started.id})`);
+
+  // The artifact gate has to be legible from the tree itself, before the
+  // player has ever launched an expedition — that's what makes "the tech
+  // tree pulls you outside" a visible rule rather than a design note.
+  const gateVisible = await page.evaluate(async () => {
+    const tabs = [...document.querySelectorAll('.tabs .tab')];
+    const surface = tabs.find((t) => t.textContent.includes('Surface'));
+    surface?.click();
+    await new Promise((r) => setTimeout(r, 220));
+    const chips = [...document.querySelectorAll('.node-meta .chip.rad')];
+    // And the panel should say plainly that no research substitutes for it.
+    const prose = [...document.querySelectorAll('.note')].map((n) => n.textContent).join(' ');
+    return {
+      chips: chips.length,
+      first: chips[0]?.textContent || '',
+      mentionsWasteland: /wasteland|another silo|recovered/i.test(prose),
+    };
+  });
+  if (!gateVisible.chips) {
+    fail('no research node visibly gated on recovered material — the tree does not pull the player outside');
+  } else if (!gateVisible.mentionsWasteland) {
+    fail('artifact gates are shown but never explained');
+  } else {
+    ok(`artifact gates visible on ${gateVisible.chips} nodes (e.g. "${gateVisible.first}") and explained`);
+  }
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'research.png') });
+  await page.click('.panel-close');
+
   await page.click('.nav-btn[data-panel="log"]');
   await page.waitForSelector('.log-entry', { timeout: 4000 });
   ok('log panel renders entries');

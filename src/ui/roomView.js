@@ -11,6 +11,7 @@ import { getRoom } from '../data/rooms.js';
 import { roomCapability, roomDraw, staffSlots } from '../sim/economy.js';
 import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
+import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost } from '../sim/build.js';
 import { el, modal, row, button, fmt, fmtDelta, meter, chip, emptyState, sectionLabel, toast, humanise } from './dom.js';
 
 export function openRoom(store, roomId, shell) {
@@ -177,12 +178,56 @@ export function openRoom(store, roomId, shell) {
       )
     );
 
+    // ---- upgrade ----------------------------------------------------------
+    const up = canUpgrade(s, roomId);
+    body.appendChild(sectionLabel('Upgrade'));
+    if (r.upgradingUntilCycle > s.clock.cycle) {
+      body.appendChild(
+        el('div.note.warn', `Being upgraded — offline for ${r.upgradingUntilCycle - s.clock.cycle} more shifts.`)
+      );
+    } else if (r.level >= BAL.silo.upgrade.maxLevel) {
+      body.appendChild(el('div.note', 'At maximum level. Widen it instead: build the same room in the bay beside it.'));
+    } else {
+      const cost = up.cost || upgradeCost(r);
+      body.appendChild(
+        el(
+          'div.note',
+          `Level ${r.level} → ${r.level + 1}: ${describeCost(cost)}, and ` +
+            `${BAL.silo.upgrade.downtimeCycles} shifts offline. Adds output and staff slots.`
+        )
+      );
+      if (!up.ok) body.appendChild(el('div.note.warn', up.reason));
+      body.appendChild(
+        el(
+          'div.pad',
+          button(`Upgrade to level ${r.level + 1}`, {
+            class: 'primary wide',
+            disabled: !up.ok,
+            onclick: () => {
+              store.dispatchAll(upgrade(store.state, roomId));
+              toast(`${def.name} upgrading.`);
+              rerender();
+            },
+          })
+        )
+      );
+    }
+
+    const actions = [button('Close', { onclick: () => handle?.close() })];
+    const dem = canDemolish(s, roomId);
+    actions.unshift(
+      button('Strip out', {
+        class: 'danger',
+        disabled: !dem.ok,
+        title: dem.ok ? `Recovers ${describeCost(dem.refund)}` : dem.reason,
+        onclick: () => confirmDemolish(store, roomId, def, handle),
+      })
+    );
+
     return modal({
       title: `${def.name} · Floor ${r.floor}`,
       body,
-      actions: [
-        button('Close', { onclick: () => handle?.close() }),
-      ],
+      actions,
       onClose: () => store.dispatch({ type: 'UI_SET', ui: { selectedRoom: null } }),
     });
   }
@@ -234,6 +279,39 @@ function pickCrew(store, roomId, def, done) {
     );
   }
   const h = modal({ title: 'Assign crew', body, actions: [button('Cancel', { onclick: () => h.close() })] });
+}
+
+/**
+ * Stripping a room out is cheap to do and expensive to undo, so it asks —
+ * and it says exactly what the silo loses, not just "are you sure".
+ */
+function confirmDemolish(store, roomId, def, parent) {
+  const room = store.state.silo.rooms[roomId];
+  const check = canDemolish(store.state, roomId);
+  const body = el(
+    'div',
+    el('div.note', `${def.name} on floor ${room.floor}, level ${room.level}, ${room.width} bay${room.width === 1 ? '' : 's'}.`),
+    el('div.note', `Salvage recovered: ${describeCost(check.refund)}. The crew is reassigned.`),
+    room.staff.length
+      ? el('div.note.warn', `${room.staff.length} resident${room.staff.length === 1 ? '' : 's'} posted here will be left idle.`)
+      : null
+  );
+  const h = modal({
+    title: `Strip out the ${def.name}?`,
+    body,
+    actions: [
+      button('Cancel', { onclick: () => h.close() }),
+      button('Strip it out', {
+        class: 'danger',
+        onclick: () => {
+          store.dispatchAll(demolish(store.state, roomId));
+          h.close();
+          parent?.close();
+          toast(`${def.name} stripped out.`);
+        },
+      }),
+    ],
+  });
 }
 
 function tile(k, v, cls = '') {
