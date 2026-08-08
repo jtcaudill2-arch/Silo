@@ -11,20 +11,76 @@ no network. Canvas for the silo, DOM for everything you read.
 ## Running it
 
 ```bash
+git clone -b claude/deepwater-game-design-5pml4z \
+  https://github.com/jtcaudill2-arch/Silo.git
+cd Silo
 npm run serve      # http://localhost:8123
 ```
 
-ES modules and service workers both refuse to load from `file://`, so it needs
-to be served over http — that's all `tools/serve.mjs` does.
+There is no `npm install` step and there are no dependencies — the game is
+vanilla ES modules and runs exactly as it sits in the tree. ES modules and
+service workers both refuse to load from `file://`, so it does need to be
+served over http, and `tools/serve.mjs` is a fifty-line static server that
+does nothing else. Any other static server works just as well.
+
+Open `http://localhost:8123` in a browser. On a phone, serve it on your
+machine and visit `http://<your-machine>:8123` — Chrome and Safari will both
+offer to install it to the home screen, after which it runs offline with no
+network at all.
+
+Progress autosaves to IndexedDB continuously and on tab close. Settings ⚙ has
+export/import if you want the save as a file.
+
+## Your first ten minutes
+
+The game opens on a handover note from the previous mayor. It is the tutorial
+and it is worth reading; you can reopen it any time from Settings ⚙. The short
+version:
+
+1. **Build Recycling, then a Workshop, then a Laboratory.** Scrap and parts
+   are what every other room is made of, and nothing but a Laboratory makes
+   research points. The starting stores buy about five buildings.
+2. **Staff everything you build.** A new room has no crew and produces
+   nothing until it does — tap the room, or use *Auto-assign* on the Residents
+   panel. The room view says "Unstaffed. This room is producing nothing."
+3. **Watch flows, not stockpiles.** The resource strip shows a per-cycle
+   delta under each figure. A tank that reads full and is falling is a worse
+   position than one that reads low and is rising; the silo will warn you in
+   days-of-runway when something turns negative.
+4. **Repair before things fail.** Rooms lose condition every shift. A
+   generator hall that hits zero takes every other room with it. Build a
+   Maintenance Bay early and order repairs when the condition figure is in
+   the thirties.
+5. **Open the airlock as soon as you can.** Research is gated on artifacts
+   and artifacts only come from the surface. The chain is Env-Suit I →
+   Airlock → Suit Bay → Armory → Foundry → Chem Lab, and the near ruins drop
+   nothing worth having, so keep climbing the suit tiers.
+
+Time runs at one shift per real minute. `1×/2×/4×` is top right, space bar
+pauses, and closing the tab is fine — the silo keeps running and hands you a
+report on what you missed.
 
 ## Tests
 
 ```bash
-npm test                    # headless sim: 100 game days, no rendering
+npm test                        # everything, in order, ending with the browser
+npm run test:reach              # can the game be finished at all? (milliseconds)
+npm run test:sim                # headless: 100 game days, no rendering
+npm run test:pacing -- --days=800
 node test/harness.mjs --days=300 --verbose
-node test/browser.mjs       # real-browser smoke test, including offline boot
-node test/browser.mjs --shots   # ...and write screenshots to .shots/
+node test/browser.mjs --shots   # real browser, incl. offline boot; writes .shots/
 ```
+
+`test/browser.mjs` is the only one that needs anything installed
+(`npm i -D playwright`); the rest are pure Node.
+
+`reachability.mjs` is the cheapest and the one to run first. It is a
+fixed-point solve over the research tree, the loot tables and the band suit
+gates — not a simulation — so it holds for every seed and every strategy. It
+exists because the game shipped for a while in a state where `env_suit_3`
+needed an artifact that only dropped in a band requiring `env_suit_3`, which
+made all three endings unreachable forever, and eight hundred days of played
+simulation could not tell you that.
 
 The headless harness runs two silos: a *sufficient* one that must survive 100
 days without diverging, and the real six-room opening, which is supposed to
