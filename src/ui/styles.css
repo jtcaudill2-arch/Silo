@@ -888,6 +888,22 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .ending-row-head .v { font-size: 12px; color: var(--bone-faint); }
 .ending-row-detail { margin-top: 6px; font-size: 12px; color: var(--bone-faint); line-height: 1.5; }
 
+/* ── The handover ────────────────────────────────────────────────────── */
+.briefing .report-head { border-bottom-color: var(--sodium); }
+.briefing-para {
+  padding: 14px 18px 0; font-size: 14px; line-height: 1.68;
+  color: var(--bone-dim); max-width: 64ch;
+}
+.briefing-para:first-child { padding-top: 20px; color: var(--bone); }
+.briefing-para:last-of-type { padding-bottom: 4px; }
+.briefing-dots { display: flex; gap: 6px; justify-content: center; padding: 20px 0 8px; }
+.briefing-dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--concrete-lit);
+}
+.briefing-dots i.on { background: var(--sodium); }
+.report-foot .btn.ghost:first-child { margin-right: auto; min-width: 84px; }
+
 /* ── Scripted crises ─────────────────────────────────────────────────── */
 .crisis-headline {
   font-family: var(--font-display); font-size: 14px; letter-spacing: 0.05em;
@@ -907,6 +923,16 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
     transition-duration: 0.001ms !important;
   }
   .boot-bar i { animation: none; width: 100%; }
+}
+/* The explicit toggle has to do everything the media query does. Turning
+   the setting on when the OS has no opinion previously stopped the boot bar
+   and nothing else, which is not what the label promises. */
+body.reduced-motion *,
+body.reduced-motion *::before,
+body.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
 }
 body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 

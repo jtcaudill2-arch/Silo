@@ -71,6 +71,35 @@ try {
   if (errors.length) fail(`console errors on boot:\n      ${errors.join('\n      ')}`);
   else ok('no console errors on boot');
 
+  // ---- 1b. the handover -----------------------------------------------------
+  // A new silo opens on the previous mayor's note with the clock stopped.
+  await page.waitForSelector('.report.briefing', { timeout: 8000 });
+  const brief = await page.evaluate(() => ({
+    heading: document.querySelector('.briefing .report-title')?.textContent || '',
+    paras: document.querySelectorAll('.briefing-para').length,
+    dots: document.querySelectorAll('.briefing-dots i').length,
+    speed: window.DEEPWATER.store.state.settings.speed,
+    backDisabled: document.querySelector('.report-foot .btn.ghost:nth-of-type(2)')?.disabled,
+  }));
+  if (!brief.heading || !brief.paras) fail('the handover note showed no text');
+  else if (brief.speed !== 0) fail(`the handover did not stop the clock (speed ${brief.speed})`);
+  else ok(`handover opens paused: "${brief.heading}", ${brief.dots} sections`);
+
+  // Paging forward reaches the last section, whose button takes the desk.
+  for (let i = 1; i < brief.dots; i++) await page.click('.report-foot .btn.primary');
+  const lastLabel = await page.$eval('.report-foot .btn.primary', (b) => b.textContent);
+  if (lastLabel !== 'Take the desk') fail(`last handover button reads "${lastLabel}"`);
+  else ok('handover pages through to "Take the desk"');
+  await page.click('.report-foot .btn.primary');
+  await page.waitForSelector('.report.briefing', { state: 'detached', timeout: 4000 });
+  const afterBrief = await page.evaluate(() => ({
+    seen: window.DEEPWATER.store.state.flags.tutorialSeen,
+    speed: window.DEEPWATER.store.state.settings.speed,
+  }));
+  if (!afterBrief.seen) fail('finishing the handover did not set tutorialSeen');
+  else if (afterBrief.speed !== 1) fail(`the silo did not resume after the handover (speed ${afterBrief.speed})`);
+  else ok('handover dismisses, marks itself seen, and resumes at 1×');
+
   // ---- 2. state is live ----------------------------------------------------
   const snap = await page.evaluate(() => {
     const s = window.DEEPWATER.store.state;

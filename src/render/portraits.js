@@ -54,6 +54,9 @@ export function portraitCanvas(citizen, scale = 3) {
   const c = document.createElement('canvas');
   c.width = SIZE * scale;
   c.height = SIZE * scale;
+  // Decorative. The name is always adjacent, so a screen reader announcing
+  // "canvas" — or worse, "portrait of Alder Cordry, Alder Cordry" — is noise.
+  c.setAttribute('aria-hidden', 'true');
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   drawPortrait(ctx, citizen, scale);

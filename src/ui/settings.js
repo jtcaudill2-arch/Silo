@@ -111,6 +111,32 @@ export function openSettings(store, game, shell) {
       )
     );
 
+    // ---- the handover ------------------------------------------------------
+    body.appendChild(sectionLabel('The handover'));
+    body.appendChild(
+      el(
+        'div.pad',
+        button('Read the previous mayor’s note again', {
+          class: 'wide',
+          onclick: async () => {
+            handle?.close();
+            const resume = store.state.settings.speed ?? 1;
+            shell.setSpeed(0);
+            const { showBriefing } = await import('./briefing.js');
+            await showBriefing();
+            shell.setSpeed(resume || 1);
+          },
+        })
+      )
+    );
+    body.appendChild(
+      el(
+        'div.note',
+        'Halvard Sten ran Silo 12 for fourteen years and left a note on the desk. ' +
+          'It is the closest thing to instructions you are going to get.'
+      )
+    );
+
     // ---- start over --------------------------------------------------------
     body.appendChild(sectionLabel('Start over'));
     body.appendChild(

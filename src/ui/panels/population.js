@@ -62,6 +62,10 @@ export const populationPanel = {
         'div.roster-controls',
         el('input.roster-search', {
           type: 'search',
+          // A placeholder is not an accessible name — it disappears the
+          // moment anybody types, and screen readers are not required to
+          // announce it at all.
+          'aria-label': 'Search the roster by name',
           placeholder: 'Find a name…',
           value: query,
           oninput: (e) => {

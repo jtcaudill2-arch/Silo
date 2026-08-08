@@ -17,6 +17,7 @@ import { loadGame, Autosave } from './core/save.js';
 import { runCatchup } from './core/catchup.js';
 import { showReturnReport } from './ui/returnReport.js';
 import { showEnding } from './ui/ending.js';
+import { showBriefing } from './ui/briefing.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
@@ -81,7 +82,15 @@ async function main() {
     state = createNewGame({});
     isNewGame = true;
   }
-  state.settings.reducedMotion = reduced;
+  // The system preference is the *default*, not an override. Assigning it
+  // unconditionally meant a player who turned reduced motion on by hand got
+  // it turned back off on every reload, because their OS had no opinion —
+  // the one setting in here that somebody might actually need was the one
+  // that would not stay put.
+  if (state.settings.reducedMotion === undefined || isNewGame) {
+    state.settings.reducedMotion = reduced;
+  }
+  document.body.classList.toggle('reduced-motion', !!state.settings.reducedMotion);
   const store = createStore(rehydrate(state));
 
   if (isNewGame) {
@@ -211,6 +220,20 @@ async function main() {
 
   status('Ready.');
   boot.remove();
+
+  // A new silo opens on the handover note from the previous mayor. It's the
+  // tutorial, and it's a document rather than an overlay with arrows on it —
+  // the game is read, so its tutorial is too. Skippable, and reopenable from
+  // Settings afterwards.
+  if (isNewGame && !store.state.flags.tutorialSeen) {
+    shell.setSpeed(0);
+    await showBriefing({
+      onDone: () => {
+        store.dispatch({ type: 'FLAG_SET', flags: { tutorialSeen: true } });
+        shell.setSpeed(1);
+      },
+    });
+  }
 
   // The report is the reward for coming back, so it gets the screen to
   // itself and the silo stays paused until it's been read.
