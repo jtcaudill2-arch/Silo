@@ -19,10 +19,13 @@ import { showReturnReport } from './ui/returnReport.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
+import { loadAtlas } from './render/sprites.js';
+import * as audio from './audio/audio.js';
 
 import { Shell } from './ui/shell.js';
 import { openRoom } from './ui/roomView.js';
 import { toast } from './ui/dom.js';
+import { openSettings } from './ui/settings.js';
 import { resourcesPanel } from './ui/panels/resources.js';
 import { populationPanel } from './ui/panels/population.js';
 import { buildPanel } from './ui/panels/build.js';
@@ -100,6 +103,7 @@ async function main() {
   const siloCanvas = document.getElementById('silo-canvas');
   const gaugeCanvas = document.getElementById('gauge-canvas');
 
+  await loadAtlas('./assets/');
   appRoot.hidden = false; // canvases need layout before they can size themselves
   const renderer = new SiloRenderer(siloCanvas, store);
   const gauge = new DepthGauge(gaugeCanvas, store, renderer);
@@ -134,6 +138,10 @@ async function main() {
   };
   shell.onAlertFloor = (floor, kind) => gauge.flag(floor, kind);
   shell.onFocusFloor = (n) => renderer.focusFloor(n);
+  document
+    .getElementById('btn-settings')
+    .addEventListener('click', () => openSettings(store, game, shell));
+  if (store.state.settings.largeText) document.documentElement.classList.add('large-text');
   shell.onOpenRoom = (roomId) => {
     const room = store.state.silo.rooms[roomId];
     if (room) renderer.focusFloor(room.floor);
@@ -146,7 +154,39 @@ async function main() {
   on('death', ({ citizen }) => {
     const room = citizen.job ? store.state.silo.rooms[citizen.job.roomId] : null;
     if (room) gauge.flag(room.floor, 'warn');
+    audio.play('death');
   });
+
+  // ---- audio --------------------------------------------------------------
+  // Browsers require a gesture before any sound; so does taste. The first
+  // tap anywhere starts the context and unmutes if the player wants it.
+  const kickAudio = async () => {
+    await audio.start();
+    audio.setMuted(store.state.settings.muted !== false);
+    audio.setVolume(store.state.settings.volume ?? 0.6);
+  };
+  document.addEventListener('pointerdown', kickAudio, { once: true });
+  document.addEventListener('keydown', kickAudio, { once: true });
+
+  const CUES = {
+    'action:ROOM_BUILD': 'build',
+    'action:ROOM_MERGE': 'build',
+    'action:EXCAVATION_START': 'excavate',
+    'action:EXCAVATION_COMPLETE': 'complete',
+    'action:RESEARCH_COMPLETE': 'research',
+    'action:EXPEDITION_LAUNCH': 'depart',
+    'action:EXPEDITION_RESOLVE': 'ret',
+    'action:DECON': 'decon',
+    'action:TRANSMISSION': 'radio',
+    'action:CRIME_ADD': 'alert',
+    'action:INVESTIGATION_OPEN': 'alarm',
+    'action:CITIZEN_ADD': 'birth',
+    'action:GEAR_CRAFT': 'confirm',
+    'action:SILO_TREATY': 'transmit',
+  };
+  for (const [channel, cue] of Object.entries(CUES)) on(channel, () => audio.play(cue));
+  on('alert', (a) => audio.play(a.kind === 'warn' ? 'alarm' : 'alert'));
+  on('cycle', () => audio.updateAmbient(store.state));
 
   // ---- persistence --------------------------------------------------------
   const autosave = new Autosave(store);

@@ -10,6 +10,7 @@
 import { BAL } from '../config/balance.js';
 import { PALETTE, SLOT_W, FLOOR_H } from './canvas.js';
 import { withAlpha } from './floors.js';
+import * as sprites from './sprites.js';
 
 export function drawCitizens(ctx, state, cam) {
   const range = cam.visibleFloorRange();
@@ -41,7 +42,11 @@ export function drawCitizens(ctx, state, cam) {
     for (const { c, room } of list) {
       if (drawn >= BAL.render.maxSpritesPerFrame - cam.drawn) return;
       const x = citizenX(c, room, t, reduced);
-      drawOne(ctx, c, x, y);
+      // Walking if they're between posts or idle; working if they're at one.
+      const moving = !room || c.status !== 'working';
+      if (!sprites.drawAt(ctx, sprites.citizenFrame(c, cam.time, moving && !reduced), Math.round(x) - 3, y - 9, 1)) {
+        drawOne(ctx, c, x, y);
+      }
       drawn++;
     }
   }

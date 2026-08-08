@@ -1,0 +1,415 @@
+{
+ "width": 1024,
+ "height": 44,
+ "tile": 32,
+ "frames": {
+  "room_generator_hall": {
+   "x": 0,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_reactor": {
+   "x": 33,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_water_reclaimer": {
+   "x": 66,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_hydroponics": {
+   "x": 99,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_protein_vats": {
+   "x": 132,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_air_filtration": {
+   "x": 165,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_residences": {
+   "x": 198,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_cafeteria": {
+   "x": 231,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_clinic": {
+   "x": 264,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_workshop": {
+   "x": 297,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_recycling": {
+   "x": 330,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_foundry": {
+   "x": 363,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_munitions": {
+   "x": 396,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_armory": {
+   "x": 429,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_barracks": {
+   "x": 462,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_training_yard": {
+   "x": 495,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_sheriffs_office": {
+   "x": 528,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_holding_cells": {
+   "x": 561,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_laboratory": {
+   "x": 594,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_archive": {
+   "x": 627,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_schoolhouse": {
+   "x": 660,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_radio_room": {
+   "x": 693,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_airlock": {
+   "x": 726,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_suit_bay": {
+   "x": 759,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_storage_depot": {
+   "x": 792,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_deep_mine": {
+   "x": 825,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_maintenance_bay": {
+   "x": 858,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "room_chem_lab": {
+   "x": 891,
+   "y": 0,
+   "w": 32,
+   "h": 32
+  },
+  "citizen_worker_walk0": {
+   "x": 924,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_worker_walk1": {
+   "x": 933,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_worker_walk2": {
+   "x": 942,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_worker_walk3": {
+   "x": 951,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_worker_work0": {
+   "x": 960,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_worker_work1": {
+   "x": 969,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_walk0": {
+   "x": 978,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_walk1": {
+   "x": 987,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_walk2": {
+   "x": 996,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_walk3": {
+   "x": 1005,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_work0": {
+   "x": 1014,
+   "y": 0,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_idle_work1": {
+   "x": 0,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_walk0": {
+   "x": 9,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_walk1": {
+   "x": 18,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_walk2": {
+   "x": 27,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_walk3": {
+   "x": 36,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_work0": {
+   "x": 45,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_hurt_work1": {
+   "x": 54,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_walk0": {
+   "x": 63,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_walk1": {
+   "x": 72,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_walk2": {
+   "x": 81,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_walk3": {
+   "x": 90,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_work0": {
+   "x": 99,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_irradiated_work1": {
+   "x": 108,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_walk0": {
+   "x": 117,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_walk1": {
+   "x": 126,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_walk2": {
+   "x": 135,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_walk3": {
+   "x": 144,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_work0": {
+   "x": 153,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "citizen_child_work1": {
+   "x": 162,
+   "y": 33,
+   "w": 8,
+   "h": 10
+  },
+  "digit_0": {
+   "x": 171,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_1": {
+   "x": 175,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_2": {
+   "x": 179,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_3": {
+   "x": 183,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_4": {
+   "x": 187,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_5": {
+   "x": 191,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_6": {
+   "x": 195,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_7": {
+   "x": 199,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_8": {
+   "x": 203,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  },
+  "digit_9": {
+   "x": 207,
+   "y": 33,
+   "w": 3,
+   "h": 5
+  }
+ }
+}

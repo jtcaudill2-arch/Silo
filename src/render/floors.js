@@ -14,6 +14,7 @@ import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
 import { roomCapability } from '../sim/economy.js';
 import { PALETTE, SLOT_W, FLOOR_H, SLOTS, WORLD_W } from './canvas.js';
+import * as sprites from './sprites.js';
 
 const GAP = 2; // gutter between a room and the floor shell
 
@@ -102,8 +103,11 @@ export function drawRoom(ctx, room, state, cam, flicker) {
     ctx.fillRect(x + 1, y + 2, w - 2, 4);
   }
 
-  // Placeholder machinery blocks — replaced by the sprite atlas in Phase 8.
-  drawPlaceholderContents(ctx, room, def, x, y, w, h, running ? tint : PALETTE.concrete);
+  // Atlas fixture if we have one, procedural blocks if we don't. The game
+  // must never fail to draw a room because an image didn't load.
+  if (!drawFixture(ctx, room, def, x, y, w, h, running)) {
+    drawPlaceholderContents(ctx, room, def, x, y, w, h, running ? tint : PALETTE.concrete);
+  }
 
   // Shell.
   ctx.strokeStyle = running ? withAlpha(tint, 0.45) : withAlpha(PALETTE.concrete, 0.9);
@@ -147,6 +151,27 @@ export function drawRoom(ctx, room, state, cam, flicker) {
 }
 
 /**
+ * One atlas fixture per bay, so a three-wide room reads as three machines
+ * rather than one stretched one. Dimmed when the room isn't running.
+ */
+function drawFixture(ctx, room, def, x, y, w, h, running) {
+  if (!sprites.isLoaded()) return false;
+  const name = `room_${def.id}`;
+  if (!sprites.frame(name)) return false;
+  const bayW = w / room.width;
+  ctx.save();
+  ctx.globalAlpha = running ? 1 : 0.45;
+  for (let i = 0; i < room.width; i++) {
+    sprites.draw(ctx, name, x + i * bayW, y, bayW, h);
+  }
+  ctx.restore();
+  // Upgrade pips stay: level has to be readable without opening the room.
+  ctx.fillStyle = withAlpha(PALETTE.bone, 0.6);
+  for (let i = 0; i < room.level; i++) ctx.fillRect(x + 3 + i * 3, y + h - 5, 2, 2);
+  return true;
+}
+
+/**
  * Deterministic block shapes per room type — the same room always looks the
  * same, so the player learns to recognise floors by silhouette.
  */
@@ -171,12 +196,22 @@ export function drawFloorLabel(ctx, n, state, cam) {
   const floor = state.silo.floors[n - 1];
   if (!floor) return;
   const y = (n - 1) * FLOOR_H;
-  ctx.font = '8px monospace';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = floor.excavated ? withAlpha(PALETTE.bone, 0.4) : withAlpha(PALETTE.bone, 0.15);
-  ctx.fillText(String(n), -4, y + FLOOR_H / 2);
-  ctx.textAlign = 'left';
+  // Painted on the bulkhead just inside the shaft — outside it there is no
+  // margin at all once the silo fills the viewport.
+  ctx.save();
+  ctx.globalAlpha = floor.excavated ? 0.55 : 0.22;
+  if (!sprites.drawNumber(ctx, n, 2, y + 3)) {
+    // No atlas: fall back to a system glyph. This is in-world signage, not
+    // UI text, which is why it's allowed on the canvas at all.
+    ctx.globalAlpha = 1;
+    ctx.font = '8px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = floor.excavated ? withAlpha(PALETTE.bone, 0.4) : withAlpha(PALETTE.bone, 0.15);
+    ctx.fillText(String(n), 12, y + FLOOR_H / 2);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
 }
 
 export function lastExcavatedFloor(state) {

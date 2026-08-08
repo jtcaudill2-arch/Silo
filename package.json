@@ -13,7 +13,8 @@
     "test:world": "node test/world.mjs",
     "test:order": "node test/order.mjs",
     "test:browser": "node test/browser.mjs",
-    "precache": "node tools/gen-precache.mjs"
+    "precache": "node tools/gen-precache.mjs",
+    "assets": "node tools/gen-atlas.mjs && node tools/gen-icons.mjs && node tools/gen-precache.mjs"
   },
   "engines": { "node": ">=18" }
 }

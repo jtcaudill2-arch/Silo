@@ -14,6 +14,8 @@ const CACHE = `${VERSION}`;
 /* ---- PRECACHE:BEGIN (generated — do not edit by hand) ---- */
 const PRECACHE = [
   './',
+  './assets/atlas.json',
+  './assets/atlas.png',
   './assets/fonts/IBMPlexMono-Regular.woff2',
   './assets/fonts/IBMPlexSans-Medium.woff2',
   './assets/fonts/IBMPlexSans-Regular.woff2',
@@ -23,6 +25,7 @@ const PRECACHE = [
   './assets/icon-maskable-512.png',
   './index.html',
   './manifest.webmanifest',
+  './src/audio/audio.js',
   './src/config/balance.js',
   './src/core/catchup.js',
   './src/core/events.js',
@@ -48,6 +51,7 @@ const PRECACHE = [
   './src/render/depthgauge.js',
   './src/render/floors.js',
   './src/render/portraits.js',
+  './src/render/sprites.js',
   './src/sim/build.js',
   './src/sim/combat.js',
   './src/sim/diplomacy.js',
@@ -72,6 +76,7 @@ const PRECACHE = [
   './src/ui/panels/resources.js',
   './src/ui/returnReport.js',
   './src/ui/roomView.js',
+  './src/ui/settings.js',
   './src/ui/shell.js',
   './src/ui/styles.css',
 ];
