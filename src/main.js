@@ -24,6 +24,7 @@ import { Shell } from './ui/shell.js';
 import { openRoom } from './ui/roomView.js';
 import { toast } from './ui/dom.js';
 import { resourcesPanel } from './ui/panels/resources.js';
+import { populationPanel } from './ui/panels/population.js';
 import { logPanel } from './ui/panels/log.js';
 
 const boot = document.getElementById('boot');
@@ -107,7 +108,7 @@ async function main() {
 
   // ---- shell --------------------------------------------------------------
   const shell = new Shell(store, game);
-  shell.register(resourcesPanel).register(logPanel);
+  shell.register(populationPanel).register(resourcesPanel).register(logPanel);
   shell.buildNav();
   shell.setSpeed(1);
   shell.renderChrome();
@@ -117,6 +118,12 @@ async function main() {
     else store.dispatch({ type: 'UI_SET', ui: { cameraFloor: hit.floor } });
   };
   shell.onAlertFloor = (floor, kind) => gauge.flag(floor, kind);
+  shell.onOpenRoom = (roomId) => {
+    const room = store.state.silo.rooms[roomId];
+    if (room) renderer.focusFloor(room.floor);
+    shell.close();
+    openRoom(store, roomId, shell);
+  };
 
   // A death pulses the rail at the floor it happened on, so the player's eye
   // goes to the place rather than to a notification.

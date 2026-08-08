@@ -143,6 +143,70 @@ try {
   }
 
   await page.click('.panel-close');
+
+  // ---- 6b. the roster: windowed list, portraits, citizen cards ------------
+  await page.click('.nav-btn[data-panel="population"]');
+  await page.waitForSelector('.roster-row', { timeout: 4000 });
+  const roster = await page.evaluate(() => {
+    const rows = document.querySelectorAll('.roster-row');
+    const total = window.DEEPWATER.store.state.citizenIds.length;
+    const portraits = document.querySelectorAll('.roster-row .portrait-sm');
+    // A portrait that drew nothing is a blank canvas; sample one for pixels.
+    let inked = 0;
+    if (portraits[0]) {
+      const d = portraits[0].getContext('2d').getImageData(0, 0, portraits[0].width, portraits[0].height).data;
+      const seen = new Set();
+      for (let i = 0; i < d.length; i += 4) seen.add(`${d[i]},${d[i + 1]},${d[i + 2]}`);
+      inked = seen.size;
+    }
+    return { rendered: rows.length, total, portraits: portraits.length, colours: inked };
+  });
+  if (roster.rendered === 0) fail('roster rendered no rows');
+  else if (roster.rendered >= roster.total) {
+    fail(`roster rendered all ${roster.rendered} rows — the list is not windowed`);
+  } else {
+    ok(`roster windows ${roster.rendered} of ${roster.total} rows`);
+  }
+  if (roster.colours < 4) fail(`portraits look blank (${roster.colours} colours)`);
+  else ok(`procedural portraits drawing (${roster.colours} distinct colours)`);
+
+  await page.click('.roster-row');
+  await page.waitForSelector('.modal .card-name', { timeout: 4000 });
+  const card = await page.evaluate(() => {
+    const m = document.querySelector('.modal');
+    return {
+      name: m.querySelector('.card-name')?.textContent,
+      sub: m.querySelector('.card-sub')?.textContent,
+      skills: m.querySelectorAll('.skill-row').length,
+      stats: m.querySelectorAll('.stat-pip').length,
+      sections: [...m.querySelectorAll('.section-label')].map((n) => n.textContent),
+    };
+  });
+  if (card.skills !== 7) fail(`citizen card shows ${card.skills} skills, expected 7`);
+  if (card.stats !== 5) fail(`citizen card shows ${card.stats} attributes, expected 5`);
+  if (!/\w+ \w+/.test(card.name || '')) fail(`citizen card name looks wrong: "${card.name}"`);
+  else ok(`citizen card: ${card.name} — ${card.sub}`);
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'citizen-card.png') });
+  await page.click('.modal-foot .btn');
+
+  // Filters must actually filter.
+  const filtered = await page.evaluate(() => {
+    const chips = [...document.querySelectorAll('.chip-row .chip')];
+    const idle = chips.find((c) => c.textContent === 'Idle');
+    idle.click();
+    return new Promise((res) =>
+      setTimeout(() => {
+        const subs = [...document.querySelectorAll('.roster-sub')].map((n) => n.textContent);
+        res({ count: subs.length, allUnassigned: subs.every((s) => s === 'Unassigned') });
+      }, 120)
+    );
+  });
+  if (!filtered.count) fail('the Idle filter returned nothing at all');
+  else if (!filtered.allUnassigned) fail('the Idle filter let posted residents through');
+  else ok(`roster filters correctly (${filtered.count} idle rows, all unassigned)`);
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'roster.png') });
+  await page.click('.panel-close');
+
   await page.click('.nav-btn[data-panel="log"]');
   await page.waitForSelector('.log-entry', { timeout: 4000 });
   ok('log panel renders entries');

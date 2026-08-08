@@ -551,6 +551,119 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 .noscript { padding: 40px; text-align: center; color: var(--bone); }
 
+/* ------------------------------------------------------------- roster --- */
+.roster-head { flex: 0 0 auto; background: var(--concrete-deeper); border-bottom: 1px solid var(--hairline); }
+.roster-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  background: var(--hairline);
+}
+.roster-stat {
+  background: var(--concrete-deeper); padding: 7px 6px; text-align: center;
+  display: flex; flex-direction: column;
+}
+.roster-stat .k {
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--bone-faint);
+}
+.roster-stat .v { font-size: 16px; font-variant-numeric: tabular-nums; }
+.roster-stat .v.good { color: var(--verdigris); }
+.roster-stat .v.warn { color: var(--sodium); }
+
+.roster-controls { display: flex; gap: 6px; padding: 8px 10px 4px; }
+.roster-search {
+  flex: 1; min-width: 0; min-height: 32px; padding: 0 9px;
+  background: var(--concrete-deep); border: 1px solid var(--hairline);
+  border-radius: var(--radius); color: var(--bone); font-size: 13px;
+}
+.roster-search::placeholder { color: var(--bone-faint); }
+
+.chip-row {
+  display: flex; gap: 5px; padding: 5px 10px; overflow-x: auto;
+  scrollbar-width: none; align-items: center;
+}
+.chip-row::-webkit-scrollbar { display: none; }
+.chip-row .chip { flex: 0 0 auto; min-height: 26px; padding: 0 9px; }
+.chip-label {
+  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--bone-faint); flex: 0 0 auto;
+}
+
+.roster-body { position: relative; }
+.roster-spacer { position: relative; }
+.roster-viewport { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+.roster-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  height: 56px; padding: 0 10px; text-align: left;
+  border-bottom: 1px solid var(--hairline);
+}
+.roster-row:active { background: var(--sodium-dim); }
+.roster-main { flex: 1; min-width: 0; }
+.roster-name {
+  font-size: 13.5px; color: var(--bone);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.roster-sub {
+  font-size: 11.5px; color: var(--bone-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.roster-flags { display: flex; gap: 4px; margin-top: 2px; }
+.roster-flags .chip { font-size: 9px; padding: 1px 5px; }
+.roster-right { flex: 0 0 auto; text-align: right; }
+.roster-age { font-size: 14px; color: var(--bone); font-variant-numeric: tabular-nums; }
+.roster-skill { font-size: 10px; color: var(--bone-faint); }
+
+.portrait-sm { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
+.portrait-lg { width: 64px; height: 64px; flex: 0 0 auto; image-rendering: pixelated; }
+
+/* -------------------------------------------------------- citizen card --- */
+.card-head { display: flex; gap: 12px; padding: 4px 0 12px; align-items: flex-start; }
+.card-head-main { flex: 1; min-width: 0; }
+.card-name { font-family: var(--font-display); font-size: 19px; letter-spacing: 0.05em; }
+.card-sub { font-size: 12.5px; color: var(--bone-faint); margin-top: 1px; }
+.card-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+
+.vitals { display: flex; flex-direction: column; gap: 6px; }
+.vital { display: flex; align-items: center; gap: 9px; }
+.vital-k { flex: 0 0 74px; font-size: 11.5px; color: var(--bone-faint); }
+.vital .meter { flex: 1; }
+.vital-v { flex: 0 0 30px; text-align: right; font-size: 12px; }
+
+.skill-grid { display: flex; flex-direction: column; gap: 5px; padding: 0 0 4px; }
+.skill-row { display: flex; align-items: center; gap: 9px; }
+.skill-row.best .skill-k { color: var(--sodium); }
+.skill-k { flex: 0 0 84px; font-size: 11.5px; color: var(--bone-faint); }
+.skill-row .meter { flex: 1; }
+.skill-v { flex: 0 0 26px; text-align: right; font-size: 12px; }
+
+.stat-row-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.stat-pip {
+  background: var(--concrete-deeper); border: 1px solid var(--hairline);
+  border-radius: var(--radius); padding: 5px 2px; text-align: center;
+}
+.stat-pip .k {
+  display: block; font-family: var(--font-display); font-size: 8px;
+  letter-spacing: 0.08em; color: var(--bone-faint);
+}
+.stat-pip .v { font-size: 15px; }
+
+.trait-list { display: flex; flex-direction: column; gap: 6px; }
+.trait {
+  border-left: 2px solid var(--concrete-lit); padding: 4px 0 4px 9px;
+}
+.trait.good { border-left-color: var(--verdigris); }
+.trait.bad { border-left-color: var(--rust); }
+.trait-name { font-size: 12.5px; }
+.trait-desc { font-size: 11.5px; color: var(--bone-faint); }
+
+.hist-line {
+  display: flex; gap: 9px; padding: 4px 0; font-size: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.hist-day { color: var(--bone-faint); font-size: 10px; flex: 0 0 44px; }
+
+.row.bond-good .row-value { color: var(--verdigris); }
+.row.bond-bad .row-value { color: var(--rust); }
+
 /* ------------------------------------------------------- return report --- */
 .report-wrap { position: fixed; inset: 0; z-index: 80; }
 .report {
