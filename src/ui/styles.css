@@ -873,3 +873,91 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   :root { --gauge-w: 44px; --navbar-h: 58px; }
   body { font-size: 14.5px; }
 }
+
+/* ------------------------------------------------------------ military --- */
+.squad {
+  border-bottom: 1px solid var(--hairline); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.squad-head { display: flex; align-items: center; gap: 8px; }
+.squad-name { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.06em; flex: 1; }
+.squad-count { font-size: 12px; color: var(--bone-faint); }
+.squad-ready { display: flex; align-items: center; gap: 8px; }
+.squad-ready-k { font-size: 11px; color: var(--bone-faint); flex: 0 0 68px; }
+.squad-ready .meter { flex: 1; }
+.squad-ready-v { font-size: 12px; flex: 0 0 34px; text-align: right; }
+.squad-members { display: flex; flex-wrap: wrap; gap: 5px; }
+.squad-member {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 46px; padding: 3px; border: 1px solid var(--hairline);
+  border-radius: var(--radius); background: var(--concrete-deeper);
+}
+.squad-member-name {
+  font-size: 9px; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.squad-member-gear { font-size: 8.5px; color: var(--bone-faint); letter-spacing: 0.08em; }
+.squad-add {
+  width: 46px; min-height: 52px; border: 1px dashed var(--concrete-lit);
+  border-radius: var(--radius); color: var(--bone-faint); font-size: 18px;
+}
+.squad-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.gear-row {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--hairline);
+}
+.gear-row.locked { opacity: .5; }
+.gear-main { flex: 1; min-width: 0; }
+.gear-name { font-size: 13px; display: flex; align-items: center; gap: 5px; }
+.gear-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.gear-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.gear-why { font-size: 11.5px; color: var(--sodium); margin-top: 3px; }
+
+/* ------------------------------------------------------------- airlock --- */
+.band-row {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 11px 12px; text-align: left; border-bottom: 1px solid var(--hairline);
+}
+.band-row.locked { opacity: .55; }
+.band-main { flex: 1; min-width: 0; }
+.band-name { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.06em; }
+.band-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.band-why { font-size: 11.5px; color: var(--sodium); margin-top: 5px; }
+
+.risk { padding: 4px 0 8px; display: flex; flex-direction: column; gap: 9px; }
+.risk-verdict { font-size: 13.5px; color: var(--bone); }
+.risk-bar { display: flex; flex-direction: column; gap: 4px; }
+.risk-k {
+  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--bone-faint);
+}
+.risk-range { display: flex; align-items: center; gap: 7px; }
+.risk-lo, .risk-hi { font-size: 11px; color: var(--bone-faint); flex: 0 0 auto; }
+.risk-track {
+  position: relative; flex: 1; height: 8px;
+  background: var(--concrete); border-radius: 2px; overflow: hidden;
+}
+.risk-track > i { position: absolute; top: 0; bottom: 0; background: var(--sodium); }
+.risk-even {
+  position: absolute; top: -2px; bottom: -2px; width: 1px;
+  background: var(--bone); opacity: .6;
+}
+.risk-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--bone-faint); }
+
+.decon {
+  background: var(--toxin-dim); border-left: 3px solid var(--toxin);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.decon-title {
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--toxin);
+}
+.decon-sub { font-size: 12.5px; color: var(--bone-dim); }
+.decon-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.journal-line { font-size: 12.5px; padding: 3px 0; }
+.journal-day {
+  font-family: var(--font-display); font-size: 9.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--sodium); padding: 10px 0 3px;
+}

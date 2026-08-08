@@ -360,8 +360,6 @@ export const BAL = {
     barracksFoodPerSoldierPerDay: 0.4,
     garrisonOrderBonusPerSquad: 2.5,
     readinessWeights: { training: 0.3, equipment: 0.3, health: 0.2, morale: 0.1, ammo: 0.1 },
-    gearTierMult: [1.0, 1.4, 1.9, 2.5],
-    armorPerTier: 0.12,
     stipendChitsPerSoldierPerDay: 0.5,
   },
 
@@ -474,6 +472,8 @@ export const BAL = {
   // ------------------------------------------------------------ combat ---
   combat: {
     weights: { str: 0.3, agi: 0.2, combat: 0.5 },
+    gearTierMult: [1.0, 1.4, 1.9, 2.5], // weapon tier 1-4
+    armorPerTier: 0.12,
     ammoFactorFull: 1.0,
     ammoFactorEmpty: 0.45,
     moraleModBase: 0.8,

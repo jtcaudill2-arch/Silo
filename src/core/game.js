@@ -14,6 +14,8 @@ import * as jobs from '../sim/jobs.js';
 import * as population from '../sim/population.js';
 import * as research from '../sim/research.js';
 import * as build from '../sim/build.js';
+import * as military from '../sim/military.js';
+import * as expedition from '../sim/expedition.js';
 import { streamFor } from './rng.js';
 import { getRoom } from '../data/rooms.js';
 
@@ -68,6 +70,7 @@ export class Game {
     store.dispatchAll(economy.simulateCycle(this.state, this.ctx));
     store.dispatchAll(jobs.simulateCycle(this.state));
     store.dispatchAll(research.simulateCycle(this.state));
+    store.dispatchAll(military.simulateCycle(this.state));
     this.advanceConstruction(cycleNo);
 
     emit('cycle', cycleNo);
@@ -79,6 +82,11 @@ export class Game {
     store.dispatchAll(population.simulateDay(this.state, this.ctx));
     store.dispatchAll(jobs.manageSchool(this.state));
     store.dispatchAll(build.simulateDay(this.state, streamFor(this.state.meta.seed, 'structure', dayNo)));
+    store.dispatchAll(military.simulateDay(this.state));
+    // Expeditions resolve on their scheduled return day from a stream seeded
+    // on the expedition id, so the result is identical whether the player
+    // watched it or slept through it (spec §3.4).
+    store.dispatchAll(expedition.simulateDay(this.state));
     this.dailyOrder();
     this.checkFailure();
     emit('day', dayNo);

@@ -455,6 +455,279 @@ const logReducers = {
   },
 };
 
+// ------------------------------------------------------------- military ---
+
+const militaryReducers = {
+  GEAR_CRAFT(state, a) {
+    const id = String(state.military.nextGearId++);
+    state.military.gear[id] = {
+      id,
+      item: a.item,
+      durability: BAL.gear.durabilityMax,
+      integrity: BAL.gear.suit.integrityMax,
+      assignedTo: null,
+    };
+  },
+
+  GEAR_ASSIGN(state, a) {
+    const gear = state.military.gear[a.gearId];
+    const c = state.citizens[a.citizenId];
+    if (!gear || !c) return;
+    c.gear ??= { weapon: null, armor: null, suit: null };
+    // Free whatever they were holding in that slot first.
+    const prev = c.gear[a.slot];
+    if (prev && state.military.gear[prev]) state.military.gear[prev].assignedTo = null;
+    // And take it off whoever had this piece.
+    if (gear.assignedTo) {
+      const other = state.citizens[gear.assignedTo];
+      if (other?.gear) {
+        for (const slot of ['weapon', 'armor', 'suit']) {
+          if (other.gear[slot] === gear.id) other.gear[slot] = null;
+        }
+      }
+    }
+    gear.assignedTo = c.id;
+    c.gear[a.slot] = gear.id;
+  },
+
+  GEAR_UNASSIGN(state, a) {
+    const gear = state.military.gear[a.gearId];
+    if (!gear) return;
+    const c = gear.assignedTo != null ? state.citizens[gear.assignedTo] : null;
+    if (c?.gear) {
+      for (const slot of ['weapon', 'armor', 'suit']) {
+        if (c.gear[slot] === gear.id) c.gear[slot] = null;
+      }
+    }
+    gear.assignedTo = null;
+  },
+
+  GEAR_REPAIR(state, a) {
+    for (const r of a.repairs) {
+      const g = state.military.gear[r.id];
+      if (!g) continue;
+      g.durability = Math.min(BAL.gear.durabilityMax, g.durability + r.amount);
+      g.integrity = Math.min(BAL.gear.suit.integrityMax, g.integrity + r.amount);
+    }
+  },
+
+  GEAR_WEAR(state, a) {
+    for (const w of a.wear) {
+      const g = state.military.gear[w.id];
+      if (!g) continue;
+      if (w.durability) g.durability = clamp(g.durability - w.durability, 0, BAL.gear.durabilityMax);
+      if (w.integrity) g.integrity = clamp(g.integrity - w.integrity, 0, BAL.gear.suit.integrityMax);
+    }
+  },
+
+  GEAR_DESTROY(state, a) {
+    const g = state.military.gear[a.id];
+    if (!g) return;
+    const c = g.assignedTo != null ? state.citizens[g.assignedTo] : null;
+    if (c?.gear) {
+      for (const slot of ['weapon', 'armor', 'suit']) {
+        if (c.gear[slot] === a.id) c.gear[slot] = null;
+      }
+    }
+    delete state.military.gear[a.id];
+  },
+
+  SQUAD_CREATE(state, a) {
+    const id = String(state.military.nextSquadId++);
+    state.military.squads[id] = {
+      id,
+      name: a.name,
+      members: [],
+      leaderId: null,
+      assignment: 'garrison',
+      deployed: false,
+    };
+    state.military.squadIds.push(id);
+  },
+
+  SQUAD_DISBAND(state, a) {
+    const sq = state.military.squads[a.id];
+    if (!sq) return;
+    for (const cid of sq.members) {
+      const c = state.citizens[cid];
+      if (c) {
+        c.squadId = null;
+        if (c.status === 'training') c.status = 'idle';
+      }
+    }
+    delete state.military.squads[a.id];
+    state.military.squadIds = state.military.squadIds.filter((x) => x !== a.id);
+  },
+
+  SQUAD_PATCH(state, a) {
+    const sq = state.military.squads[a.id];
+    if (sq) Object.assign(sq, a.patch);
+  },
+
+  SQUAD_MEMBER(state, a) {
+    const sq = state.military.squads[a.squadId];
+    const c = state.citizens[a.citizenId];
+    if (!sq || !c) return;
+    if (a.remove) {
+      sq.members = sq.members.filter((x) => x !== c.id);
+      if (sq.leaderId === c.id) sq.leaderId = sq.members[0] ?? null;
+      c.squadId = null;
+      if (c.status === 'training') c.status = 'idle';
+      return;
+    }
+    if (sq.members.length >= BAL.military.squadMax) return;
+    // A soldier leaves whatever post they were on.
+    if (c.job) {
+      const room = state.silo.rooms[c.job.roomId];
+      if (room) room.staff = room.staff.filter((x) => x !== c.id);
+      c.job = null;
+    }
+    if (c.squadId != null) {
+      const old = state.military.squads[c.squadId];
+      if (old) old.members = old.members.filter((x) => x !== c.id);
+    }
+    if (!sq.members.includes(c.id)) sq.members.push(c.id);
+    if (sq.leaderId == null) sq.leaderId = c.id;
+    c.squadId = sq.id;
+    c.status = 'training';
+  },
+};
+
+// ----------------------------------------------------------- expeditions ---
+
+const expeditionReducers = {
+  EXPEDITION_LAUNCH(state, a) {
+    state.expeditions.active.push(a.expedition);
+    state.expeditions.nextId++;
+  },
+
+  /**
+   * Bring an expedition home. Loot, radiation, recruits and the journal all
+   * land here so the return is one atomic event in the log — which is what
+   * lets the catch-up report show it as a single readable entry.
+   */
+  EXPEDITION_RESOLVE(state, a) {
+    const idx = state.expeditions.active.findIndex((e) => e.id === a.id);
+    if (idx < 0) return;
+    const exp = state.expeditions.active[idx];
+    exp.resolved = true;
+    exp.journal = a.journal || [];
+    exp.survivors = a.survivors || [];
+    exp.casualties = a.casualties || [];
+
+    state.expeditions.active.splice(idx, 1);
+    state.expeditions.history.unshift(exp);
+    if (state.expeditions.history.length > 30) state.expeditions.history.pop();
+
+    const sq = state.military.squads[exp.squadId];
+    if (sq) {
+      sq.deployed = false;
+      sq.assignment = 'garrison';
+    }
+
+    const caps = state.caps || BAL.resources.baseCaps;
+    for (const [k, v] of Object.entries(a.loot || {})) {
+      state.resources[k] = clamp((state.resources[k] || 0) + v, 0, caps[k] ?? Infinity);
+    }
+    for (const [k, v] of Object.entries(a.artifacts || {})) {
+      state.research.artifacts[k] = (state.research.artifacts[k] || 0) + v;
+    }
+
+    // Survivors come back irradiated and exhausted. Decontamination happens
+    // separately — skipping it is a real choice, so it isn't automatic.
+    for (const id of a.survivors || []) {
+      const c = state.citizens[id];
+      if (!c || c.status === 'dead') continue;
+      c.status = 'idle';
+      c.radiation = clamp(c.radiation + (a.radiation || 0), 0, BAL.citizens.radiation.max);
+      c.history.push({ day: state.clock.day, text: `Came back from the ${exp.band} run.` });
+      if (!c.traits.includes('veteran') && (state.stats.expeditionsReturned || 0) > 0) {
+        c.traits = [...c.traits, 'veteran'];
+      }
+      // Suits wear from the time outside.
+      const gid = c.gear?.suit;
+      if (gid && state.military.gear[gid]) {
+        state.military.gear[gid].integrity = clamp(a.suitIntegrity ?? 100, 0, BAL.gear.suit.integrityMax);
+      }
+    }
+
+    for (const recruit of a.recruits || []) {
+      state.citizens[recruit.id] = recruit;
+      state.citizenIds.push(recruit.id);
+      state.stats.peakPopulation = Math.max(state.stats.peakPopulation, state.citizenIds.length);
+    }
+
+    state.stats.expeditionsReturned = (state.stats.expeditionsReturned || 0) + 1;
+    state.pendingDecon = {
+      squadId: exp.squadId,
+      members: a.survivors || [],
+      radiation: a.radiation || 0,
+    };
+
+    const name = sq?.name || 'The squad';
+    const lost = (a.casualties || []).length;
+    pushLog(state, {
+      kind: 'expedition',
+      text:
+        lost === 0
+          ? `${name} is back through the airlock. All ${(a.survivors || []).length} of them, carrying a dose of ${Math.round(a.radiation || 0)}.`
+          : `${name} is back. ${lost} did not return.`,
+      data: { expeditionId: exp.id },
+    });
+    emit('expedition-return', { expedition: exp, report: a });
+  },
+
+  DECON(state, a) {
+    const D = BAL.expedition.decon;
+    const caps = state.caps || BAL.resources.baseCaps;
+    if (a.skip) {
+      // Skipping decon pushes the squad's dose into the silo at large.
+      const spread = (a.radiation || 0) * D.skipRadSpreadFraction;
+      for (const id of state.citizenIds) {
+        const c = state.citizens[id];
+        if (!c || c.status === 'dead') continue;
+        c.radiation = clamp(c.radiation + spread / 12, 0, BAL.citizens.radiation.max);
+      }
+      state.order.value = clamp(state.order.value + D.skipOrderPenalty, BAL.order.min, BAL.order.max);
+      pushLog(state, {
+        kind: 'rad',
+        text: 'Decontamination was skipped. The dose is in the silo now, spread thin across everybody.',
+      });
+    } else {
+      const cost = D.filtersPerMember * (a.members?.length || 0);
+      state.resources.filters = clamp((state.resources.filters || 0) - cost, 0, caps.filters ?? Infinity);
+      for (const id of a.members || []) {
+        const c = state.citizens[id];
+        if (!c) continue;
+        c.radiation = clamp(c.radiation * (1 - D.radRemovedFraction), 0, BAL.citizens.radiation.max);
+      }
+      pushLog(state, {
+        kind: 'plain',
+        text: `Decontamination complete. ${cost} filters spent.`,
+      });
+    }
+    state.pendingDecon = null;
+  },
+
+  MAP_REVEAL(state, a) {
+    state.map.discovered = [...new Set([...(state.map.discovered || []), a.band])];
+  },
+
+  SILO_DISCOVER(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (!silo) return;
+    silo.known = true;
+    if (a.contact && silo.contact === 'none') silo.contact = a.contact;
+    pushLog(state, { kind: 'radio', text: `${silo.name} is on the board.` });
+  },
+
+  SILO_REPUTATION(state, a) {
+    const silo = state.world.silos[a.siloId];
+    if (!silo) return;
+    silo.reputation = clamp(silo.reputation + a.amount, -100, 100);
+  },
+};
+
 let registered = false;
 
 /** Called once at boot. Later phases add their own reducer files. */
@@ -468,6 +741,8 @@ export function registerCoreReducers() {
     ...citizenReducers,
     ...orderReducers,
     ...researchReducers,
+    ...militaryReducers,
+    ...expeditionReducers,
     ...logReducers,
   });
 }

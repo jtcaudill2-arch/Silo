@@ -62,6 +62,7 @@ export function makeCitizen(rng, opts = {}) {
     traits,
     job: null,
     squadId: null,
+    gear: { weapon: null, armor: null, suit: null },
     relationships: {},
     status: 'idle',
     causeOfDeath: null,

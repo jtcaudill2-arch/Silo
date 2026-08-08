@@ -308,6 +308,12 @@ const played = run('opening — six-room start, played', {
   // autopilot's choices: whether a heuristic player happens to want another
   // floor is not a fact about the game, but whether digging one works is.
   const beforeDug = s.silo.floors.filter((f) => f.excavated).length;
+  // The gate research may not have landed yet at short --days; grant it, since
+  // what's under test is whether digging works, not how fast a heuristic
+  // player gets there.
+  if (!s.research.completed.includes('deep_excavation_1')) {
+    store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'deep_excavation_1' });
+  }
   const dig = canExcavate(s);
   if (!dig.ok) {
     fail(`[played] cannot excavate after ${DAYS} days of build-out: ${dig.reason}`);
