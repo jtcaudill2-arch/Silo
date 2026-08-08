@@ -509,10 +509,20 @@ const logReducers = {
   UI_SET(state, a) {
     Object.assign(state.ui, a.ui);
   },
+  CRISIS_ALERT(state, a) {
+    emit('alert', { kind: 'warn', glyph: '!', text: a.name });
+    // A scripted crisis is a beat, not a notification. The rail chip stays
+    // for the record, but the shell also stops the clock and puts the prose
+    // on the screen — these fire five times in a campaign and the player
+    // should not be able to scroll past one.
+    emit('crisis', { id: a.id, name: a.name });
+  },
+
   GAME_OVER(state, a) {
     state.meta.gameOver = a.reason;
     state.meta.ending = a.ending || null;
     pushLog(state, { kind: 'alert', text: a.text || a.reason });
+    emit('game-over', { reason: a.reason, ending: a.ending || null });
   },
 };
 

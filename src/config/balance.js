@@ -50,7 +50,13 @@ export const BAL = {
     excavation: {
       baseScrap: 40,
       baseLabor: 30,
-      growth: 1.18, // baseCost * growth^floorsExcavated
+      // Compounding across all 92 floors at 1.18 reaches 10^6 — floor 60
+      // would cost eighteen million scrap and take seven hundred game days.
+      // Growth compounds *within* a tier and steps between them instead, so
+      // the Deeps stay expensive without becoming arithmetically impossible.
+      growth: 1.09,
+      tierMultiplier: 2.2,
+      maxDigCycles: 120,
       ticksPerLaborHour: 1,
       shoringRequiredBelowFloor: 35,
       shoringAlloyPerFloor: 6,
@@ -281,6 +287,15 @@ export const BAL = {
       sameRoomGrowthPerDay: 1.1,
       cafeteriaGrowthPerDay: 0.5,
       randomPairsPerDay: 6,
+      // Neighbours. Without these the only bond in the silo is a shift
+      // roster, which makes every unemployed citizen socially inert and
+      // pins the birth rate to the job count instead of the headcount —
+      // a silo of four hundred then produces exactly as many couples as a
+      // silo of two hundred, and the population curve flattens. The groups
+      // are stable, so the same faces recur and a bond can actually climb;
+      // random strangers across four hundred people never meet twice.
+      neighbourhoodSize: 6,
+      neighbourGrowthPerDay: 0.8,
       friendThreshold: 55,
       rivalThreshold: -45,
       decayPerDay: 0.05,
@@ -315,7 +330,7 @@ export const BAL = {
 
   // ---------------------------------------------------------- research ---
   research: {
-    pointsPerLabPerCycleBase: 0.5,
+    pointsPerLabPerCycleBase: 1.0,
     scientistSkillWeight: 0.9,
     archiveBonus: 0.25,
     openArchivesBonus: 0.2,
@@ -601,6 +616,7 @@ export const BAL = {
 
   // -------------------------------------------------------- pacing ---
   pacing: {
+    flavourChancePerDay: 0.3,
     crises: [
       { key: 'first_blight', atMinutes: 120, once: true },
       { key: 'raider_probe', atMinutes: 300, once: true },

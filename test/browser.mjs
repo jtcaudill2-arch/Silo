@@ -346,7 +346,32 @@ try {
   await page.click('.nav-btn[data-panel="log"]');
   await page.waitForSelector('.log-entry', { timeout: 4000 });
   ok('log panel renders entries');
+
+  // The three ways out, shown as progress rather than as a walkthrough.
+  await page.click('.tabs .tab:last-child');
+  await page.waitForSelector('.ending-row', { timeout: 4000 });
+  const ends = await page.$$eval('.ending-row', (rows) =>
+    rows.map((r) => r.querySelector('.k')?.textContent + ' ' + r.querySelector('.v')?.textContent)
+  );
+  if (ends.length !== 3) fail(`expected 3 endings in the log panel, found ${ends.length}`);
+  else ok(`ending progress listed: ${ends.join(', ')}`);
   await page.click('.panel-close');
+
+  // ---- 6b. a scripted crisis stops the clock and puts its prose up --------
+  await page.evaluate(() => {
+    const { store } = window.DEEPWATER;
+    store.dispatch({ type: 'CRISIS_ALERT', id: 'first_blight', name: 'Blight' });
+  });
+  await page.waitForSelector('.crisis-text', { timeout: 4000 });
+  const crisis = await page.evaluate(() => ({
+    headline: document.querySelector('.crisis-headline')?.textContent || '',
+    advice: document.querySelector('.crisis-advice')?.textContent || '',
+    speed: window.DEEPWATER.store.state.settings.speed,
+  }));
+  if (!crisis.headline || !crisis.advice) fail('the crisis dialog is missing its prose');
+  else if (crisis.speed !== 0) fail(`a crisis did not pause the silo (speed ${crisis.speed})`);
+  else ok(`crisis takes the screen and pauses: "${crisis.headline}"`);
+  await page.click('.modal-foot .btn');
 
   // ---- 7. tapping a room opens the room panel -----------------------------
   const roomPoint = await page.evaluate(() => {
@@ -550,6 +575,31 @@ try {
   if (missing.length) fail(`manifest missing: ${missing.join(', ')}`);
   else if (!manifest.icons.some((i) => i.sizes === '512x512')) fail('manifest has no 512px icon');
   else ok('manifest is complete and installable');
+
+  // ---- 11. the ending screen ---------------------------------------------
+  // Last, deliberately: GAME_OVER is terminal state and anything asserted
+  // after it would be measuring a finished silo.
+  await page.evaluate(() => {
+    window.DEEPWATER.store.dispatch({
+      type: 'GAME_OVER',
+      reason: 'ending',
+      ending: 'surface',
+      text: 'Surface reached.',
+    });
+  });
+  await page.waitForSelector('.report.ending', { timeout: 4000 });
+  const end = await page.evaluate(() => ({
+    title: document.querySelector('.ending .report-title')?.textContent || '',
+    prose: document.querySelectorAll('.ending-prose').length,
+    stats: document.querySelectorAll('.ending .report-stat').length,
+    won: !!document.querySelector('.ending-won'),
+  }));
+  if (end.title !== 'Surface') fail(`ending screen titled "${end.title}", expected "Surface"`);
+  else if (!end.prose) fail('the ending screen showed no prose');
+  else if (!end.stats) fail('the ending screen showed no campaign numbers');
+  else if (!end.won) fail('a victory ending was styled as a loss');
+  else ok(`ending screen: "${end.title}", ${end.prose} paragraphs, ${end.stats} figures`);
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'ending.png') });
 
   if (errors.length) {
     console.log('\n  console errors seen:');

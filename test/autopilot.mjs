@@ -19,6 +19,11 @@ import { canStart, isComplete } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { readEnvironment } from '../src/sim/population.js';
 import { computeCaps } from '../src/sim/economy.js';
+import { employableCitizens } from '../src/sim/jobs.js';
+import {
+  formSquad, squadMembers, equipBest, craft, canCraft, craftableItems, unassignedGear,
+} from '../src/sim/military.js';
+import { canLaunch, launch, airlockCapacity } from '../src/sim/expedition.js';
 
 /** Research order: unblock the economy first, then reach outward. */
 const RESEARCH_ORDER = [
@@ -118,6 +123,13 @@ export function autopilot(state) {
   const wants = [];
   if (scrapIncome <= 0 && count('recycling') === 0) wants.push('recycling');
   if (partsIncome <= 0 && count('workshop') === 0) wants.push('workshop');
+  // The Laboratory is the third mandatory building and for the same kind of
+  // reason: nothing else in the silo produces research points, and every
+  // tier, every suit, every treaty and the chem lab that keeps the clinic
+  // stocked all sit behind one. Deferring it until the silo feels
+  // comfortable defers the entire game — measured at a hundred days, which
+  // is most of the way to the §16 mid-game before the first node lands.
+  if (count('laboratory') === 0) wants.push('laboratory');
 
   // Anything on this list is about to kill somebody. Sorted by how soon.
   const urgent = [];
@@ -133,10 +145,16 @@ export function autopilot(state) {
   // Then the trend fixes: act on a margin that is *shrinking*, not on one
   // that has already run out. A reclaimer ordered when the tank hits zero
   // arrives four shifts after the first person dies of thirst.
+  // Salvage throughput has to grow with the silo. Scrap is the universal
+  // currency — every room, every repair and every floor of excavation is
+  // priced in it — so a silo that keeps its recycling at the level that was
+  // adequate for a hundred and eighty people simply stops being able to
+  // afford anything once it doubles.
+  const pop = state.citizenIds.length;
   if (flow('water') < 4) wants.push('water_reclaimer');
   if (flow('food') < 4) wants.push('hydroponics');
-  if (scrapIncome < 5) wants.push('recycling');
-  if (partsIncome < 1.5) wants.push('workshop');
+  if (scrapIncome < 5 + pop / 30) wants.push('recycling');
+  if (partsIncome < 1.5 + pop / 160) wants.push('workshop');
   if (powerHeadroom < 0.25) wants.push('generator_hall');
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
 
@@ -145,15 +163,43 @@ export function autopilot(state) {
   // water runs out is exactly the mistake this ordering exists to prevent.
   const RESERVE = 170;
   if (!urgent.length && state.resources.scrap > RESERVE) {
-    if (count('laboratory') < 1) wants.push('laboratory');
+    // Reaching outward is the growth lever (§6), and the chain only pays
+    // once every link exists — an airlock without an armoury sends nobody
+    // anywhere. It goes first because a growing silo wants another dormitory
+    // and another filtration bay every single day, and a build queue that
+    // services those first never reaches the end of the chain at all: the
+    // door stayed shut for a hundred days that way. Anything genuinely about
+    // to kill somebody is on the urgent list above, which outranks all of
+    // this. These are research-gated; canBuild refuses until the node lands
+    // and the loop moves on.
+    if (count('radio_room') < 1) wants.push('radio_room');
+    if (count('airlock') < 1) wants.push('airlock');
+    if (count('suit_bay') < 1) wants.push('suit_bay');
+    // The armoury is the bench. There is no other room that can make a
+    // weapon or a vest, so without one a squad can be formed, housed and
+    // fed, and never sent anywhere.
+    if (count('armory') < 1) wants.push('armory');
+    // Suits, weapons and armour above tier one are all made of alloy, and
+    // the foundry is the only thing that makes any.
+    if (count('foundry') < 1) wants.push('foundry');
     if (airHeadroom < 30) wants.push('air_filtration');
     if (env.housingFree < 12) wants.push('residences');
+    // Meds and filters both come out of the chem lab and nothing else makes
+    // either. Without it the clinic runs dry, no expedition can be supplied,
+    // and no squad that comes home can be decontaminated. Filter demand
+    // scales with the headcount — every air filtration bay draws media all
+    // day — so one chem lab that was comfortable at two hundred people goes
+    // quietly negative at four hundred and closes the airlock for good.
+    if (count('chem_lab') < 1 + Math.floor(pop / 220)) wants.push('chem_lab');
     if (count('clinic') < 1) wants.push('clinic');
     if (count('maintenance_bay') < 1) wants.push('maintenance_bay');
-    if (foodDays > 25 && waterDays > 25 && count('storage_depot') < 2) wants.push('storage_depot');
     if (count('laboratory') < 2) wants.push('laboratory');
     if (count('cafeteria') < 2) wants.push('cafeteria');
     if (count('schoolhouse') < 1) wants.push('schoolhouse');
+    if (foodDays > 25 && waterDays > 25 && count('storage_depot') < 2) wants.push('storage_depot');
+    if (count('sheriffs_office') < 1) wants.push('sheriffs_office');
+    // Research is the long pole all game; keep adding benches to it.
+    if (count('laboratory') < 4 && state.resources.scrap > RESERVE * 3) wants.push('laboratory');
   }
 
   for (const type of wants) {
@@ -185,9 +231,116 @@ export function autopilot(state) {
     if (target && canUpgrade(state, target.id).ok) actions.push(...upgrade(state, target.id));
   }
 
-  // ---- 5. keep everyone posted ----------------------------------------
+  // ---- 5. the surface -------------------------------------------------
+  // Recruitment is the main growth lever (spec §6), so a player who never
+  // opens the airlock never reaches the pacing targets. The autopilot runs
+  // expeditions once it can, which is also the only way the harness covers
+  // the military and expedition paths at all.
+  actions.push(...runSurface(state));
+
+  // ---- 6. keep everyone posted ----------------------------------------
   actions.push(...autoAssign(state));
 
+  return actions;
+}
+
+/** Kit out a squad and keep it working the near and mid bands. */
+function runSurface(state) {
+  const actions = [];
+  const research = state.research.completed;
+  if (!research.includes('env_suit_1')) return actions;
+
+  const hasAirlock = Object.values(state.silo.rooms).some(
+    (r) => r.type === 'airlock' && r.buildingUntilCycle === 0
+  );
+  const hasSuitBay = Object.values(state.silo.rooms).some(
+    (r) => r.type === 'suit_bay' && r.buildingUntilCycle === 0
+  );
+  if (!hasSuitBay || !hasAirlock) return actions; // the build queue handles these
+
+  const hasChemLab = Object.values(state.silo.rooms).some(
+    (r) => r.type === 'chem_lab' && r.buildingUntilCycle === 0
+  );
+
+  // Decontaminate anyone waiting. Skipping is only ever right when no filter
+  // is coming — with a chem lab running it is worth waiting a few shifts,
+  // because the dose from a skip does not land on the squad, it lands thinly
+  // on all four hundred people, and it never leaves. Skipping habitually is
+  // fatal on a horizon of about two hundred days: silo-wide radiation climbs
+  // past fifty, health follows it down, the work factor goes with health,
+  // and the generator hall quietly stops making enough power to run the
+  // water reclaimers.
+  if (state.pendingDecon) {
+    const cost = BAL.expedition.decon.filtersPerMember * state.pendingDecon.members.length;
+    if (state.resources.filters >= cost) {
+      actions.push({ type: 'DECON', members: state.pendingDecon.members });
+    } else if (!hasChemLab) {
+      actions.push({
+        type: 'DECON',
+        skip: true,
+        radiation: state.pendingDecon.radiation,
+        members: state.pendingDecon.members,
+      });
+    }
+    return actions;
+  }
+
+  // One squad, kept at strength.
+  if (!state.military.squadIds.length) {
+    actions.push(...formSquad(state));
+    return actions;
+  }
+  const squadId = state.military.squadIds[0];
+  const squad = state.military.squads[squadId];
+  if (squad.deployed) return actions;
+
+  const cap = airlockCapacity(state);
+  const target = Math.min(BAL.military.squadMax, Math.max(BAL.military.squadMin, cap));
+  const members = squadMembers(state, squadId);
+
+  if (members.length < target) {
+    const candidate = employableCitizens(state)
+      .filter((c) => c.squadId == null && c.age >= 18 && c.age < 50 && c.health > 60)
+      .sort((a, b) => (b.skills.combat || 0) - (a.skills.combat || 0))[0];
+    if (candidate) {
+      actions.push({ type: 'SQUAD_MEMBER', squadId, citizenId: candidate.id });
+      actions.push(...equipBest(state, candidate.id));
+    }
+    return actions;
+  }
+
+  // Kit: craft whatever the squad is short of, best tier available.
+  for (const kind of ['suit', 'weapon', 'armor']) {
+    const missing = members.filter((c) => !c.gear?.[kind]).length;
+    if (!missing) continue;
+    const spare = unassignedGear(state, kind).length;
+    if (spare > 0) {
+      for (const c of members) actions.push(...equipBest(state, c.id));
+      return actions;
+    }
+    const buildable = craftableItems(state)
+      .filter((i) => i.kind === kind)
+      .sort((a, b) => b.tier - a.tier)[0];
+    if (buildable && canCraft(state, buildable.id).ok) {
+      actions.push(...craft(state, buildable.id));
+      return actions;
+    }
+    return actions; // can't kit them; don't send them
+  }
+
+  // Don't send a squad you cannot clean when it gets back. The filters have
+  // to be on the shelf before the door opens, not hoped for.
+  const deconCost = BAL.expedition.decon.filtersPerMember * members.length;
+  if (state.resources.filters < deconCost) return actions;
+
+  // Send them out — the furthest band the suits allow.
+  for (const band of ['mid', 'near']) {
+    const check = canLaunch(state, squadId, band);
+    if (check.ok) {
+      actions.push(...launch(state, squadId, band));
+      break;
+    }
+  }
   return actions;
 }
 

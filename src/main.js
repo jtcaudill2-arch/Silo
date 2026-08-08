@@ -16,6 +16,7 @@ import { autoAssign } from './sim/jobs.js';
 import { loadGame, Autosave } from './core/save.js';
 import { runCatchup } from './core/catchup.js';
 import { showReturnReport } from './ui/returnReport.js';
+import { showEnding } from './ui/ending.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
@@ -24,7 +25,8 @@ import * as audio from './audio/audio.js';
 
 import { Shell } from './ui/shell.js';
 import { openRoom } from './ui/roomView.js';
-import { toast } from './ui/dom.js';
+import { toast, modal, closeTopModal, button, el } from './ui/dom.js';
+import { CRISES } from './data/events.js';
 import { openSettings } from './ui/settings.js';
 import { resourcesPanel } from './ui/panels/resources.js';
 import { populationPanel } from './ui/panels/population.js';
@@ -55,8 +57,13 @@ async function main() {
   // ---- load or create -----------------------------------------------------
   status('Looking for a silo…');
   let loaded = null;
+  // "Begin again" from the ending screen sets this and reloads, because a
+  // finished campaign must not be resumed — the alternative is reopening a
+  // silo whose last log entry says everybody in it is dead.
+  const startFresh = localStorage.getItem('deepwater:newgame') === '1';
+  localStorage.removeItem('deepwater:newgame');
   try {
-    loaded = await loadGame(0);
+    if (!startFresh) loaded = await loadGame(0);
   } catch (err) {
     // A save we can't read must not block a new game.
     console.error('[boot] could not load the save:', err);
@@ -214,6 +221,57 @@ async function main() {
     await showReturnReport(report);
     shell.setSpeed(resumeSpeed || 1);
   }
+
+  // The endings are the payoff for the whole campaign, so they stop the clock
+  // and take the screen. Watched live or discovered on resume, it's the same
+  // screen — a silo that reached its ending while the tab was closed still
+  // reached it.
+  // Scripted crises stop the clock and take a dialog. They land five times
+  // across a campaign, on a real-time schedule, and each one is a decision
+  // the player is meant to arrive at having read it — not a line that scrolls
+  // past while the silo keeps running.
+  on('crisis', ({ id }) => {
+    const crisis = CRISES[id];
+    if (!crisis) return;
+    const resumeSpeed = store.state.settings.speed ?? 1;
+    shell.setSpeed(0);
+    modal({
+      title: crisis.name,
+      body: el(
+        'div',
+        el('div.crisis-headline', crisis.headline),
+        el('div.crisis-text', crisis.text),
+        crisis.advice ? el('div.crisis-advice', crisis.advice) : null
+      ),
+      actions: [
+        button('Understood', {
+          class: 'primary',
+          onclick: () => {
+            closeTopModal();
+            shell.setSpeed(resumeSpeed || 1);
+          },
+        }),
+      ],
+      onClose: () => shell.setSpeed(resumeSpeed || 1),
+    });
+  });
+
+  let endingShown = false;
+  const presentEnding = async () => {
+    if (endingShown || !store.state.meta.gameOver) return;
+    endingShown = true;
+    shell.setSpeed(0);
+    await showEnding(store.state, {
+      onNewGame: () => {
+        // A finished campaign is finished. Clearing the slot and reloading is
+        // the only honest way back — resuming would resurrect a dead silo.
+        localStorage.setItem('deepwater:newgame', '1');
+        location.reload();
+      },
+    });
+  };
+  on('game-over', () => { presentEnding(); });
+  await presentEnding();
 
   registerServiceWorker();
 }

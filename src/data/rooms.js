@@ -173,12 +173,17 @@ export const ROOMS = {
     name: 'Chem Lab',
     category: 'science',
     width: 2,
-    produces: { meds: 1.0 },
+    // Filters are otherwise a one-way resource: nothing in the silo makes
+    // scrubber media, so the starting forty run out around day sixty and
+    // decontamination becomes impossible for the rest of the game. Putting
+    // media behind the first medicine node makes keeping the airlock usable
+    // a research decision rather than a countdown.
+    produces: { meds: 1.0, filters: 0.6 },
     consumes: { power: 5, water: 1.5, scrap: 0.6 },
     staff: { skill: 'medicine', slotsPerLevel: [2, 2, 3, 4, 5] },
     buildCost: { scrap: 200, parts: 20 },
     unlock: 'antibiotics',
-    desc: 'Medicine and stimulants out of scrap chemistry.',
+    desc: 'Medicine, stimulants and scrubber media out of scrap chemistry.',
   }),
 
   workshop: R({
@@ -215,7 +220,14 @@ export const ROOMS = {
     staff: { skill: 'engineering', slotsPerLevel: [2, 3, 4, 5, 6] },
     buildCost: { scrap: 320, parts: 34 },
     unlock: 'alloy_refining',
-    tierGate: 'lowers',
+    // Not depth-gated. Alloy Refining is a tier-one node with no
+    // prerequisites and env-suits are made of alloy, so putting the only
+    // furnace behind the Lowers meant the starting forty alloy — eighteen of
+    // which the Suit Bay itself eats — had to cover the whole surface
+    // programme. It bought three suits, one short of a squad, and the
+    // airlock stayed shut for ninety days waiting on a foundry that was
+    // three research nodes and twenty floors away. The research is gate
+    // enough; the Lowers keep munitions, barracks and the deep mine.
     desc: 'Three scrap in, one alloy out. Gates every weapon worth carrying.',
   }),
 
@@ -238,11 +250,18 @@ export const ROOMS = {
     name: 'Armory',
     category: 'security',
     width: 2,
-    consumes: { power: 2 },
+    // Hand-loading, at the rate one bench can manage. Ammunition is
+    // otherwise unobtainable above the Lowers — the near band never loots
+    // any — so a silo's starting stock funds about fifteen expeditions and
+    // then the airlock closes for good. Munitions is still the volume
+    // source by an order of magnitude; this is just enough to keep a squad
+    // walking while you dig toward one.
+    produces: { ammo: 0.35 },
+    consumes: { power: 2, scrap: 0.7 },
     staff: { skill: 'engineering', slotsPerLevel: [2, 2, 3, 4, 5] },
     buildCost: { scrap: 200, parts: 18 },
     provides: { gearStorage: 24, gearRepair: true, cap: { ammo: 300 } },
-    desc: 'Racks, benches, and a quartermaster who repairs what comes back.',
+    desc: 'Racks, benches, and a quartermaster who reloads and repairs what comes back.',
   }),
 
   barracks: R({

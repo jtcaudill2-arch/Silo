@@ -277,11 +277,17 @@ function comparable(state) {
   const old = JSON.parse(exportSave(original)).state;
   delete old.lastReport;
   delete old.settings.volume;
+  delete old.flags.crises;
+  delete old.meta.ending;
   const migrated = migrate(old, 10);
   if (migrated.meta.schemaVersion !== SCHEMA_VERSION) {
     fail(`migration left schema at ${migrated.meta.schemaVersion}, expected ${SCHEMA_VERSION}`);
   } else if (migrated.settings.volume === undefined || migrated.lastReport === undefined) {
     fail('migration did not backfill the fields it claims to');
+  } else if (migrated.flags.crises === undefined || migrated.meta.ending === undefined) {
+    // Without the crisis map, every crisis whose hour had passed fires at
+    // once the moment an old save is opened.
+    fail('migration did not backfill the Phase 9 crisis and ending fields');
   } else {
     ok(`a version-10 save migrates forward to ${SCHEMA_VERSION}`);
   }

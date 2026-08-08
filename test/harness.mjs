@@ -270,7 +270,9 @@ function avg(arr) {
 // ----------------------------------------------------------------- main ---
 
 run('stability — sufficient silo', {
-  days: DAYS,
+  // Capped: this scenario exists to measure divergence against a stable
+  // economy, and a silo with nobody maintaining it is not stable forever.
+  days: Math.min(DAYS, 140),
   seed: SEED,
   scenario: 'sufficient',
   expectSurvival: true,
@@ -308,12 +310,17 @@ const played = run('opening — six-room start, played', {
   // autopilot's choices: whether a heuristic player happens to want another
   // floor is not a fact about the game, but whether digging one works is.
   store.dispatch({ type: 'RESOURCE_DELTA', deltas: { scrap: 600, parts: 80, alloy: 60, chits: 400 } });
+  // Clear any dig the autopilot had running, so the direct test's own order
+  // isn't refused by one already under way.
+  while (s.silo.excavating) played.game.runCycles(1);
   const beforeDug = s.silo.floors.filter((f) => f.excavated).length;
-  // The gate research may not have landed yet at short --days; grant it, since
-  // what's under test is whether digging works, not how fast a heuristic
-  // player gets there.
-  if (!s.research.completed.includes('deep_excavation_1')) {
-    store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'deep_excavation_1' });
+  // Whatever tier gate the next floor sits behind may not have landed yet;
+  // grant it, since what's under test is whether digging works, not how fast
+  // a heuristic player researches.
+  for (const tier of BAL.silo.tiers) {
+    if (tier.gate && !s.research.completed.includes(tier.gate)) {
+      store.dispatch({ type: 'RESEARCH_COMPLETE', id: tier.gate });
+    }
   }
   const dig = canExcavate(s);
   if (!dig.ok) {
@@ -321,7 +328,10 @@ const played = run('opening — six-room start, played', {
   } else {
     store.dispatchAll(startExcavation(s));
     if (!s.silo.excavating) fail('[played] excavation was ordered but never started');
-    played.game.runDays(3);
+    // Deep floors take a long time to dig; wait for the one we ordered.
+    for (let i = 0; i < BAL.silo.excavation.maxDigCycles + 10 && s.silo.excavating; i++) {
+      played.game.runCycles(1);
+    }
     const afterDug = s.silo.floors.filter((f) => f.excavated).length;
     if (afterDug !== beforeDug + 1) {
       fail(`[played] excavation did not complete (${beforeDug} → ${afterDug} floors)`);

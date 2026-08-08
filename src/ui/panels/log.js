@@ -5,13 +5,15 @@
  * up, which is also the reading order the catch-up report wants.
  */
 
-import { el, emptyState, sectionLabel } from '../dom.js';
+import { el, emptyState, sectionLabel, meter } from '../dom.js';
+import { endingProgress } from '../../sim/events.js';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'death', label: 'Deaths' },
   { id: 'alert', label: 'Alerts' },
   { id: 'radio', label: 'Radio' },
+  { id: 'ends', label: 'Ends' },
 ];
 
 let filter = 'all';
@@ -41,6 +43,30 @@ export const logPanel = {
         )
       )
     );
+
+    // The three ways out. Shown as requirements met, never as a walkthrough:
+    // the player can see how far off each one is without being told the
+    // route, which is the same thing the log does for everything else.
+    if (filter === 'ends') {
+      body.appendChild(
+        el(
+          'div.note',
+          'Three ways this ends. None of them is a checklist you can grind — ' +
+            'each needs something you can only get by going outside.'
+        )
+      );
+      for (const e of endingProgress(state)) {
+        body.appendChild(
+          el(
+            'div.ending-row',
+            el('div.ending-row-head', el('span.k', e.name), el('span.v.mono', `${Math.round(e.progress * 100)}%`)),
+            meter(e.progress, 1),
+            el('div.ending-row-detail', e.detail)
+          )
+        );
+      }
+      return el('div', { style: { display: 'contents' } }, tabs, body);
+    }
 
     const entries = state.log.filter((e) => matches(e, filter));
     if (!entries.length) {

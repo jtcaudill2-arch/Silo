@@ -19,6 +19,7 @@ import * as expedition from '../sim/expedition.js';
 import * as world from '../sim/world.js';
 import * as diplomacy from '../sim/diplomacy.js';
 import * as order from '../sim/order.js';
+import * as events from '../sim/events.js';
 import { streamFor } from './rng.js';
 import { getRoom } from '../data/rooms.js';
 
@@ -97,6 +98,7 @@ export class Game {
     this.syncRadioTier();
     this.dailyOrder();
     store.dispatchAll(order.simulateDay(this.state));
+    store.dispatchAll(events.simulateDay(this.state));
     this.checkFailure();
     emit('day', dayNo);
   }

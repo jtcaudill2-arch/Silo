@@ -857,6 +857,47 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   background: var(--concrete-deeper); display: flex; justify-content: flex-end;
 }
 .report-foot .btn { min-width: 140px; min-height: 44px; }
+.report-foot { gap: 8px; }
+
+/* ── The ending ──────────────────────────────────────────────────────────
+   Same furniture as the return report, because it is the same object: the
+   log, read back. The only difference is the rule under the title, which
+   says which of the four ways this went. */
+.ending .report-head { border-bottom-width: 2px; }
+.ending-won .report-head { border-bottom-color: var(--sodium); }
+.ending-lost .report-head { border-bottom-color: var(--rust); }
+.ending-lost .report-title { color: var(--rust); }
+
+.ending-prose {
+  padding: 14px 16px 0; font-size: 13.5px; line-height: 1.62;
+  color: var(--bone-dim); max-width: 62ch;
+}
+.ending-prose:first-child { padding-top: 18px; color: var(--bone); }
+
+.ending-row {
+  padding: 10px 12px; border-bottom: 1px solid var(--hairline);
+}
+.ending-row-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; margin-bottom: 6px;
+}
+.ending-row-head .k {
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--bone);
+}
+.ending-row-head .v { font-size: 12px; color: var(--bone-faint); }
+.ending-row-detail { margin-top: 6px; font-size: 12px; color: var(--bone-faint); line-height: 1.5; }
+
+/* ── Scripted crises ─────────────────────────────────────────────────── */
+.crisis-headline {
+  font-family: var(--font-display); font-size: 14px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--sodium); margin-bottom: 10px;
+}
+.crisis-text { font-size: 13.5px; line-height: 1.62; color: var(--bone-dim); }
+.crisis-advice {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hairline);
+  font-size: 12.5px; line-height: 1.55; color: var(--bone-faint);
+}
 
 /* ------------------------------------------------------- accessibility --- */
 @media (prefers-reduced-motion: reduce) {

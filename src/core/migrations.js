@@ -13,7 +13,7 @@
  * schema version is a code fact, not a tuning knob.
  */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -29,6 +29,21 @@ export const MIGRATIONS = {
     state.lastReport ??= null;
     state.flows ??= {};
     state.caps ??= {};
+    return state;
+  },
+
+  // 11 -> 12: Phase 9. Scripted crises record the day they fired so they
+  // fire once and once only, and a finished campaign records which ending
+  // it reached. A save from before this had neither, and an absent
+  // `crises` map would re-fire every crisis whose hour had already passed
+  // the moment the save was opened.
+  11: (state) => {
+    state.flags ??= {};
+    state.flags.crises ??= {};
+    state.flags.firstContact ??= false;
+    state.flags.tutorialSeen ??= false;
+    state.meta ??= {};
+    state.meta.ending ??= null;
     return state;
   },
 };

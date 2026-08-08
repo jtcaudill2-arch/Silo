@@ -347,9 +347,26 @@ function simulateRelationships(state, env) {
     }
   }
 
+  // Neighbours. Living close is the other way people come to know each
+  // other, and it's the one that doesn't require a job. Grouping is by
+  // position in the roster, which is stable enough that the same handful of
+  // people keep running into each other — that recurrence is the whole
+  // point, because a bond that never sees the same face twice never climbs
+  // anywhere. Groups scale with the headcount, so a bigger silo really is a
+  // busier one.
+  const R = C.relationships;
+  for (let start = 0; start < living.length; start += R.neighbourhoodSize) {
+    const block = living.slice(start, start + R.neighbourhoodSize);
+    for (let i = 0; i < block.length; i++) {
+      for (let j = i + 1; j < block.length; j++) {
+        edges.push([block[i], block[j], R.neighbourGrowthPerDay]);
+      }
+    }
+  }
+
   // The cafeteria mixes everybody. A handful of random pairs per day.
-  const venue = env.hasCafeteria ? C.relationships.cafeteriaGrowthPerDay : 0;
-  const pairs = C.relationships.randomPairsPerDay + (env.hasCafeteria ? 4 : 0);
+  const venue = env.hasCafeteria ? R.cafeteriaGrowthPerDay : 0;
+  const pairs = R.randomPairsPerDay + (env.hasCafeteria ? 4 : 0);
   for (let i = 0; i < pairs; i++) {
     const a = rng.pick(living);
     const b = rng.pick(living);

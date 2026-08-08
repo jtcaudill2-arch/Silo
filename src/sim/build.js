@@ -21,9 +21,14 @@ import { roomUnlocked, tierUnlocked, tierForFloor, effects } from './research.js
 
 /** Cost of digging the next floor. Scales with how much you've already dug. */
 export function excavationCost(state) {
-  const dug = state.silo.floors.filter((f) => f.excavated).length;
-  const growth = Math.pow(BAL.silo.excavation.growth, dug - BAL.silo.startExcavatedFloors);
   const next = nextFloorToExcavate(state);
+  if (next == null) return { scrap: 0, labor: 0 };
+  const tier = tierForFloor(next);
+  const tierIdx = BAL.silo.tiers.findIndex((t) => t.key === tier.key);
+  const intoTier = next - tier.from; // 0-based depth within this tier
+  const growth =
+    Math.pow(BAL.silo.excavation.growth, intoTier) *
+    Math.pow(BAL.silo.excavation.tierMultiplier, Math.max(0, tierIdx - 1));
   const cost = {
     scrap: Math.round(BAL.silo.excavation.baseScrap * growth),
     labor: Math.round(BAL.silo.excavation.baseLabor * growth),
@@ -67,7 +72,13 @@ export function canExcavate(state) {
 export function startExcavation(state) {
   const check = canExcavate(state);
   if (!check.ok) return [];
-  const cycles = Math.max(2, Math.round(check.cost.labor / BAL.silo.excavation.ticksPerLaborHour / 10));
+  const cycles = Math.max(
+    2,
+    Math.min(
+      BAL.silo.excavation.maxDigCycles,
+      Math.round(check.cost.labor / BAL.silo.excavation.ticksPerLaborHour / 10)
+    )
+  );
   const deltas = {};
   for (const [k, v] of Object.entries(check.cost)) {
     if (k === 'labor') continue;
