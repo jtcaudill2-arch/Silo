@@ -10,7 +10,7 @@
 export const BAL = {
   // ---------------------------------------------------------------- meta ---
   meta: {
-    schemaVersion: 10,
+    // NOTE: schema version lives in core/migrations.js, not here.
     defaultSeed: 0x5110c12,
     saveSlots: 3,
     autosaveEveryTicks: 30,

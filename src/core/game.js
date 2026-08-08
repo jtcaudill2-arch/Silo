@@ -80,6 +80,28 @@ export class Game {
   }
 
   /**
+   * One game day resolved in a single coarse step, for offline catch-up.
+   * Deliberately routes through the same day() as live play so the two paths
+   * can't drift apart — only the economy is averaged.
+   */
+  coarseDay() {
+    const store = this.store;
+    const tick = this.state.clock.tick + TIME.ticksPerDay;
+    const clock = Loop.clockFromTick(tick);
+
+    store.dispatch({
+      type: 'CLOCK_SET',
+      emit: false,
+      clock: { tick, cycle: clock.cycle, day: clock.day, year: clock.year, shift: clock.shift },
+    });
+    this.loop.setTick(tick);
+
+    store.dispatchAll(economy.simulateDayCoarse(this.state, this.ctx));
+    this.advanceConstruction(clock.cycle);
+    this.day(clock.day);
+  }
+
+  /**
    * The Order drift + the pressures that feed it. The full political layer
    * (policies, crime, uprisings) lands in Phase 7; this is the economic half,
    * which the economy needs from day one so shortages actually bite.

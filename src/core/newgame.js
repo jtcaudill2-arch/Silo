@@ -18,6 +18,7 @@ import { Rng, freshSeed } from './rng.js';
 import { makeCitizen, resetIdCounter, vitalityForAge } from '../sim/population.js';
 import { getRoom } from '../data/rooms.js';
 import { SILOS } from '../data/silos.js';
+import { SCHEMA_VERSION } from './migrations.js';
 import { RES_KEYS } from '../sim/economy.js';
 
 /**
@@ -62,7 +63,7 @@ export function createNewGame(opts = {}) {
 
   const state = {
     meta: {
-      schemaVersion: BAL.meta.schemaVersion,
+      schemaVersion: SCHEMA_VERSION,
       seed,
       createdAt: opts.now ?? Date.now(),
       lastSaveTs: opts.now ?? Date.now(),
@@ -145,6 +146,8 @@ export function createNewGame(opts = {}) {
     },
 
     ui: { view: 'silo', cameraFloor: 3, selectedRoom: null, selectedCitizen: null },
+
+    lastReport: null,
   };
 
   // ---- resources ----------------------------------------------------------

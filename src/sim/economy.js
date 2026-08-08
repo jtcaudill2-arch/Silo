@@ -319,6 +319,58 @@ export function simulateCycle(state, ctx = {}) {
   return actions;
 }
 
+/**
+ * A whole game day of economy in one step, using averaged production and
+ * consumption (spec §3.4). Used only by offline catch-up.
+ *
+ * This resolves one cycle honestly and then applies it CYCLES_PER_DAY times,
+ * rather than simulating eight cycles. The fidelity it gives up is
+ * intra-day ordering: if food would have run out four cycles into the day,
+ * the coarse path just ends the day at zero and lets the population sim see
+ * a starving silo. The qualitative outcome — they starved — is preserved,
+ * which is what the return report has to get right.
+ */
+export function simulateDayCoarse(state, ctx = {}) {
+  const cycleActions = simulateCycle(state, ctx);
+  const n = BAL.time.CYCLES_PER_DAY;
+  const out = [];
+
+  for (const a of cycleActions) {
+    if (!a) continue;
+    switch (a.type) {
+      case 'RESOURCE_DELTA': {
+        const scaled = {};
+        for (const [k, v] of Object.entries(a.deltas)) scaled[k] = v * n;
+        out.push({ ...a, deltas: scaled });
+        break;
+      }
+      case 'AIR_DELTA':
+        // Air drifts toward a target, so scaling the step would overshoot it.
+        // Clamp to the remaining distance instead.
+        out.push({ ...a, delta: clampToTarget(state.air.quality, a.delta, n) });
+        break;
+      case 'CONDITION_DELTA':
+        out.push({ ...a, wear: a.wear.map((w) => ({ ...w, delta: w.delta * n })) });
+        break;
+      case 'RESEARCH_POINTS':
+        out.push({ ...a, amount: a.amount * n });
+        break;
+      default:
+        // POWER_STATE and FLOWS_SET describe an instant, not a rate.
+        out.push(a);
+    }
+  }
+  return out;
+}
+
+function clampToTarget(current, perCycleDelta, cycles) {
+  const total = perCycleDelta * cycles;
+  // The per-cycle delta was already clamped to the drift rate and points at
+  // the target, so the furthest it can legitimately travel is to 0 or 100.
+  const room = perCycleDelta > 0 ? BAL.air.max - current : current - BAL.air.min;
+  return Math.sign(perCycleDelta) * Math.min(Math.abs(total), Math.max(0, room));
+}
+
 function crewWearFactor(state, room) {
   let f = 1;
   let n = 0;

@@ -220,7 +220,127 @@ try {
   if (SHOTS) await offlinePage.screenshot({ path: join(SHOT_DIR, 'offline.png') });
   await context.setOffline(false);
 
-  // ---- 10. manifest is installable ----------------------------------------
+  // ---- 10. persistence: IndexedDB round-trip ------------------------------
+  const saved = await page.evaluate(async () => {
+    const { store, autosave, game } = window.DEEPWATER;
+    game.runDays(2);
+    store.state.__marker = 'round-trip'; // stripped on save; must not persist
+    store.state.resources.scrap = 777;
+    const summary = await autosave.saveNow('test');
+    return { summary, day: store.state.clock.day, pop: store.state.citizenIds.length };
+  });
+  if (!saved.summary) fail('autosave returned no summary — the save did not land');
+  else ok(`autosave wrote slot 0 (day ${saved.summary.day}, ${saved.summary.population} residents)`);
+
+  const reloaded = await page.evaluate(async () => {
+    const { loadGame } = await import('./src/core/save.js');
+    const rec = await loadGame(0);
+    return {
+      found: !!rec,
+      day: rec?.state.clock.day,
+      pop: rec?.state.citizenIds.length,
+      scrap: rec?.state.resources.scrap,
+      chitsCap: rec?.state.caps.chits,
+      stripped: rec?.state.__marker === undefined,
+      usedBackup: rec?.usedBackup,
+    };
+  });
+  if (!reloaded.found) fail('save did not come back out of IndexedDB');
+  else if (reloaded.day !== saved.day || reloaded.pop !== saved.pop) {
+    fail(`save round-trip changed the silo: ${JSON.stringify(reloaded)} vs ${JSON.stringify(saved)}`);
+  } else if (Math.round(reloaded.scrap) !== 777) {
+    fail(`resources did not survive the round-trip (scrap ${reloaded.scrap})`);
+  } else if (reloaded.chitsCap !== Infinity) {
+    fail(`the uncapped chits cap did not survive IndexedDB (got ${reloaded.chitsCap})`);
+  } else if (!reloaded.stripped) {
+    fail('transient __ fields were written to the save');
+  } else {
+    ok('IndexedDB round-trip is lossless (Infinity caps survive, transients stripped)');
+  }
+
+  // ---- 11. THE Phase 2 gate: an hour away produces a readable report -------
+  //
+  // Backdate the save by an hour, then reload the page exactly the way a
+  // player returning to a closed tab would.
+  await page.evaluate(async () => {
+    const { store, autosave } = window.DEEPWATER;
+    store.state.meta.lastSaveTs = Date.now() - 60 * 60 * 1000;
+    await autosave.saveNow('backdate');
+    // saveNow stamps lastSaveTs to now, so rewrite the record underneath it.
+    const { saveGame } = await import('./src/core/save.js');
+    store.state.meta.lastSaveTs = Date.now() - 60 * 60 * 1000;
+    const db = await new Promise((res) => {
+      const r = indexedDB.open('deepwater', 1);
+      r.onsuccess = () => res(r.result);
+    });
+    await new Promise((res) => {
+      const t = db.transaction('saves', 'readwrite').objectStore('saves');
+      const get = t.get('slot:0');
+      get.onsuccess = () => {
+        const rec = get.result;
+        rec.state.meta.lastSaveTs = Date.now() - 60 * 60 * 1000;
+        const put = db.transaction('saves', 'readwrite').objectStore('saves').put(rec);
+        put.onsuccess = () => res();
+      };
+    });
+  });
+
+  const returning = await context.newPage();
+  const returnErrors = [];
+  returning.on('pageerror', (e) => returnErrors.push(e.message));
+  await returning.goto(BASE, { waitUntil: 'load' });
+  await returning.waitForSelector('.report', { timeout: 20000 });
+
+  const reportText = await returning.evaluate(() => {
+    const r = document.querySelector('.report');
+    return {
+      eyebrow: r.querySelector('.report-eyebrow')?.textContent,
+      title: r.querySelector('.report-title')?.textContent,
+      headline: r.querySelector('.report-headline')?.textContent,
+      stats: [...r.querySelectorAll('.report-stat')].map((n) => ({
+        k: n.querySelector('.k').textContent,
+        v: n.querySelector('.v').textContent,
+        d: n.querySelector('.d').textContent,
+      })),
+      sections: [...r.querySelectorAll('.report-section')].map((n) => n.textContent),
+      lines: r.querySelectorAll('.report-line').length,
+      resourceCells: r.querySelectorAll('.report-res-cell').length,
+      hasContinue: !!r.querySelector('.report-foot .btn'),
+      // The silo must be paused while the report is up.
+      speed: window.DEEPWATER.store.state.settings.speed,
+    };
+  });
+
+  if (returnErrors.length) fail(`errors while showing the report: ${returnErrors.join(', ')}`);
+  if (!reportText.hasContinue) fail('the return report has no Continue button');
+  if (!/away/i.test(reportText.eyebrow || '')) fail(`report eyebrow reads "${reportText.eyebrow}"`);
+  if (!reportText.headline || reportText.headline.length < 20) {
+    fail(`report headline is not a sentence: "${reportText.headline}"`);
+  }
+  if (reportText.stats.length !== 4) fail(`expected 4 stat tiles, got ${reportText.stats.length}`);
+  if (reportText.resourceCells === 0 && reportText.lines === 0) {
+    fail('the report is empty — an hour away recorded nothing');
+  }
+  if (reportText.speed !== 0) fail(`the silo kept running behind the report (speed ${reportText.speed})`);
+
+  ok(`an hour away produces a report: "${reportText.headline}"`);
+  console.log(
+    `      sections: ${reportText.sections.join(' / ') || '(none)'}` +
+      `  ·  ${reportText.lines} log lines  ·  ${reportText.resourceCells} stores moved`
+  );
+  for (const s of reportText.stats) console.log(`      ${s.k}: ${s.v} (${s.d})`);
+
+  if (SHOTS) await returning.screenshot({ path: join(SHOT_DIR, 'return-report.png') });
+
+  // Continue dismisses it and the silo resumes.
+  await returning.click('.report-foot .btn');
+  await returning.waitForSelector('.report', { state: 'detached', timeout: 4000 });
+  const resumed = await returning.evaluate(() => window.DEEPWATER.store.state.settings.speed);
+  if (resumed === 0) fail('the silo did not resume after Continue');
+  else ok(`Continue dismisses the report and resumes at ${resumed}×`);
+  await returning.close();
+
+  // ---- 12. manifest is installable ----------------------------------------
   const manifest = await page.evaluate(async () => {
     const res = await fetch('./manifest.webmanifest');
     return res.json();

@@ -89,9 +89,16 @@ function drawOne(ctx, c, x, y) {
   ctx.fillRect(Math.round(x), y - h - 2, 2, 2);
 }
 
-/** Where an unemployed citizen hangs around: their nearest social space. */
+/**
+ * Where an unemployed citizen hangs around: their nearest social space.
+ *
+ * The cache lives in this module, not on `state` — render code must never
+ * write to the store, or the cache ends up serialised into save files.
+ */
+let idleFloorCache = { cycle: -1, floor: 1 };
+
 function idleFloor(state, c) {
-  if (state.__idleFloor === undefined || state.__idleFloorCycle !== state.clock.cycle) {
+  if (idleFloorCache.cycle !== state.clock.cycle) {
     let floor = 1;
     for (const room of Object.values(state.silo.rooms)) {
       if (room.type === 'cafeteria' || room.type === 'residences') {
@@ -99,11 +106,10 @@ function idleFloor(state, c) {
         break;
       }
     }
-    state.__idleFloor = floor;
-    state.__idleFloorCycle = state.clock.cycle;
+    idleFloorCache = { cycle: state.clock.cycle, floor };
   }
   // Spread them across the residential floors rather than stacking them.
-  return state.__idleFloor + (c.id % 2);
+  return idleFloorCache.floor + (c.id % 2);
 }
 
 export default { drawCitizens };

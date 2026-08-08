@@ -13,6 +13,9 @@ import { createNewGame, rehydrate } from './core/newgame.js';
 import { Game } from './core/game.js';
 import { on, emit } from './core/events.js';
 import { autoAssign } from './sim/jobs.js';
+import { loadGame, Autosave } from './core/save.js';
+import { runCatchup } from './core/catchup.js';
+import { showReturnReport } from './ui/returnReport.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
@@ -39,15 +42,50 @@ async function main() {
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   if (reduced) document.body.classList.add('reduced-motion');
 
-  status('Waking the silo…');
-  const state = createNewGame({});
+  // ---- load or create -----------------------------------------------------
+  status('Looking for a silo…');
+  let loaded = null;
+  try {
+    loaded = await loadGame(0);
+  } catch (err) {
+    // A save we can't read must not block a new game.
+    console.error('[boot] could not load the save:', err);
+  }
+
+  let isNewGame = false;
+  let state;
+  if (loaded) {
+    state = loaded.state;
+    if (loaded.usedBackup) {
+      console.warn('[boot] primary save was unreadable; restored from the backup.');
+    }
+  } else {
+    status('Waking the silo…');
+    state = createNewGame({});
+    isNewGame = true;
+  }
   state.settings.reducedMotion = reduced;
   const store = createStore(rehydrate(state));
 
-  // Staff the silo so the player opens on a running building, not a still one.
-  store.dispatchAll(autoAssign(store.state));
+  if (isNewGame) {
+    // Staff the silo so the player opens on a running building, not a still one.
+    store.dispatchAll(autoAssign(store.state));
+  }
 
   const game = new Game(store);
+
+  // ---- catch up on the absence -------------------------------------------
+  // This runs before anything is drawn: the player should never see the silo
+  // in its pre-absence state and watch it jump.
+  let report = null;
+  if (!isNewGame) {
+    status('Reading the shift logs…');
+    try {
+      report = runCatchup(store, game);
+    } catch (err) {
+      console.error('[boot] catch-up failed:', err);
+    }
+  }
 
   // ---- render -------------------------------------------------------------
   status('Bringing up the lights…');
@@ -80,9 +118,16 @@ async function main() {
   };
   shell.onAlertFloor = (floor, kind) => gauge.flag(floor, kind);
 
-  // Route alerts that carry a floor onto the depth gauge rail.
-  on('action:CONDITION_DELTA', () => {});
-  on('death', () => {});
+  // A death pulses the rail at the floor it happened on, so the player's eye
+  // goes to the place rather than to a notification.
+  on('death', ({ citizen }) => {
+    const room = citizen.job ? store.state.silo.rooms[citizen.job.roomId] : null;
+    if (room) gauge.flag(room.floor, 'warn');
+  });
+
+  // ---- persistence --------------------------------------------------------
+  const autosave = new Autosave(store);
+  autosave.start();
 
   // ---- run ----------------------------------------------------------------
   game.onFrame((dt) => {
@@ -92,21 +137,36 @@ async function main() {
   game.start();
 
   // ---- expose for debugging ----------------------------------------------
-  window.DEEPWATER = { store, game, shell, renderer, gauge, BAL, emit };
+  window.DEEPWATER = { store, game, shell, renderer, gauge, autosave, BAL, emit, runCatchup };
 
   status('Ready.');
   boot.remove();
+
+  // The report is the reward for coming back, so it gets the screen to
+  // itself and the silo stays paused until it's been read.
+  if (report) {
+    const resumeSpeed = store.state.settings.speed ?? 1;
+    shell.setSpeed(0);
+    renderer.focusFloor(store.state.ui.cameraFloor ?? 3, true);
+    await showReturnReport(report);
+    shell.setSpeed(resumeSpeed || 1);
+  }
+
   registerServiceWorker();
 }
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', () => {
+  const register = () =>
     navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((err) => {
       // Not fatal: the game runs fine without offline caching.
       console.warn('[sw] registration failed:', err);
     });
-  });
+  // Boot is async (IndexedDB), so by the time we get here the load event has
+  // usually already fired — waiting for it unconditionally means the worker
+  // never registers and the game silently loses offline support.
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once: true });
 }
 
 main().catch((err) => {
