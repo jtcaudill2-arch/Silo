@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#232729">
+<meta name="description" content="Deepwater — you are the mayor of Silo 12. Ninety-two floors, one hundred and eighty people, and a sky that kills.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Deepwater">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./assets/icon-192.png">
+<link rel="stylesheet" href="./src/ui/styles.css">
+<title>Deepwater — Silo 12</title>
+</head>
+<body>
+
+<!-- Boot screen. Replaced by the shell once main.js has state. -->
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <div class="boot-mark">SILO 12</div>
+    <div class="boot-sub">DEEPWATER</div>
+    <div class="boot-bar"><i></i></div>
+    <div class="boot-status" id="boot-status">Spinning up the generator hall…</div>
+  </div>
+</div>
+
+<div id="app" class="app" hidden>
+
+  <!-- ── Resource bar ─────────────────────────────────────────────── -->
+  <header id="topbar" class="topbar">
+    <button id="btn-clock" class="clock" type="button" aria-label="Game clock and speed">
+      <span class="clock-date" id="clock-date">Y0 D0</span>
+      <span class="clock-shift" id="clock-shift">SHIFT 0</span>
+    </button>
+    <div id="resource-strip" class="resource-strip" role="list" aria-label="Resources"></div>
+    <button id="btn-speed" class="speed-btn" type="button" aria-label="Change speed">1×</button>
+  </header>
+
+  <!-- ── Stage: depth gauge + canvas ──────────────────────────────── -->
+  <main id="stage" class="stage">
+    <div id="depth-gauge" class="depth-gauge" role="slider" tabindex="0"
+         aria-label="Depth gauge — silo floors" aria-valuemin="1" aria-valuemax="92" aria-valuenow="1">
+      <canvas id="gauge-canvas"></canvas>
+    </div>
+    <div id="canvas-wrap" class="canvas-wrap">
+      <canvas id="silo-canvas" aria-label="Silo cross-section"></canvas>
+      <div id="canvas-hint" class="canvas-hint"></div>
+    </div>
+    <div id="alert-rail" class="alert-rail" aria-live="polite"></div>
+  </main>
+
+  <!-- ── Panel host ───────────────────────────────────────────────── -->
+  <section id="panel-host" class="panel-host" hidden aria-live="polite"></section>
+
+  <!-- ── Bottom navigation ────────────────────────────────────────── -->
+  <nav id="navbar" class="navbar" aria-label="Screens"></nav>
+
+</div>
+
+<div id="modal-root" class="modal-root"></div>
+<div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+<noscript>
+  <div class="noscript">Deepwater needs JavaScript. The silo does not run on paperwork alone.</div>
+</noscript>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

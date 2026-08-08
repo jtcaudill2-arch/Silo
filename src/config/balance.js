@@ -1,0 +1,617 @@
+/**
+ * balance.js — EVERY tunable number in Deepwater.
+ *
+ * Rule from the spec: zero magic numbers in sim code. If a number changes how
+ * the game plays, it lives here. Sim modules import BAL and read from it.
+ *
+ * Organised by system so a balance pass can be done section by section.
+ */
+
+export const BAL = {
+  // ---------------------------------------------------------------- meta ---
+  meta: {
+    schemaVersion: 10,
+    defaultSeed: 0x5110c12,
+    saveSlots: 3,
+    autosaveEveryTicks: 30,
+    logMaxEntries: 600,
+  },
+
+  // ---------------------------------------------------------------- time ---
+  time: {
+    TICK_MS: 1000, // 1 real second
+    TICKS_PER_CYCLE: 60, // 1 cycle  = 1 shift  = 1 minute real
+    CYCLES_PER_DAY: 8, // 1 day    = 8 minutes real
+    DAYS_PER_YEAR: 12, // 1 year   = ~96 minutes real
+    maxCyclesPerFrame: 300, // accumulator drain cap before spilling to catch-up
+    worldTickEveryDays: 1,
+    diplomacyTickEveryDays: 3,
+  },
+
+  // ------------------------------------------------------------- catchup ---
+  catchup: {
+    fullFidelityMs: 5 * 60 * 1000, // <= 5 min: replay cycle by cycle
+    capMs: 12 * 60 * 60 * 1000, // > 12 h: simulate 12 h only
+    maxFullFidelityCycles: 400, // hard safety on the fine path
+  },
+
+  // ----------------------------------------------------------------- silo ---
+  silo: {
+    totalFloors: 92,
+    slotsPerFloor: 6,
+    startExcavatedFloors: 14,
+    tiers: [
+      { key: 'upper', name: 'Upper', from: 1, to: 14, gate: null },
+      { key: 'mids', name: 'Mids', from: 15, to: 34, gate: 'deep_excavation_1' },
+      { key: 'lowers', name: 'Lowers', from: 35, to: 58, gate: 'deep_excavation_2' },
+      { key: 'deeps', name: 'Deeps', from: 59, to: 80, gate: 'deep_excavation_3' },
+      { key: 'foundations', name: 'Foundations', from: 81, to: 92, gate: 'origin_systems' },
+    ],
+    excavation: {
+      baseScrap: 40,
+      baseLabor: 30,
+      growth: 1.18, // baseCost * growth^floorsExcavated
+      ticksPerLaborHour: 1,
+      shoringRequiredBelowFloor: 35,
+      shoringAlloyPerFloor: 6,
+      collapseChancePerDayUnshored: 0.02,
+    },
+    merge: {
+      maxWidth: 3,
+      efficiencyPerStep: 0.15, // +15% output per merge step
+      powerDiscountPerStep: 0.12, // -12% power draw per merge step
+    },
+    condition: {
+      start: 100,
+      decayPerCycleWorking: 0.055,
+      decayPerCycleIdle: 0.012,
+      penaltyBelow: 40, // output penalty starts scaling below this
+      failAt: 0,
+      breachChancePerDayAtZero: 0.06,
+      maintenanceRestorePerCyclePerCrew: 1.4,
+    },
+    upgrade: {
+      maxLevel: 5,
+      scrapBase: 60,
+      scrapGrowth: 1.7,
+      chitsBase: 25,
+      chitsGrowth: 1.6,
+      downtimeCycles: 6,
+      outputPerLevel: 0.35, // +35% of base output per level above 1
+      staffSlotsPerLevel: [1, 1, 2, 2, 3], // index = level-1
+    },
+  },
+
+  // ------------------------------------------------------------ resources ---
+  resources: {
+    // Starting stockpiles for a new game.
+    start: {
+      power: 0,
+      water: 400,
+      food: 520,
+      meds: 60,
+      scrap: 300,
+      alloy: 40,
+      ammo: 120,
+      chits: 250,
+      filters: 40,
+      parts: 30,
+      fuel: 260,
+      ore: 0,
+      coolant: 0,
+    },
+    baseCaps: {
+      power: 200, // battery capacity; power is mostly flow, not stock
+      water: 800,
+      food: 900,
+      meds: 200,
+      scrap: 900,
+      alloy: 300,
+      ammo: 600,
+      chits: Infinity,
+      filters: 250,
+      parts: 300,
+      fuel: 700,
+      ore: 400,
+      coolant: 200,
+    },
+    depotCapBonus: {
+      water: 400,
+      food: 500,
+      scrap: 500,
+      alloy: 200,
+      ammo: 300,
+      meds: 120,
+      filters: 150,
+      parts: 200,
+      fuel: 350,
+      ore: 250,
+      coolant: 120,
+    },
+    perCitizen: {
+      foodPerDay: 1.0,
+      waterPerDay: 1.2,
+      airLoadPerCitizen: 1.0,
+    },
+    // Shortage consequences, applied per game day.
+    shortage: {
+      starvation: { healthPerDay: -8, orderPerDay: -5, moralePerDay: -6 },
+      dehydration: { healthPerDay: -11, orderPerDay: -4, moralePerDay: -5 },
+      noMeds: { injuryHealMult: 0.15, radPermanentChance: 0.5 },
+      brownoutMoralePerDay: -2,
+    },
+  },
+
+  // ------------------------------------------------------------------ air ---
+  air: {
+    start: 92,
+    max: 100,
+    min: 0,
+    // Air quality drifts toward capacity/load ratio each cycle.
+    driftPerCycle: 0.9,
+    healthDecayBelow: 60,
+    healthDecayPerDay: -4,
+    massCasualtyBelow: 30,
+    massCasualtyChancePerDay: 0.05,
+    massCasualtyFraction: 0.04,
+    filterConsumptionPerBayPerCycle: 0.05,
+  },
+
+  // --------------------------------------------------------------- power ---
+  power: {
+    // Brownout: rooms shut off from the bottom of the priority list up.
+    brownoutMoraleHit: -2,
+    batteryDischargePerCycle: 12,
+    batteryChargePerCycle: 8,
+    defaultPriority: [
+      'water_reclaimer',
+      'air_filtration',
+      'hydroponics',
+      'generator_hall',
+      'reactor',
+      'residences',
+      'clinic',
+      'cafeteria',
+      'workshop',
+      'recycling',
+      'chem_lab',
+      'foundry',
+      'munitions',
+      'storage_depot',
+      'suit_bay',
+      'airlock',
+      'sheriffs_office',
+      'holding_cells',
+      'barracks',
+      'training_yard',
+      'armory',
+      'laboratory',
+      'schoolhouse',
+      'radio_room',
+      'archive',
+      'protein_vats',
+      'deep_mine',
+    ],
+  },
+
+  // ------------------------------------------------------------ citizens ---
+  citizens: {
+    startPopulation: 180,
+    statMin: 1,
+    statMax: 10,
+    birthStatRoll: { min: 2, max: 6 },
+    skillMax: 100,
+    skillGrowthBase: 0.4,
+    skillGrowthIntDivisor: 20, // + int/20 per game day
+    skillDiminishingAbove: 70,
+    skillDiminishingMult: 0.4,
+    schoolGrowthMult: 2.2,
+    schoolMinAge: 6,
+    schoolMaxAge: 17,
+    workingAgeMin: 16,
+    workingAgeMax: 999,
+
+    vitality: {
+      flatUntilAge: 40,
+      declineStartAge: 40,
+      declinePerYearEarly: 1.5, // 40 -> 60
+      declineSteepAge: 60,
+      declinePerYearLate: 4.0,
+      childRampAge: 18, // below this, vitality ramps up with age
+      childMin: 45,
+    },
+    death: {
+      vitalityThreshold: 30,
+      divisor: 400, // P = (30 - vitality) / 400 per game day
+      healthFactor: 0.9, // low health multiplies death chance
+      radiationFactor: 1.6,
+      clinicMitigationPerLevel: 0.12,
+    },
+    health: {
+      start: 100,
+      max: 100,
+      regenPerDayFed: 1.6,
+      regenClinicPerLevel: 1.1,
+      injuryFloor: 5,
+      deathAtZero: true,
+    },
+    morale: {
+      start: 62,
+      max: 100,
+      min: 0,
+      driftToward: 55, // baseline morale gravity
+      driftRate: 0.35,
+      cafeteriaBonusPerLevel: 0.6, // morale/day per level
+      overcrowdPenaltyPerOver: 0.25,
+      idlePenaltyPerDay: -1.2,
+      overworkPenaltyPerDay: -3,
+      overworkHealthPerDay: -1,
+      overworkShiftThreshold: 6,
+      friendDeathHit: -12,
+      acquaintanceDeathHit: -4,
+    },
+    radiation: {
+      max: 100,
+      sicknessThreshold: 45,
+      sicknessHealthPerDay: -3,
+      cancerThreshold: 70,
+      cancerChancePerDay: 0.012,
+      clinicTreatPerDayPerLevel: 0.9,
+      medsPerRadPoint: 0.35,
+    },
+    birth: {
+      minAge: 18,
+      maxAge: 45,
+      relationshipThreshold: 60,
+      requiredOrder: 40,
+      foodSurplusRequired: 40,
+      gestationDays: 12, // ~1 game year
+      chancePerDayPerCouple: 0.022,
+      housingRequired: true,
+    },
+    relationships: {
+      min: -100,
+      max: 100,
+      sameRoomGrowthPerDay: 1.1,
+      cafeteriaGrowthPerDay: 0.5,
+      randomPairsPerDay: 6,
+      friendThreshold: 55,
+      rivalThreshold: -45,
+      decayPerDay: 0.05,
+    },
+    housing: {
+      slotsPerResidenceLevel: 6,
+      overcrowdOrderPerOver: 0.35,
+    },
+  },
+
+  // ------------------------------------------------------------ traits ---
+  traits: {
+    // chance a newborn / recruit rolls a trait at all
+    rollChance: 0.42,
+    maxAtBirth: 2,
+  },
+
+  // -------------------------------------------------------------- jobs ---
+  jobs: {
+    matchedSkillOutput: 1.0,
+    mismatchedOutput: 0.4,
+    skillOutputCurve: 0.55, // output = base * (0.45 + skill/100 * curve_scale)
+    skillOutputFloor: 0.45,
+    vitalityWeight: 1.0,
+    healthWeight: 1.0,
+    moraleWeight: 0.35, // morale contributes this fraction of output swing
+    idleFoodMult: 1.0,
+    idleDissentPerCitizenPerDay: 0.012,
+    shiftsPerDay: 8,
+    restShiftsRequired: 2,
+  },
+
+  // ---------------------------------------------------------- research ---
+  research: {
+    pointsPerLabPerCycleBase: 0.5,
+    scientistSkillWeight: 0.9,
+    archiveBonus: 0.25,
+    openArchivesBonus: 0.2,
+    maxQueue: 5,
+  },
+
+  // ------------------------------------------------------------- order ---
+  order: {
+    start: 64,
+    max: 100,
+    min: 0,
+    driftToward: 50,
+    driftRate: 0.25,
+    kiaPenalty: -3,
+    birthBonus: 1.5,
+    executionPenalty: -6,
+    victoryBonus: 4,
+    tradeBonus: 1,
+    surplusFoodBonus: 0.8,
+    sheriffBonusPerLevel: 1.6,
+    deputyBonus: 0.7,
+    dissidentMultiplier: 1.35,
+    satellitePenaltyPerDay: -1,
+    uprisingThreshold: 25,
+    uprisingConsecutiveDays: 3,
+    uprisingChancePerDay: 0.34,
+    maxPoliciesBase: 2,
+    policyPerAdminSkill: 40, // 2 + floor(adminSkill / 40)
+    crime: {
+      baseChancePerDay: 0.05,
+      orderScaling: 0.9, // lower order -> more crime
+      curfewMult: 0.5,
+      theftFraction: 0.05,
+      sabotageConditionHit: -45,
+      investigationDays: 3,
+      wrongVerdictOrder: -8,
+      rightVerdictOrder: 5,
+    },
+  },
+
+  // ---------------------------------------------------------- military ---
+  military: {
+    squadMin: 4,
+    squadMax: 8,
+    maxSquads: 6,
+    trainingSkillPerDay: 1.5,
+    trainingAmmoPerDay: 2,
+    barracksFoodPerSoldierPerDay: 0.4,
+    garrisonOrderBonusPerSquad: 2.5,
+    readinessWeights: { training: 0.3, equipment: 0.3, health: 0.2, morale: 0.1, ammo: 0.1 },
+    gearTierMult: [1.0, 1.4, 1.9, 2.5],
+    armorPerTier: 0.12,
+    stipendChitsPerSoldierPerDay: 0.5,
+  },
+
+  // -------------------------------------------------------------- gear ---
+  gear: {
+    durabilityMax: 100,
+    durabilityLossPerCombat: 6,
+    durabilityLossPerExpeditionDay: 1.5,
+    repairPerCyclePerQuartermaster: 2.2,
+    repairScrapPerPoint: 0.35,
+    suit: {
+      integrityMax: 100,
+      repairAlloyPerPoint: 0.2,
+      repairPartsPerPoint: 0.1,
+      degradePerHourOutside: [0.55, 0.42, 0.3, 0.2], // by suit tier
+      degradePerCombatHit: 5,
+      breachRadPerHour: 12,
+      breachHealthPerHour: 1.5,
+    },
+  },
+
+  // -------------------------------------------------------- expeditions ---
+  expedition: {
+    hoursPerDay: 24,
+    decon: {
+      shiftsPerMember: 1,
+      filtersPerMember: 2,
+      radRemovedFraction: 0.75,
+      skipRadSpreadFraction: 0.3, // fraction of squad rad pushed into the silo
+      skipOrderPenalty: -4,
+    },
+    supplies: {
+      foodPerMemberPerDay: 1.4,
+      waterPerMemberPerDay: 1.6,
+      medsPerMemberPerDay: 0.2,
+      ammoPerMemberPerDay: 2,
+    },
+    bands: [
+      {
+        key: 'near',
+        name: 'Near ruins',
+        travelDays: 1,
+        radPerHour: 2,
+        rewardTier: 1,
+        suitTier: 1,
+        encounterWeightShift: 0,
+      },
+      {
+        key: 'mid',
+        name: 'Mid waste',
+        travelDays: 3,
+        travelDaysMin: 2,
+        radPerHour: 5,
+        rewardTier: 2,
+        suitTier: 2,
+        encounterWeightShift: 1,
+      },
+      {
+        key: 'deep',
+        name: 'Deep waste',
+        travelDays: 5,
+        travelDaysMin: 4,
+        radPerHour: 9,
+        rewardTier: 3,
+        suitTier: 3,
+        encounterWeightShift: 2,
+      },
+      {
+        key: 'approach',
+        name: 'Silo approach',
+        travelDays: 6,
+        travelDaysMin: 5,
+        radPerHour: 7,
+        rewardTier: 3,
+        suitTier: 3,
+        encounterWeightShift: 2,
+      },
+      {
+        key: 'scar',
+        name: 'The Scar',
+        travelDays: 10,
+        travelDaysMin: 8,
+        radPerHour: 15,
+        rewardTier: 4,
+        suitTier: 4,
+        encounterWeightShift: 3,
+      },
+    ],
+    encountersPerTravelDay: 1,
+    survivorRecruitChance: 0.55,
+    survivorRadRange: [5, 45],
+    survivorDissidentChance: 0.18,
+  },
+
+  // ----------------------------------------------------------- mutation ---
+  mutation: {
+    levels: [1.0, 1.35, 1.8],
+    // level chance shifts with distance band + total elapsed days
+    baseWeights: [0.72, 0.22, 0.06],
+    bandShift: 0.09, // per band index, moves weight to higher levels
+    dayShiftPer100Days: 0.11,
+    modifiers: [
+      { key: 'irradiated', name: 'Irradiated', radOnHit: 4 },
+      { key: 'carapaced', name: 'Carapaced', incomingMult: 0.7 },
+      { key: 'frenzied', name: 'Frenzied', damageMult: 1.5, healthMult: 0.7 },
+    ],
+    modifierChance: 0.35,
+  },
+
+  // ------------------------------------------------------------ combat ---
+  combat: {
+    weights: { str: 0.3, agi: 0.2, combat: 0.5 },
+    ammoFactorFull: 1.0,
+    ammoFactorEmpty: 0.45,
+    moraleModBase: 0.8,
+    moraleModRange: 0.4,
+    sizeModPerLog2: 0.08,
+    ambushSwing: 0.25,
+    terrainSwing: 0.15,
+    suitIntegrityMin: 0.7,
+    rollMean: 1.0,
+    rollSd: 0.14,
+    rollClamp: [0.6, 1.5],
+    leaderChaDivisor: 50,
+    leaderCombatDivisor: 100,
+    raiderFleeLossFraction: 0.4,
+    outcomes: [
+      { min: 2.0, key: 'decisive', name: 'Decisive victory', cas: [0.0, 0.05], loot: 1.3, win: true },
+      { min: 1.4, key: 'victory', name: 'Victory', cas: [0.08, 0.18], loot: 1.0, win: true },
+      { min: 1.1, key: 'costly', name: 'Costly victory', cas: [0.2, 0.35], loot: 0.8, win: true },
+      { min: 0.9, key: 'stalemate', name: 'Stalemate', cas: [0.15, 0.3], loot: 0.2, win: false },
+      { min: 0.6, key: 'defeat', name: 'Defeat', cas: [0.35, 0.6], loot: 0, win: false, gearLost: true },
+      { min: -Infinity, key: 'rout', name: 'Rout', cas: [0.6, 0.9], loot: 0, win: false, gearLost: true, captureRisk: 0.25 },
+    ],
+    injury: {
+      survivorHealthLoss: [8, 34],
+      permanentTraitChance: 0.16,
+      permanentTraits: ['crippled', 'scarred', 'shellshocked'],
+    },
+    casualtyWeightExponent: 1.6, // weak members die first, inversely to unitPower
+  },
+
+  // ------------------------------------------------------------- world ---
+  world: {
+    daysPerTick: 1,
+    populationDriftDivisor: 100, // (economy - military*0.3) / 100
+    militaryDriftWeight: 0.3,
+    stabilityDrift: 0.06,
+    collapseAtStability: 0,
+    collapseRefugeeChance: 0.45,
+    collapseRaiderHostChance: 0.3,
+    warChancePerDayPerPair: 0.0016,
+    warStabilityDrain: 1.2,
+    warMilitaryDrain: 0.8,
+    radioIntelChancePerDay: 0.3,
+  },
+
+  // -------------------------------------------------------- diplomacy ---
+  diplomacy: {
+    evaluateEveryDays: 3,
+    reputationWeight: 0.6,
+    fearBonus: 25,
+    aggressionPenaltyWeight: 40,
+    honestyWeight: 8,
+    paranoiaWeight: 40,
+    memoryDecayPer10Days: 1,
+    memoryFloorFraction: 0.15, // never fully forgets
+    thresholds: {
+      merchant: 30,
+      technocrat: 42,
+      isolationist: 62,
+      warlord: 70,
+      agrarian: 24,
+      opportunist: 34,
+      archivist: 66,
+      theocratic: 55,
+      democratic: 40,
+      nomadic: 30,
+      militarized: 50,
+      slaver: 38,
+      fractured: 30,
+      scientific: 36,
+      industrial: 44,
+      unknown: 90,
+    },
+    allyCallToArmsRefusalRep: -40,
+    allyCallToArmsBroadcastRep: -10,
+    treatyBreakRep: -35,
+    giftRepPerValue: 0.05,
+    tradeRepPerDeal: 2,
+    radioRangeTiers: [6, 12, 19], // how many silos each radio tier can reach
+  },
+
+  // ------------------------------------------------------- conquest ---
+  conquest: {
+    scoutRunsRequired: 2,
+    scoutFailAlertRep: -12,
+    undermineDefenseReduction: 0.25,
+    breachSquadsRequired: 2,
+    breachSuitTier: 3,
+    breachChargesRequired: 4,
+    holdCombats: 5,
+    holdGarrisonDays: 30,
+    conqueredStartOrder: 5,
+    satelliteEfficiency: 0.4,
+    satelliteOrderPerDay: -1,
+    revoltOrderThreshold: 20,
+  },
+
+  // ---------------------------------------------------------- render ---
+  render: {
+    tileSize: 32,
+    floorHeight: 40,
+    floorWidth: 384, // 6 slots * 64
+    slotWidth: 64,
+    maxSpritesPerFrame: 400,
+    citizenFloorsRendered: 3,
+    depthGaugeBarHeight: 3,
+    cameraLerp: 0.18,
+    flickerAmplitude: 0.06,
+    flickerSpeed: 0.9,
+  },
+
+  // -------------------------------------------------------- pacing ---
+  pacing: {
+    crises: [
+      { key: 'first_blight', atMinutes: 120, once: true },
+      { key: 'raider_probe', atMinutes: 300, once: true },
+      { key: 'refugee_wave', atMinutes: 480, once: true },
+      { key: 'anvil_ultimatum', atMinutes: 840, once: true },
+      { key: 'uprising_window', atMinutes: 1200, once: true },
+    ],
+  },
+
+  // ------------------------------------------------------- endings ---
+  endings: {
+    compactAlliesRequired: 8,
+    dominionSilosRequired: 6,
+    surfaceResearchRequired: 'origin_record',
+  },
+};
+
+/** Derived, read-only helpers so sim code never re-derives time math. */
+export const TIME = {
+  ticksPerCycle: BAL.time.TICKS_PER_CYCLE,
+  ticksPerDay: BAL.time.TICKS_PER_CYCLE * BAL.time.CYCLES_PER_DAY,
+  ticksPerYear: BAL.time.TICKS_PER_CYCLE * BAL.time.CYCLES_PER_DAY * BAL.time.DAYS_PER_YEAR,
+  cyclesPerDay: BAL.time.CYCLES_PER_DAY,
+  cyclesPerYear: BAL.time.CYCLES_PER_DAY * BAL.time.DAYS_PER_YEAR,
+  daysPerYear: BAL.time.DAYS_PER_YEAR,
+};
+
+export default BAL;

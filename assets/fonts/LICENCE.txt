@@ -1,0 +1,10 @@
+Fonts bundled with Deepwater
+
+Saira Condensed — Copyright the Saira Project Authors.
+IBM Plex Sans, IBM Plex Mono — Copyright IBM Corp.
+
+All three are licensed under the SIL Open Font License, Version 1.1.
+https://openfontlicense.org
+
+They are redistributed here unmodified so the game can run with no
+network connection, as an offline-first PWA must.

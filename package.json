@@ -1,0 +1,13 @@
+{
+  "name": "deepwater",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deepwater — real-time colony management in Silo 12. Installable PWA, no build step, fully offline.",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "test": "node test/harness.mjs",
+    "precache": "node tools/gen-precache.mjs"
+  },
+  "engines": { "node": ">=18" }
+}
