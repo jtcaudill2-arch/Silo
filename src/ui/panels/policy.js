@@ -28,6 +28,22 @@ export const policyPanel = {
     ).length;
   },
 
+  /**
+   * Politics arrives when there is politics. On a first morning of a silo
+   * that is fed, housed and calm there is nothing here to decide, and a
+   * panel with nothing in it is one more thing to work out before you can
+   * start playing.
+   */
+  locked(state) {
+    const trouble =
+      state.order.value < BAL.order.contentThreshold ||
+      (state.order.investigations || []).length > 0 ||
+      (state.order.policies || []).length > 0 ||
+      Object.values(state.silo.rooms).some((r) => r.type === 'sheriffs_office');
+    if (trouble) return null;
+    return 'Nothing to govern yet. This opens when order slips, or when you build a Sheriff’s Office.';
+  },
+
   render(state, shell) {
     const body = el('div.panel-body');
     const order = state.order.value;

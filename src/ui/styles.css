@@ -161,11 +161,43 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
      which pushes the right-hand nav buttons off-screen where they can't be
      tapped. minmax(0, 1fr) is what lets the inner overflow:auto do its job. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: var(--topbar-h) 1fr var(--navbar-h);
+  /* The directive bar is auto-sized so it takes no room when hidden. */
+  grid-template-rows: var(--topbar-h) auto 1fr var(--navbar-h);
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .app[hidden] { display: none; }
+
+/* ---------------------------------------------------------- directive --- */
+/* One line saying what to do next. The silo has twenty-eight rooms and
+   forty-six research nodes and no thread through them; this is the thread.
+   It sits above the fold because a thing you have to go looking for is a
+   thing nobody looks for. */
+.directive {
+  display: grid; gap: 1px; text-align: left; min-width: 0;
+  padding: 9px 14px;
+  background: var(--concrete-deeper);
+  border: 0; border-bottom: 1px solid var(--hairline);
+  border-left: 3px solid var(--sodium);
+  color: inherit; font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.directive:active { background: var(--concrete-deep); }
+.directive[hidden] { display: none; }
+.directive-eyebrow {
+  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--sodium);
+}
+.directive-text {
+  font-size: 14px; color: var(--bone); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.directive-why {
+  font-size: 11.5px; color: var(--bone-faint); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.directive.urgent { border-left-color: var(--rust); }
+.directive.urgent .directive-eyebrow { color: var(--rust); }
 
 /* -------------------------------------------------------------- topbar --- */
 .topbar {

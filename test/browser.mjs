@@ -100,6 +100,31 @@ try {
   else if (afterBrief.speed !== 1) fail(`the silo did not resume after the handover (speed ${afterBrief.speed})`);
   else ok('handover dismisses, marks itself seen, and resumes at 1×');
 
+  // ---- 1c. the first morning is small -------------------------------------
+  // The game has 13 resources, 9 panels, 28 rooms and 46 research nodes, and
+  // showing all of it at once was the single loudest complaint from playing
+  // it. What a new player meets should be a fraction of that, and it should
+  // grow as the silo does.
+  const firstLook = await page.evaluate(() => ({
+    resources: [...document.querySelectorAll('.res')].filter((n) => !n.hidden).length,
+    panels: [...document.querySelectorAll('.nav-btn')].filter((n) => !n.hidden).length,
+    order: document.getElementById('directive').hidden
+      ? null
+      : document.getElementById('directive-text').textContent,
+  }));
+  if (firstLook.resources > 7) fail(`${firstLook.resources} resource counters on the first morning`);
+  else if (firstLook.panels > 5) fail(`${firstLook.panels} panels on the first morning`);
+  else ok(`first morning is ${firstLook.resources} counters and ${firstLook.panels} panels`);
+  if (!firstLook.order) fail('no standing order on the first morning');
+  else ok(`standing order reads: "${firstLook.order}"`);
+
+  // Tapping the order opens the panel that acts on it.
+  await page.click('#directive');
+  await page.waitForSelector('#panel-host:not([hidden]) .panel-title', { timeout: 4000 });
+  const opened = await page.$eval('.panel-title', (n) => n.textContent);
+  ok(`tapping the order opens ${opened}`);
+  await page.click('.panel-close');
+
   // ---- 2. state is live ----------------------------------------------------
   const snap = await page.evaluate(() => {
     const s = window.DEEPWATER.store.state;
@@ -405,6 +430,30 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.getElementById('panel-host').hidden, { timeout: 4000 });
   ok('a second Escape closes the panel');
+
+  // ---- 6a3. the surface grows with the silo -------------------------------
+  // Placed here rather than beside the first-morning check because it has to
+  // complete research to prove the point, and an earlier assertion depends on
+  // research being untouched.
+  await page.evaluate(() => {
+    const { store } = window.DEEPWATER;
+    for (const id of ['antibiotics', 'radio_range_1', 'env_suit_1']) {
+      store.dispatch({ type: 'RESEARCH_COMPLETE', id });
+    }
+    store.dispatch({ type: 'RADIO_TIER', tier: 1 });
+    store.dispatch({ type: 'SQUAD_CREATE', name: 'Bell' });
+  });
+  await page.waitForTimeout(400);
+  const later = await page.evaluate(() => ({
+    resources: [...document.querySelectorAll('.res')].filter((n) => !n.hidden).length,
+    panels: [...document.querySelectorAll('.nav-btn')].filter((n) => !n.hidden).length,
+  }));
+  if (later.panels <= firstLook.panels) {
+    fail(`panels did not appear as the silo grew (${firstLook.panels} -> ${later.panels})`);
+  } else {
+    ok(`surface grows with the silo: ${firstLook.panels} panels -> ${later.panels}, ` +
+       `${firstLook.resources} counters -> ${later.resources}`);
+  }
 
   // ---- 6b. a scripted crisis stops the clock and puts its prose up --------
   await page.evaluate(() => {

@@ -10,6 +10,8 @@
 import { BAL } from '../config/balance.js';
 import { el, clear, fmt, fmtDelta, fmtClock, closeTopModal } from './dom.js';
 import { on } from '../core/events.js';
+import { topDirective } from '../sim/directives.js';
+import { getRoom } from '../data/rooms.js';
 
 /** Resources shown in the top strip, in this order. */
 const STRIP = [
@@ -25,6 +27,13 @@ const STRIP = [
   { key: 'chits', label: 'CHITS' },
   { key: 'filters', label: 'FILT' },
 ];
+
+/**
+ * Always on the strip, even at zero — these four are the ones a decision is
+ * ever made about on the first morning, and a counter that vanishes when it
+ * empties is worse than one that reads zero.
+ */
+const ALWAYS_SHOWN = new Set(['power', 'food', 'water', 'scrap']);
 
 const SPEEDS = [0, 1, 2, 4];
 
@@ -53,6 +62,12 @@ export class Shell {
     this.clockShift = document.getElementById('clock-shift');
     this.speedBtn = document.getElementById('btn-speed');
     this.alertRail = document.getElementById('alert-rail');
+    this.directive = document.getElementById('directive');
+    this.directiveText = document.getElementById('directive-text');
+    this.directiveWhy = document.getElementById('directive-why');
+    this.directive.addEventListener('click', () => {
+      if (this._directivePanel) this.open(this._directivePanel);
+    });
 
     this.speedBtn.addEventListener('click', () => this.cycleSpeed());
     document.getElementById('btn-clock').addEventListener('click', () => this.open('log'));
@@ -109,6 +124,10 @@ export class Shell {
       const panel = this.panels.get(id);
       btn.classList.toggle('active', this.activePanel === id);
       const locked = panel?.locked?.(this.state);
+      // A row of greyed-out buttons is a list of things you can't do. Nine
+      // of them on the first morning reads as a game you have already fallen
+      // behind in. Panels appear when they become usable and stay.
+      btn.hidden = !!locked;
       btn.disabled = !!locked;
       btn.title = locked || panel?.title || '';
 
@@ -211,10 +230,34 @@ export class Shell {
   renderChrome() {
     const state = this.state;
     this.renderStrip(state);
+    this.renderDirective(state);
     this.clockDate.textContent = fmtClock(state.clock);
     this.clockShift.textContent = `SHIFT ${state.clock.shift + 1}/${BAL.time.CYCLES_PER_DAY}`;
     this.syncNav();
     if (this.activePanel) this.renderPanel();
+  }
+
+  /**
+   * The one thing worth doing next. Recomputed from state, so it stays true
+   * whether the player follows it, ignores it, or comes back after a week.
+   * Text only changes when the underlying directive does — a line that
+   * rewrites itself every cycle is a line nobody can read.
+   */
+  renderDirective(state) {
+    const d = topDirective(state);
+    if (!d) {
+      this.directive.hidden = true;
+      this._directiveId = null;
+      return;
+    }
+    this.directive.hidden = false;
+    this._directivePanel = d.panel;
+    if (this._directiveId === d.id && this._directiveWhy === d.why) return;
+    this._directiveId = d.id;
+    this._directiveWhy = d.why;
+    this.directiveText.textContent = d.text;
+    this.directiveWhy.textContent = d.why;
+    this.directive.classList.toggle('urgent', d.weight >= 85);
   }
 
   renderStrip(state) {
@@ -237,6 +280,7 @@ export class Shell {
       }
     }
 
+    const live = this.liveResources(state);
     for (const def of STRIP) {
       const ref = this._stripNodes.get(def.key);
       const amount = state.resources[def.key] || 0;
@@ -257,7 +301,40 @@ export class Shell {
       ref.node.title =
         `${def.label} ${amount.toFixed(1)}${cap === Infinity ? '' : ' / ' + cap}` +
         `\n${fmtDelta(net)} per cycle`;
+
+      ref.node.hidden = !live.has(def.key);
     }
+  }
+
+  /**
+   * Which counters the strip should carry.
+   *
+   * Eleven of them on the first morning — most reading a starting stock the
+   * silo has no way to spend or replace for hours — is a good part of what
+   * makes this look impenetrable, and it buries the three that decide whether
+   * anybody lives. A resource earns its place when the silo actually handles
+   * it: some room you have built makes it or burns it. Alloy arrives with the
+   * foundry, ammunition with the armoury, filters with the scrubbers.
+   *
+   * Derived from the rooms rather than remembered, so it survives a reload
+   * and never disagrees with itself.
+   */
+  liveResources(state) {
+    const live = new Set(ALWAYS_SHOWN);
+    for (const room of Object.values(state.silo.rooms)) {
+      const def = getRoom(room.type);
+      if (!def) continue;
+      for (const k of Object.keys(def.produces || {})) live.add(k);
+      for (const k of Object.keys(def.consumes || {})) live.add(k);
+    }
+    // Chits are nobody's output — no room makes or burns them — so they need
+    // their own rule. They start mattering when there is a soldier drawing a
+    // stipend or somebody on the radio to trade with. Not on room level: the
+    // silo you inherit already has rooms at level three.
+    if (state.military.squadIds.length || (state.world.radioTier || 0) > 0) {
+      live.add('chits');
+    }
+    return live;
   }
 
   cycleSpeed() {

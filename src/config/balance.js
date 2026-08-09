@@ -366,6 +366,10 @@ export const BAL = {
     dissidentMultiplier: 1.35,
     satellitePenaltyPerDay: -1,
     uprisingThreshold: 25,
+    // Below this the silo has politics and the Order panel opens. Above it
+    // there is nothing there to decide, and an empty panel on the first
+    // morning is one more thing to work out before you can start playing.
+    contentThreshold: 55,
     uprisingConsecutiveDays: 3,
     uprisingChancePerDay: 0.34,
     maxPoliciesBase: 2,

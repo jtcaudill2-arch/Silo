@@ -39,6 +39,13 @@
     <button id="btn-settings" class="settings-btn" type="button" aria-label="Settings">⚙</button>
   </header>
 
+  <!-- ── Standing orders: the one thing worth doing next ──────────── -->
+  <button id="directive" class="directive" type="button" hidden>
+    <span class="directive-eyebrow">Standing order</span>
+    <span class="directive-text" id="directive-text"></span>
+    <span class="directive-why" id="directive-why"></span>
+  </button>
+
   <!-- ── Stage: depth gauge + canvas ──────────────────────────────── -->
   <main id="stage" class="stage">
     <div id="depth-gauge" class="depth-gauge" role="slider" tabindex="0"
