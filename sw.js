@@ -14,6 +14,7 @@ const CACHE = `${VERSION}`;
 /* ---- PRECACHE:BEGIN (generated — do not edit by hand) ---- */
 const PRECACHE = [
   './',
+  './assets/art/index.json',
   './assets/atlas.json',
   './assets/atlas.png',
   './assets/fonts/IBMPlexMono-Regular.woff2',

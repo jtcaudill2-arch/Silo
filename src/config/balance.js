@@ -614,6 +614,12 @@ export const BAL = {
     // completely", which by then is an obituary rather than a warning.
     conditionWarnAt: 35,
     conditionCriticalAt: 18,
+    // Salvage throughput the silo should be running, per hundred residents.
+    // Scrap is the universal currency — rooms, repairs and excavation are all
+    // priced in it — so a silo whose income is below this cannot act on its
+    // own advice, and every order it is given is one it cannot pay for.
+    scrapPerCyclePerHundred: 4.5,
+    partsPerCyclePerHundred: 1.2,
     // Labs bank points whether or not anything is being researched, and the
     // only signal was a badge on a nav button that looks the same on day one
     // as on day two hundred. A silo can run a staffed laboratory for most of

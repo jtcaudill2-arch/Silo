@@ -25,9 +25,15 @@ export async function loadArtwork(base = ART_BASE) {
   if (loaded) return index;
   loaded = true;
   try {
+    // An empty index.json ships with the repo so this probe always resolves.
+    // Letting it 404 works — the catch below handles it — but the browser
+    // logs the failed request regardless, and a console error on every boot
+    // of a game that is behaving perfectly is a lie told to whoever opens
+    // devtools next.
     const res = await fetch(base + 'index.json', { cache: 'force-cache' });
     if (!res.ok) throw new Error(String(res.status));
-    index = await res.json();
+    const parsed = await res.json();
+    index = parsed && Object.keys(parsed).length ? parsed : null;
   } catch {
     // No art imported. Not an error — the game drew itself before this
     // existed and still does.

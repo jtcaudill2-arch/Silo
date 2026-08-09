@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "serve": "node tools/serve.mjs",
-    "test": "node test/reachability.mjs && node test/harness.mjs && node test/catchup.mjs && node test/expedition.mjs && node test/conquest.mjs && node test/world.mjs && node test/order.mjs && node test/pacing.mjs && node test/browser.mjs",
+    "test": "node test/reachability.mjs && node test/harness.mjs && node test/obedient.mjs && node test/catchup.mjs && node test/expedition.mjs && node test/conquest.mjs && node test/world.mjs && node test/order.mjs && node test/pacing.mjs && node test/browser.mjs",
     "test:sim": "node test/harness.mjs",
     "test:catchup": "node test/catchup.mjs",
     "test:expedition": "node test/expedition.mjs",
@@ -17,7 +17,8 @@
     "test:browser": "node test/browser.mjs",
     "precache": "node tools/gen-precache.mjs",
     "assets": "node tools/gen-atlas.mjs && node tools/gen-icons.mjs && node tools/gen-precache.mjs",
-    "test:conquest": "node test/conquest.mjs"
+    "test:conquest": "node test/conquest.mjs",
+    "test:obedient": "node test/obedient.mjs"
   },
   "engines": {
     "node": ">=18"

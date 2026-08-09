@@ -58,6 +58,9 @@ export function canExcavate(state) {
     const gate = BAL.silo.tiers.find((t) => t.key === tier.key)?.gate;
     return {
       ok: false,
+      // Named, not just described: callers that want to *act* on this — the
+      // standing order, for one — need the node id, not prose about it.
+      needsResearch: gate || null,
       reason: `Floor ${n} is in the ${tier.name}. Research ${gate ? gate.replace(/_/g, ' ') : 'the next excavation tier'} first.`,
     };
   }
