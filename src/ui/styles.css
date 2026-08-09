@@ -168,6 +168,29 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .app[hidden] { display: none; }
 
+/* ------------------------------------------------------------ artwork --- */
+/* Imported cutaways and figures. Pixel art is never smoothed, in either
+   direction — a bilinear filter on a 384px source is the one thing that makes
+   generated pixel art look generated. */
+.room-art {
+  display: block; width: 100%; overflow: hidden;
+  background: var(--concrete-deeper);
+  border-bottom: 1px solid var(--hairline);
+  line-height: 0;
+}
+.room-art img {
+  width: 100%; height: auto; display: block;
+  image-rendering: pixelated;
+}
+/* An unpowered room is dark in the cross-section; it should be dark here too. */
+.room-art.dark img { filter: brightness(0.42) saturate(0.5); }
+
+.portrait-art {
+  image-rendering: pixelated;
+  width: 64px; height: 64px; object-fit: contain; object-position: bottom;
+  background: var(--concrete-deeper);
+}
+
 /* ---------------------------------------------------------- directive --- */
 /* One line saying what to do next. The silo has twenty-eight rooms and
    forty-six research nodes and no thread through them; this is the thread.

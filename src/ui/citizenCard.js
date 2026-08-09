@@ -11,6 +11,7 @@ import { getRoom, SKILLS } from '../data/rooms.js';
 import { TRAITS } from '../data/traits.js';
 import { fullName, topSkill, workFactor } from '../sim/population.js';
 import { portraitCanvas } from '../render/portraits.js';
+import { citizenArt, artImage } from './artwork.js';
 import { el, modal, button, meter, chip, sectionLabel, humanise, emptyState, row } from './dom.js';
 
 const STAT_LABEL = { str: 'Strength', agi: 'Agility', int: 'Intellect', end: 'Endurance', cha: 'Charisma' };
@@ -174,12 +175,22 @@ export function openCitizen(store, citizenId, opts = {}) {
 }
 
 function header(state, c) {
-  const canvas = portraitCanvas(c, 4);
-  canvas.className = 'portrait-lg';
+  // A drawn figure when one has been imported for this citizen's role, the
+  // procedural portrait otherwise. The procedural one is not a placeholder —
+  // it is per-citizen and always right — so this is a swap, not a repair.
+  const drawn = citizenArt(c, state);
+  let figure;
+  if (drawn) {
+    figure = artImage(drawn, fullName(c));
+    figure.className = 'portrait-lg portrait-art';
+  } else {
+    figure = portraitCanvas(c, 4);
+    figure.className = 'portrait-lg';
+  }
   const dead = c.status === 'dead';
   return el(
     'div.card-head',
-    canvas,
+    figure,
     el(
       'div.card-head-main',
       el('div.card-name', fullName(c)),

@@ -7,3 +7,6 @@ package-lock.json
 
 # Scratch drivers — throwaway scripts for driving the game by hand.
 *-tmp.mjs
+
+# Source images for the art importer. Large, and regenerable upstream.
+art-src/

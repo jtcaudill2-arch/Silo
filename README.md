@@ -60,6 +60,35 @@ Time runs at one shift per real minute. `1×/2×/4×` is top right, space bar
 pauses, and closing the tab is fine — the silo keeps running and hands you a
 report on what you missed.
 
+## Importing artwork
+
+Commissioned art goes through `tools/import-art.mjs`. Drop the source images
+into `art-src/` named by their asset id, then:
+
+```bash
+node tools/import-art.mjs --report   # what's mapped, what's missing, what's extra
+node tools/import-art.mjs            # convert art-src/ -> assets/art/
+node tools/gen-precache.mjs          # so they work offline
+```
+
+`src/data/artwork.js` maps asset ids to rooms, citizens and threats — the
+generated art uses a different working title and its own room vocabulary, so
+living quarters are Residences and the mess hall is the Cafeteria. Edit that
+file, not filenames.
+
+The importer keys mottled magenta plates by RGB distance rather than exact
+match (generated plates are rarely flat `#FF00FF`), trims each sprite to its
+own content, scales every frame of a strip by one shared factor so a walk
+cycle doesn't bob, and resamples nearest-neighbour. It uses the Chromium that
+Playwright already provides rather than adding an image-processing dependency.
+
+**Where art is used, and where it isn't.** The silo cross-section draws a room
+into a 64×40 slot and a citizen into about six pixels by nine; high-resolution
+art is a smudge at that size, so the procedural atlas — authored for it — stays.
+Imported art is used in the room detail panel, the citizen card, and the
+surface screens, where there is room to look at it. Everything is optional at
+runtime: with no `assets/art/` the game draws exactly as it did before.
+
 ## Tests
 
 ```bash

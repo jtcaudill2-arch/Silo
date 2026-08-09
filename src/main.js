@@ -22,10 +22,12 @@ import { showBriefing } from './ui/briefing.js';
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
 import { loadAtlas } from './render/sprites.js';
+import { loadArtwork, primeRoomSkills } from './ui/artwork.js';
 import * as audio from './audio/audio.js';
 
 import { Shell } from './ui/shell.js';
 import { openRoom } from './ui/roomView.js';
+import { ROOMS } from './data/rooms.js';
 import { toast, modal, closeTopModal, button, el } from './ui/dom.js';
 import { CRISES } from './data/events.js';
 import { openSettings } from './ui/settings.js';
@@ -120,6 +122,11 @@ async function main() {
   const gaugeCanvas = document.getElementById('gauge-canvas');
 
   await loadAtlas('./assets/');
+  // Imported artwork, if any has been. Deliberately not awaited alongside the
+  // atlas as a hard requirement: a silo with no art/ directory boots exactly
+  // as it did before, drawing everything procedurally.
+  primeRoomSkills(ROOMS);
+  await loadArtwork();
   appRoot.hidden = false; // canvases need layout before they can size themselves
   const renderer = new SiloRenderer(siloCanvas, store);
   const gauge = new DepthGauge(gaugeCanvas, store, renderer);

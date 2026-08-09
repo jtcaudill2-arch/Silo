@@ -12,6 +12,7 @@ import { roomCapability, roomDraw, staffSlots } from '../sim/economy.js';
 import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
 import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost, canRepair, repair } from '../sim/build.js';
+import { roomArt, artImage } from './artwork.js';
 import { el, modal, row, button, fmt, fmtDelta, meter, chip, emptyState, sectionLabel, toast, humanise } from './dom.js';
 
 export function openRoom(store, roomId, shell) {
@@ -39,6 +40,17 @@ export function openRoom(store, roomId, shell) {
     const rating = ratingCapability(r);
 
     const body = el('div');
+
+    // ---- the room itself --------------------------------------------------
+    // A cutaway, when one has been imported for this room type. The silo
+    // cross-section draws this room into a 64×40 slot; this is the one place
+    // it gets to be looked at. Absent art costs nothing — the panel simply
+    // starts at the numbers, as it always did.
+    const cutaway = roomArt(r.type);
+    if (cutaway) {
+      const img = artImage(cutaway, def.name);
+      if (img) body.appendChild(el('div.room-art' + (r.powered ? '' : '.dark'), img));
+    }
 
     // ---- headline numbers -------------------------------------------------
     body.appendChild(
