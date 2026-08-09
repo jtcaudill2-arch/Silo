@@ -610,6 +610,11 @@ export const BAL = {
     // completely", which by then is an obituary rather than a warning.
     conditionWarnAt: 35,
     conditionCriticalAt: 18,
+    // Labs bank points whether or not anything is being researched, and the
+    // only signal was a badge on a nav button that looks the same on day one
+    // as on day two hundred. A silo can run a staffed laboratory for most of
+    // a year and complete nothing.
+    idleResearchDays: 4,
   },
 
   conquest: {

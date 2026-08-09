@@ -207,6 +207,33 @@ export class Game {
       actions.push({ type: 'FLAG_SET', flags: { wornWarned: nextWorn } });
     }
 
+    // Labs with nothing to work on. Points pile up, no node advances, and the
+    // silo looks busy the whole time — the panel badge that says otherwise is
+    // one small numeral that reads identically on day one and day two hundred.
+    const startable = !state.research.active && research.available(state).length > 0;
+    const banked = state.research.points > 0;
+    if (startable && banked) {
+      const since = state.flags.idleResearchSince;
+      if (since == null) {
+        actions.push({ type: 'FLAG_SET', flags: { idleResearchSince: state.clock.day } });
+      } else if (state.clock.day - since >= A.idleResearchDays && !state.flags.idleResearchWarned) {
+        actions.push({ type: 'FLAG_SET', flags: { idleResearchWarned: true } });
+        actions.push({
+          type: 'LOG',
+          entry: {
+            kind: 'alert',
+            text:
+              `The laboratories have been idle for ${state.clock.day - since} days with ` +
+              `${Math.floor(state.research.points)} points banked. Nothing is being researched, ` +
+              'and nothing will be until somebody picks a project.',
+          },
+        });
+        emit('alert', { kind: 'warn', glyph: '⌬', text: 'Labs idle — pick a project' });
+      }
+    } else if (state.flags.idleResearchSince != null) {
+      actions.push({ type: 'FLAG_SET', flags: { idleResearchSince: null, idleResearchWarned: false } });
+    }
+
     if (actions.length) {
       actions.push({ type: 'FLAG_SET', flags: { runwayWarned: next } });
       this.store.dispatchAll(actions);
