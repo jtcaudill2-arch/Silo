@@ -6,8 +6,8 @@
  *
  *   1. caps        — depots decide how much of anything you can hold
  *   2. capability  — staffing, condition, level and merge multipliers
- *   3. power       — generation vs demand, then brown out from the bottom
- *                    of the player's priority list up
+ *   3. power       — demand first, then run the plant to it, then brown out
+ *                    from the bottom of the player's priority list up
  *   4. throughput  — only powered rooms produce or consume
  *   5. people      — food and water off the top
  *   6. air         — filtration capacity vs headcount
@@ -157,21 +157,70 @@ export function simulateCycle(state, ctx = {}) {
     draw[id] = roomDraw(state, room, cap);
   }
 
-  // ---- 2. generation. Generators are never browned out — they're the
-  //         source — but they do stop if they run dry. -------------------
-  const generators = roomIds.filter((id) => (getRoom(state.silo.rooms[id].type)?.produces || {}).power);
+  // ---- 2. generation, run to the load. Generators are never browned out —
+  //         they're the source — but they do stop if they run dry. -------
+  //
+  // Demand is summed before a single hall is lit, and that ordering is the
+  // whole fix. Generation used to come straight off capability: every hall
+  // flat out every shift regardless of what the silo drew, with the surplus
+  // above the battery's charge rate discarded thirty lines further down. The
+  // fuel was not discarded. Measured on the 700-day pacing run, twenty-one
+  // halls burned 14,184 fuel to move 199 of a generated 270 power — better
+  // than a quarter of every litre burned for power nobody drew.
+  //
+  // It is the trap a player is walked into by the silo's own advice: the
+  // standing order says "Build a Generator Hall" at 90% load, so a silo that
+  // obeys ends up over-provisioned, and over-provisioning used to have a
+  // permanent running cost that is invisible until the fuel runs out and the
+  // lights go off. That is what killed the day-553 silo.
+  //
+  // So the plant follows the load. Halls light cheapest-fuel-first until they
+  // cover the draw plus whatever the battery can still take this cycle; the
+  // one that crosses the line runs part-loaded and the rest stay cold.
+  // Counted against what the same cycle would have burned unthrottled, on the
+  // same trajectory, that is 20% less fuel over 300 days and 27% over 700 —
+  // the gap widens because a silo over-builds its plant as it grows, which is
+  // exactly when the old behaviour hurt most.
+  const generators = generatorOrder(state, roomIds);
+  const isGenerator = new Set(generators);
   let fuelAvailable = res.fuel;
   let coolantAvailable = res.coolant;
 
+  // The whole draw, not the browned-out draw. Sizing the plant against demand
+  // that has already been shed would hold a brownout open for ever.
+  let demand = 0;
+  for (const id of roomIds) {
+    if (!isGenerator.has(id)) demand += draw[id] || 0;
+  }
+
+  // Charging is the only honest reason to generate above the draw, and only up
+  // to the rate the battery accepts and the room actually left in it. Topping
+  // up a battery that is already full is the same wasted litre as generating
+  // into nothing — and a silo with more plant than load sits at full battery
+  // permanently, so that was the common case, not the corner one.
+  const batteryThroughput = researchEffects(state).batteryThroughput || 0;
+  const chargeWant = Math.max(
+    0,
+    Math.min(BAL.power.batteryChargePerCycle + batteryThroughput, caps.power - res.power)
+  );
+  const wanted = demand + chargeWant;
+
+  const throttle = {};
   for (const id of generators) {
-    const room = state.silo.rooms[id];
-    const def = getRoom(room.type);
+    const def = getRoom(state.silo.rooms[id].type);
     const cap = capability[id];
     if (cap <= 0) continue;
+    const rated = def.produces.power * cap;
+    // What this hall has to cover is whatever the ones ahead of it did not.
+    const share = Math.max(0, Math.min(1, (wanted - generation) / rated));
+    if (share <= 0) {
+      throttle[id] = 0;
+      continue;
+    }
     // Consumption scales with capability, which already folds in width,
     // level and staffing. Multiplying by width again would double-count it.
-    const fuelWant = (def.consumes.fuel || 0) * cap;
-    const coolWant = (def.consumes.coolant || 0) * cap;
+    const fuelWant = (def.consumes.fuel || 0) * cap * share;
+    const coolWant = (def.consumes.coolant || 0) * cap * share;
     if (fuelWant > fuelAvailable || coolWant > coolantAvailable) {
       capability[id] = 0;
       continue;
@@ -180,13 +229,25 @@ export function simulateCycle(state, ctx = {}) {
     coolantAvailable -= coolWant;
     bump('fuel', -fuelWant);
     bump('coolant', -coolWant);
-    const out = def.produces.power * cap;
+    throttle[id] = share;
+    const out = rated * share;
     generation += out;
     flows.power.in += out;
   }
 
+  // What the plant could deliver if the silo asked for it, which is a
+  // different number from what it did deliver and is the one the readouts and
+  // the standing orders want: "demand is at the limit of generation" is a
+  // question about headroom, and headroom is a question about capacity. Halls
+  // that ran dry are already zeroed above, so a fuel shortage still shows up
+  // here as capacity falling, exactly as it did before.
+  let capacity = 0;
+  for (const id of generators) {
+    capacity += (getRoom(state.silo.rooms[id].type).produces.power || 0) * capability[id];
+  }
+
   // ---- 3. brownout. Walk the player's priority list top down. -----------
-  const throughput = BAL.power.batteryDischargePerCycle + (researchEffects(state).batteryThroughput || 0);
+  const throughput = BAL.power.batteryDischargePerCycle + batteryThroughput;
   const battery = Math.min(res.power, throughput);
   let budget = generation + battery;
   const powered = {};
@@ -194,7 +255,7 @@ export function simulateCycle(state, ctx = {}) {
 
   const priority = orderedRoomIds(state, roomIds);
   for (const id of priority) {
-    if (generators.includes(id)) {
+    if (isGenerator.has(id)) {
       powered[id] = capability[id] > 0;
       continue;
     }
@@ -213,7 +274,7 @@ export function simulateCycle(state, ctx = {}) {
   const surplus = generation - flows.power.out;
   let batteryDelta;
   if (surplus >= 0) {
-    batteryDelta = Math.min(surplus, BAL.power.batteryChargePerCycle + (researchEffects(state).batteryThroughput || 0));
+    batteryDelta = Math.min(surplus, BAL.power.batteryChargePerCycle + batteryThroughput);
   } else {
     batteryDelta = Math.max(surplus, -throughput);
   }
@@ -228,7 +289,7 @@ export function simulateCycle(state, ctx = {}) {
     const room = state.silo.rooms[id];
     const def = getRoom(room.type);
     if (!def) continue;
-    const isGen = generators.includes(id);
+    const isGen = isGenerator.has(id);
     const on = powered[id] && capability[id] > 0;
 
     // Passive provisions need power but not crew.
@@ -241,6 +302,11 @@ export function simulateCycle(state, ctx = {}) {
     if (!on) continue;
 
     const cap = capability[id];
+    // What the room is actually working at. Only a throttled generator differs
+    // from its capability, and its running stores go with the load: the scrap
+    // a hall eats is bearings and belts, and a hall at a third of load turns
+    // over a third as much of it.
+    const worked = cap * (throttle[id] ?? 1);
 
     if (def.provides.research) {
       researchPoints += BAL.research.pointsPerLabPerCycleBase * cap * speedMultiplier(state);
@@ -266,7 +332,7 @@ export function simulateCycle(state, ctx = {}) {
     for (const [k, v] of Object.entries(def.consumes)) {
       if (k === 'power') continue;
       if (isGen && (k === 'fuel' || k === 'coolant')) continue; // already charged above
-      bump(k, -v * cap * ratio);
+      bump(k, -v * worked * ratio);
     }
     for (const [k, v] of Object.entries(def.produces)) {
       if (k === 'power') continue; // charged above
@@ -295,13 +361,21 @@ export function simulateCycle(state, ctx = {}) {
   const airDelta = clampMag(target - state.air.quality, BAL.air.driftPerCycle);
 
   // ---- 7. wear -----------------------------------------------------------
+  //
+  // Wear follows how hard a room is worked rather than whether it is switched
+  // on, which only makes a difference to a throttled generator: a hall held at
+  // a third of load is turning over, not hammering, and charging it the full
+  // working rate would hand back with one figure what the throttle saved on
+  // the other. It interpolates between the two rates the file already has
+  // rather than inventing a third. Everything but a generator is on or off, so
+  // for every other room this is exactly the old two-way choice.
+  const C = BAL.silo.condition;
   const wear = [];
   for (const id of roomIds) {
     const room = state.silo.rooms[id];
     const running = powered[id] && capability[id] > 0;
-    let d = running
-      ? -BAL.silo.condition.decayPerCycleWorking * room.width
-      : -BAL.silo.condition.decayPerCycleIdle * room.width;
+    const loadFactor = running ? (throttle[id] ?? 1) : 0;
+    let d = -(C.decayPerCycleIdle + loadFactor * (C.decayPerCycleWorking - C.decayPerCycleIdle)) * room.width;
     d *= crewWearFactor(state, room);
     wear.push({ id, delta: d });
   }
@@ -317,7 +391,13 @@ export function simulateCycle(state, ctx = {}) {
 
   // ---- emit --------------------------------------------------------------
   actions.push({ type: 'RESOURCE_DELTA', deltas, caps, emit: false });
-  actions.push({ type: 'POWER_STATE', powered, brownout, generation, demand: flows.power.out, emit: false });
+  // `generation` here is the plant's *capacity*, not the shift's output — see
+  // the note where it is computed. What the plant actually made is in
+  // flows.power.in, and that is the figure that changed: it used to be the
+  // rating of every hall in the silo whether or not the power went anywhere,
+  // so the strip showed a fat positive net on power while the battery sat
+  // full and the difference went up the exhaust.
+  actions.push({ type: 'POWER_STATE', powered, brownout, generation: capacity, demand: flows.power.out, emit: false });
   actions.push({ type: 'AIR_DELTA', delta: airDelta, capacity: airCapacity, load, emit: false });
   actions.push({ type: 'CONDITION_DELTA', wear, emit: false });
   actions.push({ type: 'FLOWS_SET', flows, emit: false });
@@ -423,6 +503,44 @@ function defaultRank(state, id) {
   const type = state.silo.rooms[id].type;
   const i = BAL.power.defaultPriority.indexOf(type);
   return i < 0 ? 999 : i;
+}
+
+/**
+ * The order the plant lights its generators in: cheapest fuel per unit of
+ * power first, then oldest first.
+ *
+ * Cheapest-first is what decides which hall carries base load and which one is
+ * swing capacity, and it wants to be fuel rather than fuel-and-coolant: a
+ * Reactor is the most fuel-efficient thing in the silo (1.1 fuel for 128
+ * power against a hall's 0.3 for 32) and is exactly what should be carrying
+ * the base, with the halls taking the swing above it. If its coolant runs out
+ * it shuts down on the dry check like anything else and the halls pick the
+ * load up.
+ *
+ * The tie-break is the room id, which for identical halls means the oldest one
+ * runs and the newest one throttles. It is there because iteration order over
+ * `state.silo.rooms` is an implementation detail and the fuel bill must not
+ * be: the same silo replayed during offline catch-up has to burn the same
+ * litres it burned live, to the last decimal.
+ */
+function generatorOrder(state, roomIds) {
+  const gens = roomIds.filter((id) => (getRoom(state.silo.rooms[id].type)?.produces || {}).power);
+  return gens.sort((a, b) => {
+    const ca = fuelPerPower(state.silo.rooms[a]);
+    const cb = fuelPerPower(state.silo.rooms[b]);
+    if (ca !== cb) return ca - cb;
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+function fuelPerPower(room) {
+  const def = getRoom(room.type);
+  const power = def?.produces?.power || 0;
+  if (power <= 0) return Infinity;
+  return (def.consumes.fuel || 0) / power;
 }
 
 function clampMag(v, mag) {

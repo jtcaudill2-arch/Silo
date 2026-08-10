@@ -192,6 +192,16 @@ export const BAL = {
     batteryDischargePerCycle: 12,
     batteryChargePerCycle: 8,
     defaultPriority: [
+      // What gets switched off when the lights start to go, bottom first.
+      // This list has exactly one job now. It used to have two — it was also
+      // the order posts were *crewed* in, because jobs.js read it — and the
+      // Laboratory's position was a compromise between them: high enough that
+      // somebody would eventually be posted to a bench, low enough that the
+      // cafeteria and the clinic did not lose their crews to it. Crewing has
+      // its own list in `jobs.staffingPriority` now, so neither half of that
+      // trade has to be paid any more and this one can be read as what it
+      // says: shed order, and nothing else.
+      //
       // Life support, then generation, then *income*. Recycling and the
       // Workshop sit this high because they are the way out of a brownout,
       // not a luxury to be shed during one: they were tenth and ninth, below
@@ -201,30 +211,22 @@ export const BAL = {
       // it can never be afforded. An obedient player sat on "Build a Generator
       // Hall" for 49 days and starved with the answer written on the screen.
       //
-      // The Laboratory moves for a related reason, and it is worth being
-      // explicit that this list does two jobs: it is the order rooms are shed
-      // in during a brownout, and (via jobs.js) it is the order posts are
-      // *crewed* in. The second job is the one that bites in a small silo.
-      // Auto-assign only ever posts people who have no job, and a 44-person
-      // opening that has grown to two hundred is still well over half
-      // children — so the silo runs at zero spare labour for most of a
-      // campaign and simply never reaches the bottom of this list. At
-      // twenty-second the Laboratory sat below the holding cells, the
-      // barracks and the training yard: measured, its two benches held one
-      // scientist at day 275 and nobody at all through most of the two
-      // hundreds, and the research tree did not move for a hundred days.
-      // Nothing else in the game makes a research point, and power_efficiency
-      // is itself a research node — a silo that never crews a lab can never
-      // reach the thing that ends its brownouts.
+      // So the Laboratory moves back down, to seventeenth: below the surface
+      // chain, above the sheriff, the barracks, the yard and the archive.
+      // That is where it belongs on the only question this list still answers.
+      // A shift of lost bench time costs points; everything above it costs
+      // water, air, food, income, medicine, or the door to the surface.
       //
-      // Twelfth, immediately under the Chem Lab, is as far as it goes, and
-      // the stopping point was measured rather than chosen. Above the
-      // residences, the clinic and the cafeteria it takes two of the pool
-      // ahead of them — the cafeteria is what holds morale up, and morale is
-      // 35% of the swing in every citizen's work output — and the obedient
-      // player, who keeps no reserve and only does what the standing order
-      // says, went into a morale-and-output spiral and lost the whole silo to
-      // starvation on day 101. The comforts stay where they are.
+      // The move is free, and that is worth recording because the last pass
+      // could not have known it. Swept over twelve seeds at 300 days with the
+      // Laboratory at twelfth, seventeenth and twenty-second, research lands
+      // at 157 nodes at all three — the position does not decide whether the
+      // tree moves at all. The reason is in the same runs: the Laboratory is
+      // dark on 98%, 99% and 100% of brownout cycles respectively, because a
+      // real brownout is short of far more than one room's six power and sheds
+      // it wherever it sits. What decided research was never the shed rank.
+      // It was whether anybody was standing in the room, and that is now
+      // `jobs.staffingPriority`'s question to answer.
       'water_reclaimer',
       'air_filtration',
       'hydroponics',
@@ -236,12 +238,12 @@ export const BAL = {
       'clinic',
       'cafeteria',
       'chem_lab',
-      'laboratory',
       'foundry',
       'munitions',
       'storage_depot',
       'suit_bay',
       'airlock',
+      'laboratory',
       'sheriffs_office',
       'holding_cells',
       'barracks',
@@ -430,6 +432,77 @@ export const BAL = {
     idleDissentPerCitizenPerDay: 0.012,
     shiftsPerDay: 8,
     restShiftsRequired: 2,
+
+    // ---- crewing order ---------------------------------------------------
+    // Who gets posted where, when there is somebody spare to post. This was
+    // `power.defaultPriority` until now, which is the order rooms are *shed*
+    // in during a brownout — a different question with a different answer.
+    // You cut the Laboratory before the water plant; you do not crew the
+    // water plant's twelfth post before the Laboratory's first.
+    //
+    // The order below is "what stops if nobody is standing here":
+    //  - Water, food and power first. Nothing else is a question until these
+    //    are answered.
+    //  - Recycling above Air Filtration, which looks wrong and is not. A
+    //    filtration bay with no crew still delivers 55% of its capacity
+    //    (economy.js pays uncrewed passive provision at that rate), so the
+    //    first mechanic posted to one buys 45% of a bay. The first engineer
+    //    posted to a recycling plant buys 100% of the scrap and fuel it
+    //    makes, and the fuel is what the generators burn.
+    //  - The Laboratory eighth, above every comfort and every military room.
+    //    Nothing else in the game makes a research point; power_efficiency,
+    //    the yields, decon and all four suit tiers are behind one. Under the
+    //    old shared list it was twenty-second, then twelfth, and at neither
+    //    position did a small silo reliably get anybody into it — measured,
+    //    one scientist at day 275 and nobody through most of the two hundreds.
+    //  - Then the surface chain, then order, comms and schooling, then the
+    //    rooms whose absence costs nothing this month.
+    staffingPriority: [
+      'water_reclaimer',
+      'hydroponics',
+      'generator_hall',
+      'reactor',
+      'recycling',
+      'air_filtration',
+      'workshop',
+      'laboratory',
+      'chem_lab',
+      'clinic',
+      'maintenance_bay',
+      'cafeteria',
+      'foundry',
+      'suit_bay',
+      'armory',
+      'munitions',
+      'sheriffs_office',
+      'radio_room',
+      'schoolhouse',
+      'training_yard',
+      'archive',
+      'deep_mine',
+      'protein_vats',
+      'holding_cells',
+    ],
+    // How many places down the list a room slides for each post it has
+    // already filled. Output scales with the crewed fraction and a room at
+    // zero crew produces nothing at all, so the first post of an important
+    // room is worth more than the fourth post of a slightly more important
+    // one — but not infinitely more, which is what a pure breadth-first fill
+    // assumes. At 0 this is the old behaviour: saturate each room in list
+    // order before starting the next.
+    //
+    // Swept 0 / 2 / 3 / 4 / 5 / 6 / 8 / 12 over twelve seeds at 300 days.
+    // Deaths ran 1 / 2 / 0 / 0 / 1 / 0 / 0 / 3 and research nodes across the
+    // twelve silos 154 / 153 / 157 / 164 / 155 / 160 / 168 / 147, so anything
+    // from 3 to 8 is a plateau and the two ends are not. Three rather than
+    // the middle of that plateau, because the fragile silo in this suite is
+    // not the average one: the obedient player keeps no reserve, and when its
+    // standing order becomes a repair it cannot pay for it stops doing
+    // anything else at all until it can. That silo lives or dies on whether
+    // it happens to have twenty parts banked on the wrong morning. Of four
+    // candidate crewing orders it survives 200 days at 3 under every one of
+    // them, and is a coin toss at every other value tried.
+    staffingDepthPenalty: 3,
   },
 
   // ---------------------------------------------------------- research ---
@@ -886,6 +959,49 @@ export const BAL = {
     // trouble. A player who wants the panel sooner can still have it for 120
     // scrap: a Sheriff's Office opens it at any order at all.
     orderTroubleBelow: 45,
+  },
+
+  // ---------------------------------------------------- legibility ---
+  // What the silo says about itself while you are watching it: the shift
+  // report under the standing order, the flash on a counter that moved, and
+  // how long an alert stays up. None of these change what happens; they
+  // change whether you can tell what happened. Appended as its own section
+  // because the numbers above were tuned against a green suite.
+  legibility: {
+    // How many shift-report lines the shell keeps for the Log panel's
+    // Changes tab. Deliberately small: this is "what just happened", and the
+    // permanent record is the log itself.
+    changeLogMax: 40,
+    // Shifts a change line stays under the standing order once it has been
+    // read. Unread lines stay until they are. Six is most of a day, which is
+    // long enough to come back to and short enough not to go stale.
+    changeLineShifts: 6,
+    // A resource whose net flow crosses zero is the single most useful thing
+    // to say out loud — it is the moment a full tank starts emptying — but
+    // during a brownout rooms shed and pick back up cycle by cycle and the
+    // sign chatters. The deadband ignores rounding noise; the quiet period
+    // stops the same resource being reported twice in a day.
+    flowFlipDeadband: 0.05,
+    changeQuietCycles: 8,
+    // How long a counter that moved stays marked, and how far a stockpile
+    // has to move in one shift before it counts as having moved at all —
+    // whichever of the two is larger, so small stores are not permanently lit
+    // and large ones are not silent.
+    counterFlashMs: 2600,
+    stockMoveFraction: 0.04,
+    stockMoveMin: 5,
+    // The alert rail: how many cards stand at once, how long one lasts, and
+    // how long a card that has been opened for its reason lasts. Both were
+    // literals in shell.js.
+    alertMaxCards: 3,
+    alertDwellMs: 7000,
+    alertOpenedDwellMs: 14000,
+    // Rooms named per side in a resource's own explanation. Beyond a handful
+    // the list stops being an answer and becomes an inventory.
+    resourceRoomsShown: 6,
+    // How long the depth gauge marks a floor the player was just sent to, so
+    // the eye can follow a jump made from a line of text.
+    gaugeFocusMs: 2200,
   },
 };
 

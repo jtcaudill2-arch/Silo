@@ -50,9 +50,36 @@ export function employableCitizens(state) {
 }
 
 /**
- * Greedy skill-first assignment. Fills the highest-priority rooms with the
- * best-matched idle citizens. Returns actions; assigns nobody who is already
- * better placed than the candidate we'd move them for.
+ * Where a room type sits in the crewing order. Types nobody thought to list
+ * fall in behind the ones that were, rather than at some invented number.
+ */
+function staffingRank(type) {
+  const i = BAL.jobs.staffingPriority.indexOf(type);
+  return i < 0 ? BAL.jobs.staffingPriority.length : i;
+}
+
+/**
+ * Greedy skill-first assignment. Fills the most important *empty* posts with
+ * the best-matched idle citizens. Returns actions; assigns nobody who is
+ * already better placed than the candidate we'd move them for.
+ *
+ * Two things decide the order, and for a long time neither of them was right.
+ *
+ * The list was `state.silo.powerPriority` — the order rooms shut off in during
+ * a brownout. Shed-order and crew-order are not the same question and the
+ * conflation had a cost every time either list was touched: the Laboratory's
+ * place in the power list had to be argued as a staffing decision, and the
+ * answer that suited crewing was a bad answer for shedding. It reads
+ * `jobs.staffingPriority` now, which answers only the second question.
+ *
+ * And the fill was depth-first: every post of a room before the first post of
+ * the next one. A room produces the fraction of its posts that are crewed and
+ * a room at zero crew produces *nothing*, so the fourth mechanic in the water
+ * plant is worth a quarter of a plant and the first scientist in the
+ * Laboratory is worth the entire research output of the silo. This silo runs
+ * at zero spare labour from about day 30 onward, so depth-first never reached
+ * the second half of the list at all. `staffingDepthPenalty` slides a room
+ * down the order for each post it has already filled, so the fill spreads.
  */
 export function autoAssign(state, opts = {}) {
   const actions = [];
@@ -62,32 +89,45 @@ export function autoAssign(state, opts = {}) {
   const pool = employableCitizens(state).filter((c) => (opts.reassignAll ? true : !c.job));
   if (!pool.length) return actions;
 
-  // Priority: life support first, then whatever the power list favours.
-  const rank = (roomId) => {
-    const idx = state.silo.powerPriority.indexOf(roomId);
-    return idx < 0 ? 999 : idx;
-  };
-  slots.sort((a, b) => rank(a.roomId) - rank(b.roomId));
-
-  const taken = new Set();
+  // One entry per empty post, scored by where its room sits in the crewing
+  // order plus how deep into that room the post is.
+  const posts = [];
   for (const slot of slots) {
+    const rank = staffingRank(slot.room.type);
+    const crewed = staffSlots(slot.def, slot.room) - slot.free;
     for (let i = 0; i < slot.free; i++) {
-      let best = null;
-      let bestScore = -1;
-      for (const c of pool) {
-        if (taken.has(c.id)) continue;
-        const score = workFactor(c, slot.skill) * (c.skills[slot.skill] || 0);
-        if (score > bestScore) {
-          bestScore = score;
-          best = c;
-        }
-      }
-      if (!best) break;
-      taken.add(best.id);
-      actions.push({ type: 'CITIZEN_ASSIGN', citizenId: best.id, roomId: slot.roomId });
+      posts.push({ slot, score: rank + (crewed + i) * BAL.jobs.staffingDepthPenalty });
     }
   }
+  // Ties break on the room id — two identical rooms crew oldest-first — so
+  // the order never depends on how the rooms happen to be keyed.
+  posts.sort((a, b) => a.score - b.score || compareRoomIds(a.slot.roomId, b.slot.roomId));
+
+  const taken = new Set();
+  for (const post of posts) {
+    const { skill, roomId } = post.slot;
+    let best = null;
+    let bestScore = -1;
+    for (const c of pool) {
+      if (taken.has(c.id)) continue;
+      const score = workFactor(c, skill) * (c.skills[skill] || 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    if (!best) break;
+    taken.add(best.id);
+    actions.push({ type: 'CITIZEN_ASSIGN', citizenId: best.id, roomId });
+  }
   return actions;
+}
+
+function compareRoomIds(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** Enrol eligible children; graduate them when they age out. */
