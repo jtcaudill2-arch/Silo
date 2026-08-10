@@ -14,6 +14,7 @@ import {
 import { squadMembers, readiness } from '../../sim/military.js';
 import { fullName } from '../../sim/population.js';
 import { effects as researchEffects } from '../../sim/research.js';
+import { lockReason } from '../../sim/unlocks.js';
 import * as sprites from '../../render/sprites.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise } from '../dom.js';
 
@@ -28,10 +29,11 @@ export const airlockPanel = {
     return state.pendingDecon ? 1 : 0;
   },
 
+  // Third of the gated systems, and the hinge of the early game: the research
+  // tree turns artifact-gated shortly after it. The condition and the
+  // sentence live in sim/unlocks.js with the rest of the order.
   locked(state) {
-    const hasAirlock = Object.values(state.silo.rooms).some((r) => r.type === 'airlock');
-    if (hasAirlock) return null;
-    return 'Build an Airlock first. Nothing leaves the silo without one.';
+    return lockReason(state, 'airlock');
   },
 
   render(state, shell) {

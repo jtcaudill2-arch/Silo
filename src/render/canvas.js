@@ -12,13 +12,31 @@
  */
 
 import { BAL } from '../config/balance.js';
-import { drawFloor, drawRoom, drawShaft, drawFloorLabel } from './floors.js';
+import { drawFloor, drawRoom, drawShaft, drawFloorLabel, drawPlacement } from './floors.js';
 import { drawCitizens } from './citizens.js';
 
 export const SLOT_W = BAL.render.slotWidth;
 export const FLOOR_H = BAL.render.floorHeight;
 export const SLOTS = BAL.silo.slotsPerFloor;
 export const WORLD_W = SLOT_W * SLOTS;
+
+/**
+ * Placement mode — the cross-section's half of pick-then-place.
+ *
+ * The shell owns the decision (which building, which bays are legal, what to
+ * do when one is tapped) and parks it here; the renderer lights those bays and
+ * routes the next tap back. It is module state rather than a constructor
+ * argument because the shell and the renderer are wired together in main.js
+ * and neither holds a reference to the other — and because it is transient UI,
+ * so it deliberately never reaches the store or a save file.
+ *
+ * Shape: { typeId, bays: Map<floorN, Map<slot, mergeSide>>, onPick, onCancel }
+ */
+let placing = null;
+
+export function setPlacement(mode) {
+  placing = mode || null;
+}
 
 export class SiloRenderer {
   constructor(canvas, store) {
@@ -141,7 +159,19 @@ export class SiloRenderer {
       drawFloorLabel(ctx, n, state, this);
     }
 
+    // Placement targets sit on top of everything, over a wash that takes the
+    // rest of the silo down — a lit bay has to be the brightest thing on the
+    // screen or it is just another bay.
+    if (placing) drawPlacement(ctx, placing, range, this, this.placementPulse(state));
+
     ctx.restore();
+  }
+
+  /** 0 → 1 → 0 breath for the placement highlight. Flat under reduced motion. */
+  placementPulse(state) {
+    if (state.settings.reducedMotion) return 1;
+    const t = (this.time % BAL.render.placement.pulseMs) / BAL.render.placement.pulseMs;
+    return 0.5 - 0.5 * Math.cos(t * Math.PI * 2);
   }
 
   /**
@@ -199,11 +229,20 @@ export class SiloRenderer {
       if (!dragging) return;
       dragging = false;
       this.canvas.releasePointerCapture?.(e.pointerId);
-      // A tap, not a drag.
-      if (moved < 6 && performance.now() - downAt < 600) {
-        const hit = this.hitTest(e.clientX, e.clientY);
-        if (hit) this.onTap?.(hit);
+      // A tap, not a drag. Dragging still pans while placing — reaching a bay
+      // eleven floors down is the whole reason the cross-section is scrollable.
+      if (moved >= 6 || performance.now() - downAt >= 600) return;
+      const hit = this.hitTest(e.clientX, e.clientY);
+      if (placing) {
+        // A legal bay maps to a merge side, and 0 — "a new unit, no merge" —
+        // is one of them, so this asks whether the key is there, not whether
+        // it is truthy.
+        const lit = hit ? placing.bays.get(hit.floor)?.has(hit.slot) : false;
+        if (lit) placing.onPick(hit.floor, hit.slot);
+        else placing.onCancel(); // tapping anywhere else backs out
+        return;
       }
+      if (hit) this.onTap?.(hit);
     };
 
     this.canvas.addEventListener('pointerdown', down);

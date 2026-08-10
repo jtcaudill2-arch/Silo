@@ -689,6 +689,46 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .build-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
 .build-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .build-why { font-size: 11.5px; color: var(--sodium); margin-top: 4px; }
+.build-row .row-chevron { padding-top: 2px; }
+
+/* ── Placing ─────────────────────────────────────────────────────────────
+   Pick a building and every bay that could take it lights up in the
+   cross-section; this bar is what stops that being an invisible mode. It
+   names what is being placed and what it costs, and it is the only thing on
+   this layer that takes a tap — #modal-root is pointer-events:none, so the
+   silo behind it still drags, which is how you reach a bay eleven floors
+   down. Sodium amber throughout: toxin green means radiation, never a
+   selection. */
+.placing {
+  top: auto; transform: translateX(-50%);
+  bottom: calc(var(--navbar-h) + 8px + env(safe-area-inset-bottom));
+  width: min(560px, calc(100vw - 16px));
+  max-height: 52vh;
+  border-color: var(--sodium);
+  border-left: 3px solid var(--sodium);
+}
+.placing-head {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 11px; border-bottom: 1px solid var(--hairline);
+  background: var(--concrete-deeper);
+}
+.placing-main { flex: 1; min-width: 0; }
+.placing-eyebrow {
+  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--sodium);
+}
+.placing-name {
+  font-family: var(--font-display); font-size: 16px; letter-spacing: 0.05em;
+  color: var(--bone);
+}
+.placing-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.placing-hint { padding: 5px 11px; font-size: 11.5px; color: var(--bone-faint); }
+.placing-list {
+  max-height: 104px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  border-top: 1px solid var(--hairline);
+}
+.placing-list .row { min-height: 36px; padding: 5px 11px; }
+.placing-list .row-title { font-size: 12.5px; }
 
 /* ------------------------------------------------------------ research --- */
 .active-research {

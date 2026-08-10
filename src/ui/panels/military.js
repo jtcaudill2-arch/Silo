@@ -14,6 +14,7 @@ import {
   equipBest, militarySummary, unassignedGear, gearStorageCap,
 } from '../../sim/military.js';
 import { employableCitizens } from '../../sim/jobs.js';
+import { lockReason } from '../../sim/unlocks.js';
 import { portraitCanvas } from '../../render/portraits.js';
 import { openCitizen } from '../citizenCard.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmtDelta } from '../dom.js';
@@ -32,10 +33,11 @@ export const militaryPanel = {
   glyph: '⚔',
   subtitle: (s) => `${militarySummary(s).soldiers}`,
 
+  // Fourth of the gated systems. It lands after the surface because that is
+  // where the standing order sends you — the Armory is only asked for once
+  // the Airlock and the Suit Bay are up. See sim/unlocks.js for the sequence.
   locked(state) {
-    const hasArmory = Object.values(state.silo.rooms).some((r) => r.type === 'armory' || r.type === 'barracks');
-    if (hasArmory || state.military.squadIds.length) return null;
-    return 'Build an Armory or Barracks first.';
+    return lockReason(state, 'military');
   },
 
   render(state, shell) {

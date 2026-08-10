@@ -14,6 +14,7 @@ import {
   conquestState, canAdvance, CONQUEST_STAGES,
 } from '../../sim/diplomacy.js';
 import { inRange, playerPower } from '../../sim/world.js';
+import { lockReason } from '../../sim/unlocks.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmt } from '../dom.js';
 
 let tab = 'board';
@@ -37,9 +38,11 @@ export const radioPanel = {
     return (state.world.pending || []).filter((e) => e.kind === 'call_to_arms_pending').length;
   },
 
+  // Second of the gated systems: Radio Range I is the cheapest root in the
+  // tree and needs nothing from outside, which is what puts it ahead of the
+  // surface. The condition and the sentence live in sim/unlocks.js.
   locked(state) {
-    if (state.world.radioTier > 0) return null;
-    return 'Build a Radio Room. Silo 12 has been listening for two generations; now you can transmit.';
+    return lockReason(state, 'radio');
   },
 
   render(state, shell) {

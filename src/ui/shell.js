@@ -5,13 +5,18 @@
  * `render(state)` that returns a DOM node; the shell rebuilds the active one
  * when the store changes, throttled to animation frames so a burst of actions
  * costs one repaint, not fifty.
+ *
+ * It also owns placement mode — the half of construction that happens on the
+ * cross-section rather than in a panel. See the placement section below.
  */
 
 import { BAL } from '../config/balance.js';
-import { el, clear, fmt, fmtDelta, fmtClock, closeTopModal } from './dom.js';
+import { el, clear, fmt, fmtDelta, fmtClock, closeTopModal, button, chip, row, toast } from './dom.js';
 import { on } from '../core/events.js';
 import { topDirective } from '../sim/directives.js';
 import { getRoom } from '../data/rooms.js';
+import { setPlacement } from '../render/canvas.js';
+import { allPlacements, canBuild, build, describeCost } from '../sim/build.js';
 
 /** Resources shown in the top strip, in this order. */
 const STRIP = [
@@ -53,6 +58,11 @@ export class Shell {
     this.activePanel = null;
     this.dirty = true;
     this.rafPending = false;
+    // Placement mode lives here rather than in the store: it is a half-finished
+    // gesture, not a fact about the silo, and it must not survive a reload or
+    // need a save migration to exist.
+    this.placement = null;
+    this.placementBar = null;
 
     this.topbar = document.getElementById('topbar');
     this.strip = document.getElementById('resource-strip');
@@ -149,6 +159,9 @@ export class Shell {
     const panel = this.panels.get(id);
     if (!panel) return;
     if (panel.locked?.(this.state)) return;
+    // Opening anything at all ends a half-placed building. Leaving the lit bays
+    // up behind another panel would be a mode the player cannot see they're in.
+    if (this.placement) this.endPlacement(false);
     this.activePanel = id;
     this.store.dispatch({ type: 'UI_SET', ui: { view: id } });
     panel.onOpen?.(this.state);
@@ -212,6 +225,133 @@ export class Shell {
       ),
       body
     );
+  }
+
+  // ---------------------------------------------------------- placement ---
+  //
+  // Construction is pick-then-place. The player chooses a building from the
+  // catalogue; the panel gets out of the way; every bay in the cross-section
+  // that could take it lights up; one tap builds it there. The alternative —
+  // choose a floor, then see what fits on it — made the player guess which
+  // floor was the interesting one before the game would tell them anything.
+
+  /** Enter placement mode for a room type. No-op if it can't go anywhere. */
+  startPlacement(typeId) {
+    const def = getRoom(typeId);
+    if (!def) return;
+    const spots = allPlacements(this.state, typeId);
+    if (!spots.length) {
+      toast(`There is no free bay for a ${def.name}.`, 'bad');
+      return;
+    }
+
+    // floor -> slot -> which wall it would merge through (-1 left, 1 right, 0 new)
+    const bays = new Map();
+    for (const spot of spots) {
+      if (!bays.has(spot.floor)) bays.set(spot.floor, new Map());
+      const side = spot.merge ? (spot.merge.newSlot < spot.slot ? -1 : 1) : 0;
+      bays.get(spot.floor).set(spot.slot, side);
+    }
+
+    const from = this.activePanel;
+    if (this.activePanel) this.close();
+    this.placement = { typeId, def, spots, bays, from };
+    setPlacement({
+      typeId,
+      bays,
+      onPick: (floor, slot) => this.placeAt(floor, slot),
+      onCancel: () => this.cancelPlacement(),
+    });
+
+    // Take the camera to the nearest lit floor, so the mode is never invisible.
+    const focus = this.state.ui.cameraFloor ?? spots[0].floor;
+    this.onFocusFloor?.(nearestFloor(spots, focus));
+    this.renderPlacementBar();
+  }
+
+  /** Build the pending room in this bay, if the silo still allows it. */
+  placeAt(floor, slot) {
+    const pending = this.placement;
+    if (!pending) return;
+    const check = canBuild(this.state, floor, slot, pending.typeId);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      return;
+    }
+    this.store.dispatchAll(build(this.state, floor, slot, pending.typeId));
+    toast(`${pending.def.name}: construction started on floor ${floor}.`);
+    this.endPlacement();
+  }
+
+  cancelPlacement() {
+    if (this.placement) this.endPlacement();
+  }
+
+  /** Leave placement mode. `reopen` puts the player back in the catalogue. */
+  endPlacement(reopen = true) {
+    const pending = this.placement;
+    this.placement = null; // cleared first: open() below must not re-enter here
+    setPlacement(null);
+    this.placementBar?.remove();
+    this.placementBar = null;
+    if (reopen && pending?.from) this.open(pending.from);
+  }
+
+  /**
+   * The banner that says what is being placed. It sits in #modal-root, which
+   * is pointer-events:none, so the silo behind it stays draggable — reaching a
+   * bay eleven floors down is a normal part of placing something.
+   */
+  renderPlacementBar() {
+    this.placementBar?.remove();
+    this.placementBar = null;
+    const pending = this.placement;
+    if (!pending) return;
+
+    const { def, spots } = pending;
+    const focus = this.state.ui.cameraFloor ?? spots[0].floor;
+    // Shortcuts to the bays nearest what the player is already looking at.
+    // Hunting for the one lit bay on floor 12 by dragging is not a decision.
+    const nearest = [...spots]
+      .sort(
+        (a, b) =>
+          Math.abs(a.floor - focus) - Math.abs(b.floor - focus) ||
+          a.floor - b.floor ||
+          a.slot - b.slot
+      )
+      .slice(0, BAL.render.placement.nearestBays);
+
+    const bar = el(
+      'div.modal.placing',
+      { role: 'dialog', 'aria-label': `Placing a ${def.name}` },
+      el(
+        'div.placing-head',
+        el(
+          'div.placing-main',
+          el('div.placing-eyebrow', 'Placing'),
+          el('div.placing-name', def.name),
+          el(
+            'div.placing-meta',
+            chip(describeCost(def.buildCost)),
+            chip(`${spots.length} bay${spots.length === 1 ? '' : 's'} lit`, 'warn')
+          )
+        ),
+        button('Cancel', { class: 'sm', onclick: () => this.cancelPlacement() })
+      ),
+      el('div.placing-hint', 'Tap a lit bay in the cross-section, or pick one here.'),
+      el(
+        'div.placing-list',
+        nearest.map((spot) =>
+          row({
+            title: `Floor ${spot.floor} · Bay ${spot.slot + 1}`,
+            sub: spot.label,
+            onclick: () => this.placeAt(spot.floor, spot.slot),
+          })
+        )
+      )
+    );
+    document.getElementById('modal-root').appendChild(bar);
+    this.placementBar = bar;
   }
 
   // ------------------------------------------------------------- chrome ---
@@ -412,6 +552,13 @@ export class Shell {
         e.preventDefault();
         return;
       }
+      // A half-placed building is the next thing in. It has no panel of its
+      // own to close, so it has to be named here or Escape would skip it.
+      if (this.placement) {
+        e.preventDefault();
+        this.cancelPlacement();
+        return;
+      }
       if (this.activePanel) {
         e.preventDefault();
         this.close();
@@ -433,6 +580,20 @@ export class Shell {
       }
     }
   }
+}
+
+/** The lit floor closest to the one the player is already looking at. */
+function nearestFloor(spots, focus) {
+  let best = spots[0].floor;
+  let bestGap = Infinity;
+  for (const spot of spots) {
+    const gap = Math.abs(spot.floor - focus);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = spot.floor;
+    }
+  }
+  return best;
 }
 
 export default Shell;

@@ -192,6 +192,68 @@ function drawPlaceholderContents(ctx, room, def, x, y, w, h, tint) {
   for (let i = 0; i < room.level; i++) ctx.fillRect(x + 3 + i * 3, y + h - 5, 2, 2);
 }
 
+/**
+ * Placement mode: every bay the chosen building could occupy, lit.
+ *
+ * Two things carry it at 390px wide, where a bay is about 57×36 real pixels:
+ * the rest of the silo is washed back so the targets are the only bright
+ * things on screen, and each target gets corner ticks plus a mark in the
+ * middle — a plus for a new unit, a bar against the wall it would merge
+ * through. Colour alone would not be enough, and the colour is sodium amber
+ * because toxin green means radiation in this game and nothing else.
+ */
+export function drawPlacement(ctx, mode, range, cam, pulse) {
+  const P = BAL.render.placement;
+
+  // Wash. Drawn wider and taller than the viewport so a mid-drag camera never
+  // shows an un-dimmed strip at the edge.
+  const top = cam.camY - FLOOR_H;
+  const height = cam.viewWorldH() + FLOOR_H * 2;
+  ctx.fillStyle = withAlpha(PALETTE.concreteDeeper, P.washAlpha);
+  ctx.fillRect(-WORLD_W, top, WORLD_W * 3, height);
+
+  const fill = P.fillAlpha + P.fillPulse * pulse;
+  for (let n = range.from; n <= range.to; n++) {
+    const slots = mode.bays.get(n);
+    if (!slots) continue;
+    const y = (n - 1) * FLOOR_H + GAP;
+    const h = FLOOR_H - 3 - GAP * 2;
+    for (const [slot, mergeSide] of slots) {
+      const x = slot * SLOT_W + GAP;
+      const w = SLOT_W - GAP * 2;
+
+      ctx.fillStyle = withAlpha(PALETTE.sodium, fill);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = withAlpha(PALETTE.sodium, P.edgeAlpha);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+      // Corner ticks, 2px thick — the part that survives being scaled down.
+      ctx.fillStyle = PALETTE.sodium;
+      const b = P.bracket;
+      for (const [cx, cy, sx, sy] of [
+        [x, y, 1, 1],
+        [x + w, y, -1, 1],
+        [x, y + h, 1, -1],
+        [x + w, y + h, -1, -1],
+      ]) {
+        ctx.fillRect(sx > 0 ? cx : cx - b, sy > 0 ? cy : cy - 2, b, 2);
+        ctx.fillRect(sx > 0 ? cx : cx - 2, sy > 0 ? cy : cy - b, 2, b);
+      }
+
+      if (mergeSide) {
+        // It would join the room next door: mark the wall it goes through.
+        ctx.fillRect(mergeSide < 0 ? x : x + w - 2, y + 3, 2, h - 6);
+      }
+      // A plus in the middle: "something goes here".
+      const mx = x + w / 2;
+      const my = y + h / 2;
+      ctx.fillRect(mx - 5, my - 1, 10, 2);
+      ctx.fillRect(mx - 1, my - 5, 2, 10);
+    }
+  }
+}
+
 export function drawFloorLabel(ctx, n, state, cam) {
   const floor = state.silo.floors[n - 1];
   if (!floor) return;
@@ -265,4 +327,4 @@ function rand(n) {
   return x - Math.floor(x);
 }
 
-export default { drawFloor, drawRoom, drawShaft, drawFloorLabel };
+export default { drawFloor, drawRoom, drawShaft, drawFloorLabel, drawPlacement };

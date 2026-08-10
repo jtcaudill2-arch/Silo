@@ -49,11 +49,35 @@ registerCoreReducers();
 const REAL_MINUTES_PER_DAY =
   (BAL.time.TICK_MS * TIME.ticksPerCycle * TIME.cyclesPerDay) / 60_000;
 const minutesToDays = (m) => m / REAL_MINUTES_PER_DAY;
+// §16's population column was written against a silo that opens with 180
+// residents, and it is written in absolute numbers: 180–200, 200–260,
+// 260–400, 400–600. The opening is now 44 (see citizens.startPopulation for
+// why), so every one of those figures is off by the shrink factor and the
+// report read "behind" at all four stages for a silo that was in fact doing
+// fine. What §16 is actually asserting is a *shape* — the silo roughly
+// triples over the first forty hours — so the shape is what is kept here and
+// the anchor is what moves. Each band below is §16's own ratio-to-opening,
+// rescaled onto 44 and rounded to something readable:
+//
+//   stage    §16 band    ratio to its 180 opening    × 44
+//   Opening  180–200     1.00–1.11                   44–50
+//   Early    200–260     1.11–1.44                   45–65
+//   Mid      260–400     1.44–2.22                   62–100
+//   Late     400–600     2.22–3.33                   100–150
+//
+// One deliberate departure: Early's floor is 45 rather than the 49 the ratio
+// gives. A 180-person silo arrives with a mature age pyramid and grows from
+// day one; a 44-person silo spends its first twenty days building the
+// Recycling, Workshop and Laboratory it cannot function without, and the
+// birth rules gate on food-days and free beds it has not built yet. Growth
+// genuinely starts around day 30 here, and holding the old ratio at day 20
+// would flag a stage that is doing exactly what the smaller opening was
+// designed to do.
 const STAGES = [
-  { name: 'Opening', toMinutes: 45, pop: [180, 200], want: ['first Workshop'] },
-  { name: 'Early', toMinutes: 240, pop: [200, 260], want: ['Radio Room online', 'Mids excavated'] },
-  { name: 'Mid', toMinutes: 900, pop: [260, 400], want: ['standing squad', 'Lowers excavated'] },
-  { name: 'Late', toMinutes: 2400, pop: [400, 600], want: ['Deeps excavated'] },
+  { name: 'Opening', toMinutes: 45, pop: [44, 50], want: ['first Workshop'] },
+  { name: 'Early', toMinutes: 240, pop: [45, 65], want: ['Radio Room online', 'Mids excavated'] },
+  { name: 'Mid', toMinutes: 900, pop: [62, 100], want: ['standing squad', 'Lowers excavated'] },
+  { name: 'Late', toMinutes: 2400, pop: [100, 150], want: ['Deeps excavated'] },
 ];
 
 // ---------------------------------------------------------------------- run --

@@ -18,7 +18,7 @@ import { canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade, can
 import { canStart, isComplete } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { readEnvironment } from '../src/sim/population.js';
-import { computeCaps } from '../src/sim/economy.js';
+import { computeCaps, staffSlots } from '../src/sim/economy.js';
 import { employableCitizens } from '../src/sim/jobs.js';
 import {
   formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear, getItem,
@@ -181,11 +181,20 @@ export function autopilot(state) {
   // priced in it — so a silo that keeps its recycling at the level that was
   // adequate for a hundred and eighty people simply stops being able to
   // afford anything once it doubles.
+  // A store sitting at its cap throws away everything produced into it, so
+  // its measured net flow reads flat however many producers are running.
+  // Building against that reading is a treadmill with the same shape as the
+  // generator one: the parts store pinned at 700 read as "no parts income"
+  // for two hundred days and bought fourteen Workshops, which between them
+  // took every engineer in the silo and left the Foundry — the only source
+  // of alloy, and so of every suit above tier one — standing empty. A full
+  // tank is not a shortage; it is a depot problem.
+  const full = (k) => Number.isFinite(caps[k]) && state.resources[k] >= caps[k] * 0.95;
   const pop = state.citizenIds.length;
-  if (flow('water') < 4) wants.push('water_reclaimer');
-  if (flow('food') < 4) wants.push('hydroponics');
-  if (scrapIncome < 5 + pop / 30) wants.push('recycling');
-  if (partsIncome < 1.5 + pop / 160) wants.push('workshop');
+  if (flow('water') < 4 && !full('water')) wants.push('water_reclaimer');
+  if (flow('food') < 4 && !full('food')) wants.push('hydroponics');
+  if (scrapIncome < 5 + pop / 30 && !full('scrap')) wants.push('recycling');
+  if (partsIncome < 1.5 + pop / 160 && !full('parts')) wants.push('workshop');
   if (powerHeadroom < 0.25) wants.push('generator_hall');
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
 
@@ -217,11 +226,20 @@ export function autopilot(state) {
     if (env.housingFree < 12) wants.push('residences');
     // Meds and filters both come out of the chem lab and nothing else makes
     // either. Without it the clinic runs dry, no expedition can be supplied,
-    // and no squad that comes home can be decontaminated. Filter demand
-    // scales with the headcount — every air filtration bay draws media all
-    // day — so one chem lab that was comfortable at two hundred people goes
-    // quietly negative at four hundred and closes the airlock for good.
-    if (count('chem_lab') < 1 + Math.floor(pop / 220)) wants.push('chem_lab');
+    // and no squad that comes home can be decontaminated.
+    //
+    // Size it against the thing that actually eats filters, which is the air
+    // plant, not the headcount: a filtration bay draws media every shift
+    // whether anyone is breathing hard or not. A bench makes 0.6 a shift at
+    // full crew and a bay burns about 0.05, and neither runs at full crew, so
+    // the honest ratio is nearer one bench per three bays than the one-per-
+    // two-hundred-people this used to ask for. Under that rule the silo held
+    // exactly one chem lab against six bays, ran a filter balance of zero,
+    // and kept a fully equipped squad indoors for a hundred and twelve days
+    // because it could never bank the eight filters a decon costs.
+    if (count('chem_lab') < Math.max(1, Math.ceil(count('air_filtration') / 3))) {
+      wants.push('chem_lab');
+    }
     if (count('clinic') < 1) wants.push('clinic');
     if (count('maintenance_bay') < 1) wants.push('maintenance_bay');
     if (count('laboratory') < 2) wants.push('laboratory');
@@ -238,7 +256,49 @@ export function autopilot(state) {
     if (count('laboratory') < 4 && state.resources.scrap > RESERVE * 3) wants.push('laboratory');
   }
 
+  // A room produces the fraction of its posts that are *crewed*, and
+  // auto-assign only ever posts people who have no job — so a *second*
+  // Generator Hall ordered by a silo with nobody spare opens empty, produces
+  // nothing, and still draws its idle power. Worse, if the halls it already
+  // has are standing part-empty, the new one cannot add output even in
+  // principle: it shares the same crew, so it moves people sideways and
+  // bills the silo for the privilege.
+  //
+  // The rule is about *more of the same*, not about new capability. The first
+  // Chem Lab, the first Suit Bay, the first Laboratory are worth ordering
+  // into a fully-employed silo, because they do something nothing else in the
+  // silo does and a player would move somebody into them. Gating those on
+  // spare labour was tested and is its own deadlock: this silo runs at zero
+  // idle from about day 30 forever, so "wait for a spare pair of hands"
+  // means the Suit Bay is never built and the surface never opens.
+  //
+  // Left ungated this is a treadmill with no exit. Generation runs level with
+  // demand, the answer on the readout looks like another Generator Hall, the
+  // new hall is uncrewed and adds no power, and the reading that ordered it
+  // is still true the next morning. Measured at twenty-seven halls by day 260
+  // sharing twenty-three mechanics — about four halls' worth of output
+  // between them, every scrap of income spent on them, and one laboratory
+  // built in three hundred days. It kills the silo twice over: auto-assign
+  // crews rooms in power-priority order, so seventy generator posts are
+  // filled before the first laboratory bench and research stops dead at
+  // eight nodes; and on day 553 the plant's fuel draw finally outran the
+  // recycling, the lights went out and everyone died of thirst.
+  //
+  // The rule a player learns from the first empty room: post somebody, or
+  // don't build it.
+  const spareCrew = employableCitizens(state).filter((c) => !c.job).length;
+  const emptyPosts = (type) => {
+    let gap = 0;
+    for (const r of Object.values(state.silo.rooms)) {
+      if (r.type !== type) continue;
+      const def = getRoom(type);
+      const live = r.staff.filter((id) => id != null && state.citizens[id]?.status !== 'dead');
+      gap += staffSlots(def, r) - live.length;
+    }
+    return gap;
+  };
   for (const type of wants) {
+    if (getRoom(type)?.staff && count(type) > 0 && (spareCrew <= 0 || emptyPosts(type) > 0)) continue;
     const spot = findSpot(state, type);
     if (!spot) continue;
     const check = canBuild(state, spot.floor, spot.slot, type);
@@ -378,10 +438,20 @@ function runSurface(state) {
     if (members.some((c) => !c.gear?.[kind])) return actions;
   }
 
-  // Don't send a squad you cannot clean when it gets back. The filters have
-  // to be on the shelf before the door opens, not hoped for.
+  // Don't send a squad you cannot clean when it gets back — *if* cleaning
+  // them is on the table at all. Only the Chem Lab makes filters, and the
+  // documented order of the chain (Env-Suit I, Airlock, Suit Bay, Armory,
+  // Foundry, Chem Lab) puts it last on purpose, so the first runs out of
+  // the door are meant to be made on the starting stock and, once that is
+  // gone, on a skipped decon. Requiring filters unconditionally inverted
+  // that: the silo starts with a hundred days of filter for its air plant
+  // and no way to make more, so from about day 100 the door was shut by a
+  // rule the game itself does not have — `canLaunch` never asks for filters
+  // — and no expedition left in seven hundred days. With a Chem Lab running
+  // the wait is right and the check stands; without one, skipping is the
+  // intended cost and the decon handler above already pays it.
   const deconCost = BAL.expedition.decon.filtersPerMember * members.length;
-  if (state.resources.filters < deconCost) return actions;
+  if (hasChemLab && state.resources.filters < deconCost) return actions;
 
   // Send them out — the furthest band the suits allow. Reward tier rises
   // with distance and the near ruins yield no artifacts at all, so a squad

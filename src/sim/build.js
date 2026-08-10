@@ -103,28 +103,70 @@ export function startExcavation(state) {
 
 // ------------------------------------------------------------- placement ---
 
-/** Every room type the player could build right now, with a reason if not. */
-export function buildable(state, floorN) {
-  const tier = tierForFloor(floorN);
+/**
+ * The whole room catalogue, judged against the silo rather than against one
+ * floor.
+ *
+ * Construction is pick-then-place: the player chooses a building and only then
+ * a bay, so the question this answers is "could this go anywhere at all?" — and
+ * when the answer is no, `reason` is the single sentence the panel prints
+ * underneath it (spec §15). `bays` is how many legal spots it has right now,
+ * which is what the cross-section is about to light up.
+ */
+export function catalogue(state) {
   return ROOM_LIST.map((def) => {
-    const unlocked = roomUnlocked(state, def);
-    const tierOk = !def.tierGate || tierUnlocked(state, def.tierGate);
-    const tierMatch = !def.tierGate || tierForFloor(floorN).key === def.tierGate ||
-      tierIndex(tierForFloor(floorN).key) >= tierIndex(def.tierGate);
     let reason = null;
-    if (!unlocked) reason = `Needs research: ${(def.unlock || '').replace(/_/g, ' ')}.`;
-    else if (!tierOk) reason = `Needs the ${def.tierGate} excavated.`;
-    else if (!tierMatch) reason = `Only builds in the ${def.tierGate} or below.`;
-    else {
+    let bays = 0;
+
+    if (!roomUnlocked(state, def)) {
+      reason = `Needs research: ${(def.unlock || '').replace(/_/g, ' ')}.`;
+    } else if (def.tierGate && !tierUnlocked(state, def.tierGate)) {
+      reason = `Needs the ${tierName(def.tierGate)} excavated.`;
+    } else {
       const short = shortfall(state, def.buildCost);
-      if (short) reason = `Not enough ${short}.`;
+      if (short) reason = `Not enough ${short}. It costs ${describeCost(def.buildCost)}.`;
+      else {
+        bays = allPlacements(state, def.id).length;
+        if (!bays) {
+          reason = def.tierGate
+            ? `Every bay in the ${tierName(def.tierGate)} is already taken. Dig deeper.`
+            : 'Every bay in the silo is already taken. Excavate another floor.';
+        }
+      }
     }
-    return { def, ok: !reason, reason, tier };
+    return { def, ok: !reason, reason, bays };
   });
+}
+
+/**
+ * Every legal placement for a room type, across every floor that will take it.
+ * This is what the cross-section highlights while the player is placing.
+ */
+export function allPlacements(state, typeId) {
+  const def = getRoom(typeId);
+  if (!def) return [];
+  const out = [];
+  for (const floor of state.silo.floors) {
+    if (!floor.excavated) continue;
+    if (!floorAcceptsRoom(state, floor.n, def)) continue;
+    for (const spot of placements(state, floor.n, typeId)) out.push(spot);
+  }
+  return out;
+}
+
+/** Deep-tier rooms belong deep: a floor above their tier will not take them. */
+export function floorAcceptsRoom(state, floorN, def) {
+  if (!def?.tierGate) return true;
+  if (!tierUnlocked(state, def.tierGate)) return false;
+  return tierIndex(tierForFloor(floorN).key) >= tierIndex(def.tierGate);
 }
 
 function tierIndex(key) {
   return BAL.silo.tiers.findIndex((t) => t.key === key);
+}
+
+function tierName(key) {
+  return BAL.silo.tiers.find((t) => t.key === key)?.name || key;
 }
 
 /**
@@ -522,4 +564,15 @@ export function affordable(state, cost) {
   return !shortfall(state, cost);
 }
 
-export default { build, canBuild, upgrade, canUpgrade, demolish, startExcavation, canExcavate, placements, buildable };
+export default {
+  build,
+  canBuild,
+  upgrade,
+  canUpgrade,
+  demolish,
+  startExcavation,
+  canExcavate,
+  placements,
+  allPlacements,
+  catalogue,
+};

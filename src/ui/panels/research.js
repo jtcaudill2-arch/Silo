@@ -10,6 +10,7 @@
 import { BAL } from '../../config/balance.js';
 import { BRANCHES, RESEARCH, RESEARCH_LIST, ARTIFACTS, branchNodes, nodeDepth } from '../../data/research.js';
 import { canStart, isComplete, missingRequirements, missingArtifacts, effects } from '../../sim/research.js';
+import { lockReason } from '../../sim/unlocks.js';
 import { el, button, sectionLabel, emptyState, meter, chip, toast, fmtDuration, humanise, modal } from '../dom.js';
 
 let branch = 'sustenance';
@@ -27,10 +28,11 @@ export const researchPanel = {
     return RESEARCH_LIST.some((n) => canStart(state, n.id).ok) ? 1 : 0;
   },
 
+  // First of the gated systems, and the one every later gate is paid for out
+  // of. The condition and the sentence both live in sim/unlocks.js, with the
+  // other four, so the order they arrive in can be read in one place.
   locked(state) {
-    const hasLab = Object.values(state.silo.rooms).some((r) => r.type === 'laboratory');
-    if (hasLab || state.research.points > 0 || state.research.completed.length) return null;
-    return 'Build a Laboratory first — nothing else in the silo produces research points.';
+    return lockReason(state, 'research');
   },
 
   render(state, shell) {

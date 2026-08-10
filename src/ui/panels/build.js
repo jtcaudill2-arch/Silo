@@ -1,18 +1,33 @@
 /**
  * build.js — the construction panel.
  *
- * Two things it has to do well. First, the cost preview must be honest: not
- * just the build price but the ongoing upkeep, because a room you cannot
- * power is worse than no room. Second, when something can't be built the
- * panel says why in a sentence and points at the fix (spec §15).
+ * Construction is pick-then-place. The panel opens on the whole catalogue —
+ * every room the silo knows about, not the subset that happens to fit on some
+ * floor you had to choose first — and tapping one hands the screen over to the
+ * cross-section, where every bay it could occupy lights up. That inversion is
+ * the point: the player picks *what* they want and the silo answers *where*,
+ * rather than being made to guess which floor is the interesting one before
+ * the game will tell them anything.
+ *
+ * Two things it still has to do well. The cost preview must be honest — not
+ * just the build price but the ongoing upkeep, because a room you cannot power
+ * is worse than no room. And when something can't be built the panel says why
+ * in a sentence and points at the fix (spec §15).
  */
 
 import { BAL } from '../../config/balance.js';
 import { getRoom, CATEGORIES } from '../../data/rooms.js';
-import { buildable, placements, canBuild, build, excavationCost, canExcavate, startExcavation, nextFloorToExcavate, describeCost } from '../../sim/build.js';
-import { tierForFloor, tierUnlocked } from '../../sim/research.js';
-import { el, button, row, sectionLabel, emptyState, toast, modal, fmtDuration, humanise, chip } from '../dom.js';
-import { buildCycles } from '../../sim/build.js';
+import {
+  catalogue,
+  excavationCost,
+  canExcavate,
+  startExcavation,
+  nextFloorToExcavate,
+  describeCost,
+  buildCycles,
+} from '../../sim/build.js';
+import { tierForFloor } from '../../sim/research.js';
+import { el, button, sectionLabel, toast, fmtDuration, humanise, chip } from '../dom.js';
 
 let category = 'all';
 
@@ -28,21 +43,10 @@ export const buildPanel = {
 
   render(state, shell) {
     const body = el('div.panel-body');
-    const floorN = shell.buildFloor ?? state.ui.cameraFloor ?? 3;
-
     body.appendChild(excavationSection(state, shell));
-    body.appendChild(floorPicker(state, shell, floorN));
 
-    const floor = state.silo.floors[floorN - 1];
-    if (!floor?.excavated) {
-      body.appendChild(emptyState(`Floor ${floorN} has not been excavated.`));
-      return body;
-    }
-
-    body.appendChild(baySection(state, shell, floor));
-
-    // ---- catalogue --------------------------------------------------------
-    const options = buildable(state, floorN);
+    // ---- the catalogue, floor-independent --------------------------------
+    const options = catalogue(state);
     const cats = ['all', ...new Set(options.map((o) => o.def.category))];
     body.appendChild(
       el(
@@ -67,10 +71,14 @@ export const buildPanel = {
     // Buildable first, then locked — a wall of greyed-out rooms is not a menu.
     shown.sort((a, b) => Number(b.ok) - Number(a.ok) || a.def.name.localeCompare(b.def.name));
 
-    body.appendChild(sectionLabel(`Build on floor ${floorN}`));
-    for (const opt of shown) {
-      body.appendChild(catalogueRow(state, shell, opt, floorN));
-    }
+    body.appendChild(sectionLabel('Pick a building, then a bay'));
+    for (const opt of shown) body.appendChild(catalogueRow(shell, opt));
+
+    // ---- where there is room ---------------------------------------------
+    // Secondary now, and deliberately below the catalogue: it is orientation,
+    // not a gate. Tapping a floor takes the camera there; tapping a built bay
+    // opens that room.
+    body.appendChild(floorSection(state, shell));
     return body;
   },
 };
@@ -83,17 +91,29 @@ function excavationSection(state, shell) {
   if (dig) {
     const left = Math.max(0, dig.untilCycle - state.clock.cycle);
     wrap.appendChild(
-      row({
-        title: `Excavating floor ${dig.floor}`,
-        sub: `${fmtDuration(left)} remaining. The crew is down there now.`,
-        value: `${left}`,
-      })
+      el(
+        'div.excavate',
+        el(
+          'div.excavate-main',
+          el('div.excavate-title', `Excavating floor ${dig.floor}`),
+          el('div.excavate-sub', `${fmtDuration(left)} remaining. The crew is down there now.`)
+        )
+      )
     );
     return wrap;
   }
 
   if (next == null) {
-    wrap.appendChild(row({ title: 'Every floor is open', sub: 'Ninety-two down to bedrock.' }));
+    wrap.appendChild(
+      el(
+        'div.excavate',
+        el(
+          'div.excavate-main',
+          el('div.excavate-title', 'Every floor is open'),
+          el('div.excavate-sub', 'Ninety-two down to bedrock.')
+        )
+      )
+    );
     return wrap;
   }
 
@@ -124,14 +144,72 @@ function excavationSection(state, shell) {
   return wrap;
 }
 
-function floorPicker(state, shell, current) {
-  const strip = el('div.floor-strip');
+/**
+ * One row per room type. Cost, what it makes, what it costs to run, how long
+ * it takes — and, when it can't be built anywhere at all, the one sentence
+ * saying why. Tapping it enters placement mode.
+ */
+function catalogueRow(shell, opt) {
+  const { def, ok, reason, bays } = opt;
+
+  const upkeep = Object.entries(def.consumes || {})
+    .map(([k, v]) => `${v} ${k}`)
+    .join(', ');
+  const output = Object.entries(def.produces || {})
+    .map(([k, v]) => `${v} ${k}`)
+    .join(', ');
+
+  return el(
+    'button.build-row' + (ok ? '' : '.locked'),
+    {
+      type: 'button',
+      disabled: !ok,
+      onclick: () => shell.startPlacement(def.id),
+    },
+    el(
+      'div.build-main',
+      el('div.build-name', def.name),
+      el('div.build-desc', def.desc),
+      el(
+        'div.build-meta',
+        chip(describeCost(def.buildCost)),
+        output ? chip(`+${output}/cycle`, 'good') : null,
+        upkeep ? chip(`−${upkeep}/cycle`, 'bad') : null,
+        chip(fmtDuration(buildCycles(def))),
+        // How many bays are about to light up. Amber only once there is less
+        // than a floor's worth left anywhere — at seventy-four it is a fact,
+        // at three it is a warning that the silo needs digging.
+        ok
+          ? chip(
+              `${bays} bay${bays === 1 ? '' : 's'} free`,
+              bays <= BAL.silo.slotsPerFloor ? 'warn' : ''
+            )
+          : null
+      ),
+      !ok ? el('div.build-why', reason) : null
+    ),
+    ok ? el('div.row-chevron', '›') : null
+  );
+}
+
+/**
+ * The floors, as a strip of free-bay counts, and the bays of whichever one is
+ * selected. Not a filter on anything any more — just the answer to "where is
+ * there still room", and a way to move the camera without closing the panel.
+ */
+function floorSection(state, shell) {
   const dug = state.silo.floors.filter((f) => f.excavated);
+  if (!dug.length) return el('div');
+
+  const wanted = shell.buildFloor ?? state.ui.cameraFloor ?? dug[0].n;
+  const floor = dug.find((f) => f.n === wanted) || dug[0];
+
+  const strip = el('div.floor-strip');
   for (const f of dug) {
     const free = f.slots.filter((s) => s == null).length;
     strip.appendChild(
       el(
-        'button.floor-pip' + (f.n === current ? '.active' : '') + (free === 0 ? '.full' : ''),
+        'button.floor-pip' + (f.n === floor.n ? '.active' : '') + (free === 0 ? '.full' : ''),
         {
           type: 'button',
           onclick: () => {
@@ -146,23 +224,20 @@ function floorPicker(state, shell, current) {
       )
     );
   }
-  return el('div.floor-strip-wrap', strip);
-}
 
-function baySection(state, shell, floor) {
-  const wrap = el('div.bay-row');
+  const bays = el('div.bay-row');
   const seen = new Set();
   for (let i = 0; i < BAL.silo.slotsPerFloor; i++) {
     const id = floor.slots[i];
     if (id == null) {
-      wrap.appendChild(el('div.bay.empty', el('span', '—')));
+      bays.appendChild(el('div.bay.empty', el('span', '—')));
       continue;
     }
     const room = state.silo.rooms[id];
     const def = getRoom(room?.type);
     const first = !seen.has(id);
     seen.add(id);
-    wrap.appendChild(
+    bays.appendChild(
       el(
         'button.bay' + (room?.powered ? '' : '.dark'),
         {
@@ -170,89 +245,18 @@ function baySection(state, shell, floor) {
           onclick: () => shell.onOpenRoom?.(id),
           title: def?.name,
         },
-        el('span.bay-name', first ? (def?.name || '?') : '·'),
+        el('span.bay-name', first ? def?.name || '?' : '·'),
         first ? el('span.bay-lvl.mono', `L${room.level}`) : null
       )
     );
   }
-  return el('div', sectionLabel(`Floor ${floor.n} bays`), wrap);
-}
 
-function catalogueRow(state, shell, opt, floorN) {
-  const { def, ok, reason } = opt;
-  const spots = ok ? placements(state, floorN, def.id) : [];
-  const noRoom = ok && spots.length === 0;
-
-  const upkeep = Object.entries(def.consumes || {})
-    .map(([k, v]) => `${v} ${k}`)
-    .join(', ');
-  const output = Object.entries(def.produces || {})
-    .map(([k, v]) => `${v} ${k}`)
-    .join(', ');
-
-  const node = el(
-    'button.build-row' + (ok && !noRoom ? '' : '.locked'),
-    {
-      type: 'button',
-      disabled: !ok || noRoom,
-      onclick: () => choosePlacement(state, shell, def, floorN, spots),
-    },
-    el(
-      'div.build-main',
-      el('div.build-name', def.name),
-      el('div.build-desc', def.desc),
-      el(
-        'div.build-meta',
-        chip(describeCost(def.buildCost)),
-        output ? chip(`+${output}/cycle`, 'good') : null,
-        upkeep ? chip(`−${upkeep}/cycle`, 'bad') : null,
-        chip(fmtDuration(buildCycles(def)))
-      ),
-      !ok ? el('div.build-why', reason) : noRoom ? el('div.build-why', 'No free bay on this floor.') : null
-    ),
-    ok && !noRoom ? el('div.row-chevron', '›') : null
+  return el(
+    'div',
+    sectionLabel('Where there is room'),
+    el('div.floor-strip-wrap', strip),
+    bays
   );
-  return node;
-}
-
-function choosePlacement(state, shell, def, floorN, spots) {
-  if (spots.length === 1) {
-    doBuild(shell, floorN, spots[0].slot, def);
-    return;
-  }
-  const body = el('div');
-  body.appendChild(
-    el('div.note', `Adjacent identical rooms merge into one wider unit — more output per bay, less power drawn.`)
-  );
-  for (const spot of spots) {
-    body.appendChild(
-      row({
-        title: `Bay ${spot.slot + 1}`,
-        sub: spot.label,
-        onclick: () => {
-          h.close();
-          doBuild(shell, floorN, spot.slot, def);
-        },
-      })
-    );
-  }
-  const h = modal({
-    title: `${def.name} — where?`,
-    body,
-    actions: [button('Cancel', { onclick: () => h.close() })],
-  });
-}
-
-function doBuild(shell, floorN, slot, def) {
-  const state = shell.store.state;
-  const check = canBuild(state, floorN, slot, def.id);
-  if (!check.ok) {
-    toast(check.reason, 'bad');
-    return;
-  }
-  shell.store.dispatchAll(build(state, floorN, slot, def.id));
-  toast(`${def.name}: construction started on floor ${floorN}.`);
-  shell.renderPanel(true);
 }
 
 export default buildPanel;

@@ -11,6 +11,7 @@
 import { BAL } from '../../config/balance.js';
 import { POLICY_LIST, POLICIES } from '../../data/policies.js';
 import { policyCapacity, canTogglePolicy, deliverVerdict } from '../../sim/order.js';
+import { lockReason } from '../../sim/unlocks.js';
 import { fullName, isDissident } from '../../sim/population.js';
 import { portraitCanvas } from '../../render/portraits.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise } from '../dom.js';
@@ -29,19 +30,14 @@ export const policyPanel = {
   },
 
   /**
-   * Politics arrives when there is politics. On a first morning of a silo
-   * that is fed, housed and calm there is nothing here to decide, and a
-   * panel with nothing in it is one more thing to work out before you can
-   * start playing.
+   * Last of the gated systems. Politics arrives when there is politics: on a
+   * first morning of a silo that is fed, housed and calm there is nothing
+   * here to decide, and a panel with nothing in it is one more thing to work
+   * out before you can start playing. The condition and the sentence live in
+   * sim/unlocks.js with the other four.
    */
   locked(state) {
-    const trouble =
-      state.order.value < BAL.order.contentThreshold ||
-      (state.order.investigations || []).length > 0 ||
-      (state.order.policies || []).length > 0 ||
-      Object.values(state.silo.rooms).some((r) => r.type === 'sheriffs_office');
-    if (trouble) return null;
-    return 'Nothing to govern yet. This opens when order slips, or when you build a Sheriff’s Office.';
+    return lockReason(state, 'policy');
   },
 
   render(state, shell) {
