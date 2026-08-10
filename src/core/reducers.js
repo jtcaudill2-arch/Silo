@@ -216,6 +216,40 @@ const siloReducers = {
     if (o?.air) {
       state.air.quality = Math.max(BAL.air.min, Math.min(BAL.air.max, state.air.quality + o.air));
     }
+    // A level that was built for something arrives with the room still in it,
+    // seized. Placed here rather than through placeRoom() so the reducer keeps
+    // no import on newgame.js — the floor is empty by definition, having just
+    // been opened, so there is nothing to collide with.
+    if (o?.found && floor) {
+      const width = Math.min(o.found.width, BAL.silo.slotsPerFloor);
+      const id = String(state.silo.nextRoomId++);
+      state.silo.rooms[id] = {
+        id,
+        type: o.found.type,
+        floor: a.floor,
+        slot: 0,
+        width,
+        level: o.found.level,
+        condition: o.found.condition,
+        staff: [],
+        // Dark, and it stays dark until restored. This is not decoration: the
+        // economy skips seized rooms, so nothing ever recomputes this field
+        // for them, and a `true` here is a lie that never gets corrected.
+        // Three separate systems ask `room.powered` directly — schooling,
+        // airlock capacity, and whether the silo can craft a suit — so a
+        // seized Schoolhouse on floor 9 was teaching children with no crew,
+        // no power and no repairs.
+        powered: false,
+        // Never commissioned. This is what separates a room that arrived
+        // seized from one that decayed to the same number while the silo
+        // leaned on it — the first is an opportunity, the second is an
+        // emergency, and the standing orders rank them nothing alike.
+        found: true,
+        buildingUntilCycle: 0,
+        upgradingUntilCycle: 0,
+      };
+      for (let i = 0; i < width; i++) floor.slots[i] = id;
+    }
     if (o?.condition) {
       // The floor above is the one a seal gives way into. Worst-conditioned
       // room there, so a collapse compounds a problem rather than spreading a

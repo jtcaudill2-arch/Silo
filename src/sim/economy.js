@@ -33,6 +33,23 @@ export { RES_KEYS };
 
 // ------------------------------------------------------------------ caps ---
 
+/**
+ * A room the silo is actually running.
+ *
+ * A level found with a room still in it arrives seized: breakers open, nobody
+ * on the roster, nothing coming out of it. It joins the silo when it has been
+ * restored, not when the door is opened — which is what makes the restoration
+ * a purchase rather than a formality. Without this a twenty-per-cent
+ * Hydroponics Bay started feeding people the moment it was found, the silo
+ * grew to a hundred and seventy on capacity it had never paid for, and the
+ * whole surface chain fell off the end of the campaign.
+ *
+ * Rooms the player built are in service the moment they finish, as ever.
+ */
+export function inService(room) {
+  return !room?.found;
+}
+
 export function computeCaps(state) {
   const caps = { ...BAL.resources.baseCaps };
   const e = researchEffects(state);
@@ -41,7 +58,7 @@ export function computeCaps(state) {
   for (const id of Object.keys(state.silo.rooms)) {
     const room = state.silo.rooms[id];
     const def = getRoom(room.type);
-    if (!def) continue;
+    if (!def || !inService(room)) continue;
     if (def.provides.depot) {
       const scale = room.level * room.width;
       for (const [k, v] of Object.entries(BAL.resources.depotCapBonus)) {
@@ -280,7 +297,8 @@ function plantPlan(state, roomIds, capability, draw, caps) {
  * @returns {{capability: object, draw: object, load: object, demand: number, capacity: number, generation: number}}
  */
 export function powerPicture(state) {
-  const roomIds = Object.keys(state.silo.rooms);
+  // Seized rooms a dig turned up are not part of the plant until restored.
+  const roomIds = Object.keys(state.silo.rooms).filter((id) => inService(state.silo.rooms[id]));
   const { capability, draw } = roomLoads(state, roomIds);
   const plant = plantPlan(state, roomIds, capability, draw, computeCaps(state));
   const load = {};
@@ -318,7 +336,8 @@ export function simulateCycle(state, ctx = {}) {
   };
 
   // ---- 1. what can each room do, and what does it want to draw ----------
-  const roomIds = Object.keys(state.silo.rooms);
+  // Seized rooms a dig turned up are not part of the plant until restored.
+  const roomIds = Object.keys(state.silo.rooms).filter((id) => inService(state.silo.rooms[id]));
   const { capability, draw } = roomLoads(state, roomIds);
 
   // ---- 2. generation, run to the load ------------------------------------

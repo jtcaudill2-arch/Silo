@@ -43,6 +43,7 @@ const PRECACHE = [
   './src/data/encounters.js',
   './src/data/events.js',
   './src/data/items.js',
+  './src/data/levels.js',
   './src/data/names.js',
   './src/data/policies.js',
   './src/data/research.js',

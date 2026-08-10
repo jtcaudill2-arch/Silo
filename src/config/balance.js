@@ -785,6 +785,13 @@ export const BAL = {
     // the life-support band that the silo can pay for today is never worth
     // deferring for one it cannot, so this is the line the lockout stops at.
     holdYieldsAbove: 80,
+    // Restoring a room a dig turned up. Above digging (30), because a level
+    // you have already opened and not used is worth more than the next one
+    // down; below every order about something the silo needs today, because a
+    // seized room that stays seized costs nothing. Ranking it by condition
+    // like an ordinary repair put it in the eighties and had obedient silos
+    // buying schoolhouses instead of laboratories.
+    restoreFound: 40,
   },
 
   // ---------------------------------------------------------- military ---

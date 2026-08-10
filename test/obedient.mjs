@@ -106,10 +106,16 @@ function obey(state, d) {
   if (d.wait) return 'nothing to do';
 
   switch (d.id) {
-    case 'repair': {
+    // One action for both, which is the point of building found rooms out of
+    // the repair machinery: a level that came with a room in it hands over an
+    // ordinary room that happens to arrive at fifteen per cent, and putting it
+    // into service is paying its repair bill. Partial payment is allowed, so a
+    // silo that cannot afford the whole thing today finishes it over several.
+    case 'repair':
+    case 'restore': {
       const check = canRepair(state, d.roomId);
       if (!check.ok) return `refused: ${check.reason}`;
-      return { actions: repair(state, d.roomId), note: 'repaired' };
+      return { actions: repair(state, d.roomId), note: d.id === 'restore' ? 'restored' : 'repaired' };
     }
     case 'staff':
       return { actions: autoAssign(state), note: 'crewed empty posts' };

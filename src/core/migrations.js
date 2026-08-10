@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -105,6 +105,24 @@ export const MIGRATIONS = {
         slots: new Array(BAL.silo.slotsPerFloor).fill(null),
         integrity: 100,
       });
+    }
+    return state;
+  },
+
+  // 14 -> 15: Phase C. Rooms carry `found`, which marks one that a dig turned
+  // up still standing and that has never been put into service.
+  //
+  // Every room in an existing save was built by the player, so the answer for
+  // all of them is false — and an absent field would already read as false
+  // everywhere it is used. It is written out anyway: the flag decides whether
+  // the standing orders treat a room at fifteen condition as a bargain or as
+  // an emergency, and a save where that turns on the difference between
+  // `false` and `undefined` is a save whose shape is a guess.
+  14: (state) => {
+    const rooms = state.silo?.rooms;
+    if (!rooms) return state;
+    for (const room of Object.values(rooms)) {
+      if (room && typeof room === 'object') room.found ??= false;
     }
     return state;
   },

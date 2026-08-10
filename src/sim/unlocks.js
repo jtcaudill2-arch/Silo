@@ -126,10 +126,14 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
+import { inService } from './economy.js';
 
 /** Is there a room of any of these types in the silo, finished or going up? */
+// A seized room does not open a panel. The Armoury on floor 96 is standing
+// there dark until it is paid for, and a Squads panel that arrives on the
+// strength of a room the silo cannot use is a promise it has to take back.
 const hasRoom = (state, ...types) =>
-  Object.values(state.silo.rooms).some((r) => types.includes(r.type));
+  Object.values(state.silo.rooms).some((r) => types.includes(r.type) && inService(r));
 
 /** Has this node been finished? `research.completed` is append-only. */
 const researched = (state, id) => (state.research.completed || []).includes(id);

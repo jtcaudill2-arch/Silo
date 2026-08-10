@@ -8,7 +8,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom, SKILLS } from '../data/rooms.js';
-import { staffSlots } from './economy.js';
+import { staffSlots, inService } from './economy.js';
 import { workFactor, topSkill } from './population.js';
 
 /** The skill a citizen's current post trains. */
@@ -26,7 +26,7 @@ export function openSlots(state) {
   for (const id of Object.keys(state.silo.rooms)) {
     const room = state.silo.rooms[id];
     const def = getRoom(room.type);
-    if (!def?.staff) continue;
+    if (!def?.staff || !inService(room)) continue;
     const slots = staffSlots(def, room);
     const live = room.staff.filter((cid) => state.citizens[cid]?.status !== 'dead');
     const free = slots - live.length;

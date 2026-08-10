@@ -29,6 +29,8 @@
 import { BAL } from '../config/balance.js';
 import { tierForFloor } from './research.js';
 import { LOOT } from '../data/items.js';
+import { namedLevel } from '../data/levels.js';
+import { getRoom } from '../data/rooms.js';
 
 /** 0 for the Uppers, 4 for the Foundations. */
 function tierIndex(floorN) {
@@ -161,6 +163,30 @@ const OUTCOMES = [
  * catch-up replay agrees with live play.
  */
 export function digOutcome(state, floorN, rng) {
+  // A level that was built for something is not rolled for. Roughly one in
+  // seven of the 144 is standing there seized rather than empty, and which one
+  // is a fact about the silo, not about the seed — two players who reach floor
+  // 136 find the same reactor.
+  const named = namedLevel(floorN);
+  if (named) {
+    const def = getRoom(named.room);
+    return {
+      id: 'found',
+      kind: 'good',
+      floor: floorN,
+      levelName: named.name,
+      found: {
+        type: named.room,
+        width: named.width,
+        level: named.level,
+        condition: named.condition,
+      },
+      text:
+        `Floor ${floorN} is open — ${named.name}. ${named.text} ` +
+        `The ${def?.name || named.room} is at ${named.condition}% and will run again if it is repaired.`,
+    };
+  }
+
   const ti = tierIndex(floorN);
   const floor = state.silo.floors[floorN - 1];
   const shored = floor?.shored ?? floorN < BAL.silo.excavation.shoringRequiredBelowFloor;

@@ -23,8 +23,8 @@ import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
 import { readEnvironment } from './population.js';
 import { available as availableResearch } from './research.js';
-import { canBuild, canExcavate, canRepair } from './build.js';
-import { staffSlots } from './economy.js';
+import { canBuild, canExcavate, canRepair, buildCostFor, describeCost } from './build.js';
+import { staffSlots, inService } from './economy.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
 import { canStart } from './research.js';
@@ -96,10 +96,15 @@ function runwayWeight(days) {
   return shoulder - (shoulder - D.runwayFloor) * along;
 }
 
+// Both skip seized rooms. "Does the silo have one of these" has to mean one it
+// can use: a found Schoolhouse standing dark on floor 9 otherwise answers yes
+// and the order to build a working one never comes.
 const has = (state, type) =>
-  Object.values(state.silo.rooms).some((r) => r.type === type && r.buildingUntilCycle === 0);
+  Object.values(state.silo.rooms).some(
+    (r) => r.type === type && r.buildingUntilCycle === 0 && inService(r)
+  );
 const count = (state, type) =>
-  Object.values(state.silo.rooms).filter((r) => r.type === type).length;
+  Object.values(state.silo.rooms).filter((r) => r.type === type && inService(r)).length;
 
 /** "a Generator Hall" / "an Airlock", for naming a room mid-sentence. */
 const aOrAn = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
@@ -424,8 +429,18 @@ export function directives(state) {
   }
 
   // ---- a room about to fail --------------------------------------------
+  //
+  // A room the silo has never crewed is excluded, however bad its number is.
+  // The found levels arrive at ten to thirty condition, which reads to a
+  // straight worst-first sort exactly like a generator hall about to die — so
+  // opening floor 9 put "Repair the Schoolhouse" at the top of the standing
+  // orders and an obedient silo spent 288 scrap on a room it had no crew for
+  // and no need of. Measured: it cost the campaign five research nodes and
+  // every expedition it would otherwise have run. Getting crewed makes a found
+  // room ordinary again, and so does a full repair.
+  const inService = (r) => !(r.found && (r.staff?.length || 0) === 0);
   const worst = Object.values(state.silo.rooms)
-    .filter((r) => r.buildingUntilCycle === 0)
+    .filter((r) => r.buildingUntilCycle === 0 && inService(r))
     .sort((a, b) => a.condition - b.condition)[0];
   if (worst && worst.condition <= BAL.alerts.conditionWarnAt) {
     const def = getRoom(worst.type);
@@ -438,6 +453,42 @@ export function directives(state) {
         'and if it is making power the rest of the silo stops with it.',
       panel: 'build',
       weight: 85 - worst.condition,
+    });
+  }
+
+  // ---- a level that came with something in it ----------------------------
+  //
+  // The other half of the split above. This is never urgent — nothing breaks
+  // if it is ignored — but it is usually the best value on the board, so it
+  // sits above digging and below anything the silo actually needs today.
+  // Cheapest first, because an order the silo can finish is worth more than a
+  // better one it can only stare at.
+  // Only offered when the silo can finish it today. A repair pays for whatever
+  // it can afford and stops, which is right for a generator dying at eleven
+  // condition and wrong here: a silo drip-feeding scrap into a schoolhouse
+  // held this order at the top of the list for day after day, spent the
+  // actions it had on it, and pushed Env-Suit I — and with it the whole
+  // surface half of the game — nine days past where it belongs. A found room
+  // is a purchase. If it cannot be bought outright it is not yet advice, and
+  // the log already said the room is down there.
+  const restorable = Object.values(state.silo.rooms)
+    .filter((r) => r.found && (r.staff?.length || 0) === 0 && r.buildingUntilCycle === 0)
+    .map((r) => ({ room: r, check: canRepair(state, r.id) }))
+    .filter((c) => c.check.ok && !c.check.partial)
+    .sort((a, b) => (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
+  if (restorable) {
+    const r = restorable.room;
+    const def = getRoom(r.type);
+    const build = buildCostFor(def, r.width);
+    add({
+      id: 'restore',
+      text: `Restore the ${def?.name || r.type} on floor ${r.floor}`,
+      roomId: r.id,
+      why:
+        `It came with the level and has never run. Putting it back into service costs ` +
+        `${describeCost(restorable.check.cost)}, against ${describeCost(build)} to build one.`,
+      panel: 'build',
+      weight: BAL.directives.restoreFound,
     });
   }
 
@@ -522,10 +573,16 @@ export function directives(state) {
   }
 
   // ---- posts standing empty ---------------------------------------------
+  // Seized rooms are excluded, and it is not cosmetic. A found room always has
+  // an empty roster, and `openSlots` — what auto-assign actually walks — skips
+  // it until it has been restored. Left in, "Crew the Schoolhouse" stands at
+  // 72 for ever: above digging, above the surface chain, and impossible to
+  // carry out. Measured, a silo sat on that order with thirty-seven people
+  // idle and its Foundry and Suit Bay uncrewed, and never reached the surface.
   const empty = spare
     ? Object.values(state.silo.rooms).filter((r) => {
         const def = getRoom(r.type);
-        return def?.staff && r.staff.length === 0 && r.buildingUntilCycle === 0;
+        return def?.staff && r.staff.length === 0 && r.buildingUntilCycle === 0 && inService(r);
       })
     : [];
   if (empty.length) {

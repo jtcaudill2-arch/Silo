@@ -404,13 +404,35 @@ export function upgrade(state, roomId) {
  * without this the player would watch a critical room die with no lever to
  * touch. Repair is that lever: expensive, immediate, and always available.
  */
+/**
+ * What a room of a given width actually cost to put up.
+ *
+ * Building charges `buildCost` once for the room at its natural width, and
+ * once more for each merge step past it. So a three-wide Storage Depot (base
+ * one) was paid for three times, while a three-wide Reactor (base three) was
+ * paid for once. Width on its own does not tell you the price, which is the
+ * trap the repair and salvage prices below both fell into.
+ */
+export function buildCostFor(def, width) {
+  const base = def?.buildCost || { scrap: 50 };
+  const natural = def?.width || 1;
+  const steps = Math.max(1, (width || natural) - natural + 1);
+  const out = {};
+  for (const [k, v] of Object.entries(base)) out[k] = v * steps;
+  return out;
+}
+
 /** Cost of restoring `points` of condition. Priced off the room's build cost. */
 export function repairCost(room, points) {
   const def = getRoom(room.type);
   const share = (points / BAL.silo.condition.start) * BAL.silo.repair.fractionOfBuildCost;
   const out = {};
-  for (const [k, v] of Object.entries(def?.buildCost || { scrap: 50 })) {
-    const amount = Math.ceil(v * share * room.width);
+  // Against what the room cost, not against how many slots it covers. Charging
+  // per slot made a full restore of a base-three room 149% of building a new
+  // one, so the cheapest way to fix a wrecked Reactor was to demolish it and
+  // start again — the exact opposite of what `fractionOfBuildCost` promises.
+  for (const [k, v] of Object.entries(buildCostFor(def, room.width))) {
+    const amount = Math.ceil(v * share);
     if (amount > 0) out[k] = amount;
   }
   return out;
@@ -472,7 +494,14 @@ export function repair(state, roomId, requestedPoints) {
   const next = Math.min(BAL.silo.condition.start, room.condition + points);
   return [
     { type: 'RESOURCE_DELTA', deltas },
-    { type: 'ROOM_PATCH', id: roomId, patch: { condition: next, breached: false } },
+    {
+      type: 'ROOM_PATCH',
+      id: roomId,
+      // Brought all the way back, a found room stops being a discovery and
+      // becomes an ordinary room of the silo — so the next time it falls, it
+      // is an emergency like any other.
+      patch: { condition: next, breached: false, ...(next >= BAL.silo.condition.start ? { found: false } : {}) },
+    },
     {
       type: 'LOG',
       entry: {
@@ -508,12 +537,14 @@ export function canDemolish(state, roomId) {
       };
     }
   }
-  return { ok: true, refund: refundFor(def) };
+  return { ok: true, refund: refundFor(def, room.width) };
 }
 
-function refundFor(def) {
+function refundFor(def, width) {
   const out = {};
-  for (const [k, v] of Object.entries(def.buildCost)) out[k] = Math.round(v * 0.4);
+  // Salvage returns a share of what was spent, merges included — stripping out
+  // a room somebody paid for three times should not refund a third of it.
+  for (const [k, v] of Object.entries(buildCostFor(def, width))) out[k] = Math.round(v * 0.4);
   return out;
 }
 

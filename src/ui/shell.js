@@ -568,6 +568,10 @@ export class Shell {
       return { label: 'Place', run: () => this.startPlacement(d.room) };
     }
     if (d.id === 'repair' && d.roomId) return { label: 'Repair', run: () => this.doRepair(d.roomId) };
+    // Same button, different word. Restoring a room a dig turned up runs the
+    // repair path — it is the same bill — but "Repair" reads as fixing damage
+    // the silo did, and this is the opposite: a room the silo never had.
+    if (d.id === 'restore' && d.roomId) return { label: 'Restore', run: () => this.doRepair(d.roomId) };
     if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
     if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
     const panel = this.panels.get(d.panel);
