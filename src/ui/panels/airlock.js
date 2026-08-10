@@ -14,6 +14,7 @@ import {
 import { squadMembers, readiness } from '../../sim/military.js';
 import { fullName } from '../../sim/population.js';
 import { effects as researchEffects } from '../../sim/research.js';
+import * as sprites from '../../render/sprites.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise } from '../dom.js';
 
 export const airlockPanel = {
@@ -35,6 +36,15 @@ export const airlockPanel = {
 
   render(state, shell) {
     const body = el('div.panel-body');
+
+    // The sky, at the top of the one screen that is about going out into it.
+    // This panel is a list of destinations and their doses; the reason anybody
+    // walks into that is not conveyed by a table.
+    const sky = sprites.frameCanvas('skyline', 2);
+    if (sky) {
+      sky.setAttribute('aria-hidden', 'true');
+      body.appendChild(el('div.sky-banner', sky, el('div.sky-caption', 'The surface, from the outer door')));
+    }
     const cap = airlockCapacity(state);
     const suitTier = researchEffects(state).suitTier || 0;
 

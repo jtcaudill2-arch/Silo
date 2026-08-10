@@ -173,7 +173,14 @@ export function directives(state) {
     });
   }
 
-  if (env.housingFree < 0) {
+  // Housing and air both derive from air.capacity, which the economy fills in
+  // on its first cycle. Asked before that has ever run — the instant a new
+  // game is created, which is exactly when the shell first paints — capacity
+  // reads zero and every resident appears to be sleeping in a corridor. Wait
+  // for the silo to have taken one breath before saying anything about it.
+  const measured = state.air.capacity > 0;
+
+  if (measured && env.housingFree < 0) {
     add({
       id: 'housing',
       text: 'Build Residences',
@@ -184,7 +191,7 @@ export function directives(state) {
     });
   }
 
-  if (state.air.capacity - state.air.load < 0) {
+  if (measured && state.air.capacity - state.air.load < 0) {
     add({
       id: 'air',
       text: 'Build Air Filtration',

@@ -137,7 +137,11 @@ try {
     };
   });
   if (snap.pop !== 180) fail(`expected 180 residents, got ${snap.pop}`);
-  if (snap.rooms !== 6) fail(`expected 6 starting rooms, got ${snap.rooms}`);
+  // The opening was six rooms and ran a deliberate food deficit from the first
+  // shift. It now feeds and waters itself — see newgame.js for why — so this
+  // reads the count from the game rather than pinning a number that is really
+  // a balance decision.
+  if (snap.rooms < 6) fail(`expected the starting silo to have rooms, got ${snap.rooms}`);
   if (snap.working < 10) fail(`expected the silo to be staffed, only ${snap.working} working`);
   ok(`state live: ${snap.pop} residents, ${snap.rooms} rooms, ${snap.working} posted`);
 
@@ -189,7 +193,7 @@ try {
   await page.click('.tabs .tab:nth-child(2)'); // power priority
   await page.waitForSelector('.priority-row', { timeout: 4000 });
   const rows = await page.locator('.priority-row').count();
-  if (rows !== 6) fail(`power priority shows ${rows} rooms, expected 6`);
+  if (rows !== snap.rooms) fail(`power priority shows ${rows} rooms, silo has ${snap.rooms}`);
   else ok(`power priority list renders all ${rows} rooms`);
   if (SHOTS) {
     await mkdir(SHOT_DIR, { recursive: true });

@@ -191,6 +191,28 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   background: var(--concrete-deeper);
 }
 
+/* The surface, above the destination list. Cropped to a letterbox band so it
+   reads as a horizon seen through a door rather than as a picture pasted in. */
+.sky-banner {
+  position: relative; overflow: hidden; line-height: 0;
+  max-height: 132px; border-bottom: 1px solid var(--hairline);
+  background: var(--concrete-deeper);
+}
+.sky-banner canvas {
+  width: 100%; height: auto; display: block;
+  image-rendering: pixelated;
+}
+.sky-caption {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 26px 12px 6px;
+  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--bone-dim); line-height: 1.2;
+  /* The ruins are dark and the caption sat on top of them. A deeper, taller
+     scrim gives the type its own ground without hiding the horizon. */
+  background: linear-gradient(to top,
+    var(--concrete-deeper) 0%, rgba(26, 29, 31, 0.92) 45%, transparent 100%);
+}
+
 /* ---------------------------------------------------------- directive --- */
 /* One line saying what to do next. The silo has twenty-eight rooms and
    forty-six research nodes and no thread through them; this is the thread.

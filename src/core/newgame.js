@@ -22,17 +22,39 @@ import { SCHEMA_VERSION } from './migrations.js';
 import { RES_KEYS } from '../sim/economy.js';
 
 /**
- * The six rooms Silo 12 starts with. Sized so the opening reads at a glance:
- * housing and air just cover 180 people (so growth immediately hits a wall),
- * water runs a small surplus, and food runs a small deficit. That deficit is
- * the first thing the player has to notice and fix.
+ * The rooms Silo 12 starts with.
+ *
+ * These used to be six, sized so that food ran a deliberate deficit from the
+ * first shift — the opening problem the player had to notice and fix. It is a
+ * good hook and it made the game unplayable casually, which is what it was
+ * measured doing: food negative from day one, empty on day thirteen, and then
+ * a cascade nobody can stop. Starvation drops health, health drops the work
+ * factor, the work factor drops power generation from 110 to 4, and once the
+ * generators are down the water reclaimers stop too. Everybody is dead by day
+ * twenty-five. Checking in every single real day was not enough to prevent it,
+ * because the grace period between the first warning and the first death is
+ * ten game days — eighty real minutes.
+ *
+ * So the silo you inherit now feeds itself, breathes with a little room to
+ * spare, and has somewhere to put the scrap. It is not comfortable: there is
+ * no income of any kind, nothing is being researched, and the moment the
+ * population grows the margins close again. The first hour is a place to
+ * stand rather than a fire to put out — the fires come later, and they still
+ * come.
  */
 const STARTING_ROOMS = [
   { type: 'residences', floor: 3, slot: 0, width: 3, level: 3 },
   { type: 'cafeteria', floor: 5, slot: 1, width: 3, level: 2 },
-  { type: 'air_filtration', floor: 7, slot: 0, width: 2, level: 2 },
-  { type: 'hydroponics', floor: 8, slot: 0, width: 2, level: 2 },
+  { type: 'air_filtration', floor: 7, slot: 0, width: 2, level: 3 },
+  // Two bays, not one. A single bay staffed to its four posts feeds about
+  // half of the hundred and eighty people upstairs.
+  { type: 'hydroponics', floor: 8, slot: 0, width: 2, level: 3 },
+  { type: 'hydroponics', floor: 8, slot: 2, width: 2, level: 2 },
+  // Two reclaimers, because the second hydroponics bay drinks six water a
+  // cycle to grow the food — closing the food gap on its own just moved the
+  // countdown onto the water tank.
   { type: 'water_reclaimer', floor: 9, slot: 0, width: 2, level: 3 },
+  { type: 'water_reclaimer', floor: 9, slot: 2, width: 2, level: 2 },
   { type: 'generator_hall', floor: 11, slot: 0, width: 3, level: 3 },
 ];
 
