@@ -17,7 +17,7 @@
 import { BAL } from '../../config/balance.js';
 import { el, fmt, fmtDelta, row, sectionLabel, meter, emptyState, makeReorderable, toast } from '../dom.js';
 import { getRoom } from '../../data/rooms.js';
-import { RES_KEYS, orderedRoomIds, roomCapability, roomDraw } from '../../sim/economy.js';
+import { RES_KEYS, orderedRoomIds, roomCapability, roomDraw, powerPicture } from '../../sim/economy.js';
 import { effects as researchEffects } from '../../sim/research.js';
 import { liveResourceKeys } from '../../sim/unlocks.js';
 
@@ -200,10 +200,22 @@ function ledgerRow(state, key, shell) {
  * The totals are the economy's own — `state.flows` is what it actually
  * charged last cycle, so the headline is never an estimate. The per-room
  * lines are worked from the same inputs the economy uses (base rate ×
- * capability, which already folds in crew, condition, level and merge width),
- * and anything the rooms do not account for is shown as its own line rather
- * than quietly dropped: for food and water that residue is the population,
- * which is the whole answer most of the time.
+ * capability × load, which between them fold in crew, condition, level, merge
+ * width and how hard the room is actually being run), and anything the rooms
+ * do not account for is shown as its own line rather than quietly dropped: for
+ * food and water that residue is the population, which is the whole answer
+ * most of the time.
+ *
+ * `load` is the part that used to be missing, and it made this list lie. A
+ * generator hall throttles to the silo's draw, so a hall carrying a third of
+ * the load burns a third of the fuel — but the breakdown priced every hall at
+ * its plate rating, and on a four-hall silo it listed 2.09 fuel a shift under
+ * a header that said 0.34. Six times over, and silent about it: the leftover
+ * line is only drawn when it is positive, and `flow.out - spentBy` had gone
+ * negative, so the one thing on screen that could have flagged the
+ * disagreement was the thing the disagreement switched off. `powerPicture`
+ * hands back the same throttle the cycle used, so the rooms now sum to the
+ * header by construction rather than by luck.
  */
 function explainResource(state, key, shell) {
   const flow = state.flows?.[key] || { in: 0, out: 0 };
@@ -211,6 +223,7 @@ function explainResource(state, key, shell) {
   const amount = state.resources[key] || 0;
   const label = LABELS[key] || key;
   const yieldMult = 1 + (researchEffects(state)[YIELD_KEY[key]] || 0);
+  const plant = powerPicture(state);
 
   const makes = [];
   const spends = [];
@@ -221,15 +234,16 @@ function explainResource(state, key, shell) {
     const cap = roomCapability(state, room);
     const live = !building && !!room.powered && cap > 0;
     const makesPower = !!def.produces?.power;
+    // How hard the room is actually worked. One for everything but a throttled
+    // generator hall, which is the only room in the silo that runs part-loaded.
+    const load = plant.load[room.id] ?? 1;
 
     if (def.produces?.[key]) {
       makes.push({
         room,
         def,
-        // A generator is throttled to the load, so its plate figure is a
-        // ceiling rather than a reading. Everything else runs flat out.
-        rate: def.produces[key] * cap * (key === 'power' ? 1 : yieldMult),
-        cap: key === 'power',
+        rate: def.produces[key] * cap * (key === 'power' ? load : yieldMult),
+        throttled: makesPower && live && load < 0.995,
         live,
         building,
       });
@@ -239,9 +253,9 @@ function explainResource(state, key, shell) {
       const draw = roomDraw(state, room, cap);
       if (draw > 0) spends.push({ room, def, rate: draw, live: !!room.powered, building });
     } else if (def.consumes?.[key]) {
-      // Fuel and coolant in a generator hall are charged against the load,
-      // not against capability, but the room is still the thing burning it.
-      spends.push({ room, def, rate: def.consumes[key] * cap, live, building });
+      // Fuel, coolant and the bearings a hall eats are all charged against its
+      // load, not against its capability.
+      spends.push({ room, def, rate: def.consumes[key] * cap * load, live, building, throttled: makesPower && live && load < 0.995 });
     }
   }
   makes.sort((a, b) => b.rate - a.rate);
@@ -325,7 +339,7 @@ function explainResource(state, key, shell) {
 
 /** One room's contribution, and a way to go and look at it. */
 function whyLine(shell, entry, sign) {
-  const { room, def, rate, live, building } = entry;
+  const { room, def, rate, live, building, throttled } = entry;
   const state = shell.state;
   const why = building
     ? 'Still under construction.'
@@ -333,7 +347,9 @@ function whyLine(shell, entry, sign) {
       ? 'No power — it is below the cut line.'
       : !live
         ? 'Unstaffed, or stopped. It is producing nothing.'
-        : null;
+        : throttled
+          ? 'Part-loaded — the silo is not drawing everything it could make.'
+          : null;
   return el(
     'button.why-line',
     {
@@ -354,7 +370,7 @@ function whyLine(shell, entry, sign) {
     ),
     el(
       'span.why-rate.mono' + (live ? (sign === '+' ? '.up' : '.down') : ''),
-      live ? `${entry.cap ? 'up to ' : ''}${sign}${rate.toFixed(1)}` : '—'
+      live ? `${sign}${rate.toFixed(1)}` : '—'
     )
   );
 }

@@ -329,6 +329,12 @@ export class Shell {
       bays,
       onPick: (floor, slot) => this.placeAt(floor, slot),
       onCancel: () => this.cancelPlacement(),
+      // The bar's shortcut list is drawn from wherever the camera is, and it
+      // was only ever drawn once, at the moment placement started. Its whole
+      // purpose is to save the player hunting for a bay by dragging — so
+      // dragging was the one action that made it lie: start on floor 2, drag
+      // to floor 13, and it still offered Floor 2 Bay 1-6.
+      onCameraFloor: () => this.renderPlacementBar(),
     });
 
     // Take the camera to the nearest lit floor, so the mode is never invisible.
@@ -401,7 +407,14 @@ export class Shell {
           el(
             'div.placing-meta',
             chip(describeCost(def.buildCost)),
-            chip(`${spots.length} bay${spots.length === 1 ? '' : 's'} lit`, 'warn')
+            // "74 bays lit" was true of the old drawing, which lit every empty
+            // bay in the silo and made the choice a coin flip across 74
+            // identical boxes. The renderer now ranks them — merges, then one
+            // suggestion per floor, then the rest as hairlines — so the count
+            // that matters is how many are worth looking at, and a merge is
+            // worth saying out loud because it widens a room instead of
+            // adding one.
+            chip(placingSummary(spots), 'warn')
           )
         ),
         button('Cancel', { class: 'sm', onclick: () => this.cancelPlacement() })
@@ -654,9 +667,15 @@ export class Shell {
         'res-delta mono ' + (net > 0.05 ? 'up' : net < -0.05 ? 'down' : 'flat');
 
       // Critical: either empty, or draining with under a day of stock left.
+      //
+      // `!!flow` guards the first frame. Power is a stock that starts at zero
+      // and fills on the first cycle, so before the economy has run once this
+      // read `amount <= 0` and painted PWR as a red zero — the very first
+      // thing a new player sees, meaning nothing. An empty store is only a
+      // crisis once there is a flow to judge it against.
       const perDay = -net * BAL.time.CYCLES_PER_DAY;
       const critical =
-        amount <= 0 || (net < 0 && perDay > 0 && amount / perDay < 1);
+        !!flow && (amount <= 0 || (net < 0 && perDay > 0 && amount / perDay < 1));
       ref.node.classList.toggle('critical', !!critical);
       ref.node.title =
         `${def.name} ${amount.toFixed(1)}${cap === Infinity ? '' : ' / ' + cap}` +
@@ -1295,6 +1314,22 @@ export function floorOfEntry(entry) {
   if (entry?.data?.floor != null) return entry.data.floor;
   const m = /\bfloor (\d{1,2})\b/i.exec(entry?.text || '');
   return m ? Number(m[1]) : null;
+}
+
+/**
+ * How many places are worth looking at, said in the terms the drawing uses.
+ * A merge is called out separately because it does something different from
+ * the other seventy: it widens the room already standing there rather than
+ * adding another one, and that is the only choice on the screen with a
+ * consequence attached.
+ */
+function placingSummary(spots) {
+  const merges = spots.filter((s) => s.merge).length;
+  const free = spots.length - merges;
+  const parts = [];
+  if (merges) parts.push(`${merges} merge${merges === 1 ? '' : 's'}`);
+  if (free) parts.push(`${free} free bay${free === 1 ? '' : 's'}`);
+  return parts.join(' · ') || 'nowhere to put it';
 }
 
 /** The lit floor closest to the one the player is already looking at. */

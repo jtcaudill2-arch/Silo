@@ -251,11 +251,17 @@ export function directives(state) {
   // no air, so no births, so no hands, so no air.
   const spare = employableCitizens(state).filter((c) => !c.job).length;
   const PASSIVE = ['airCapacity', 'housing', 'depot', 'cap'];
+  //
+  // Half the posts, not all of them: output scales with the fraction of a room
+  // that is crewed, so a bay at half crew is half a bay and worth having, while
+  // a bay at no crew is a hole in the power budget. Asking for the full
+  // complement leaves a silo with two spare hands, a full treasury and every
+  // order filtered out, which is how this gate first went wrong.
   const crewed = (type) => {
     const def = getRoom(type);
     if (!def?.staff) return true;
     if (PASSIVE.some((k) => def.provides?.[k])) return true;
-    return spare >= (def.staff.slotsPerLevel[0] || 1) * (def.width || 1);
+    return spare * 2 >= (def.staff.slotsPerLevel[0] || 1) * (def.width || 1);
   };
 
   // The same question asked backwards: is the silo getting anything out of the
@@ -676,16 +682,23 @@ export function directives(state) {
         panel: 'build',
         weight: 15,
       });
-    } else {
-      add({
-        id: 'steady',
-        wait: true,
-        text: 'The silo is steady',
-        why: 'Nothing is failing and nothing is running out. A good time to dig, or to look at what is outside.',
-        panel: 'build',
-        weight: 1,
-      });
     }
+  }
+  // …and if even that was filtered out — every fallback above asks for a room,
+  // and a room the silo cannot crew is not offered — then it really is a silo
+  // with nothing to do. Pushed past `add` on purpose: this is the line that
+  // makes "never nothing" true, so it cannot be allowed to be filtered. It was,
+  // for twenty-eight consecutive days of one measured silo, and the standing
+  // order bar simply disappeared.
+  if (!out.length) {
+    out.push({
+      id: 'steady',
+      wait: true,
+      text: 'The silo is steady',
+      why: 'Nothing is failing and nothing is running out. A good time to dig, or to look at what is outside.',
+      panel: 'build',
+      weight: 1,
+    });
   }
 
   // ---- what the silo is actually trying to do ---------------------------
