@@ -183,6 +183,36 @@ export const BAL = {
     },
   },
 
+  // ------------------------------------------------- what is behind the door ---
+  // Opening a sealed floor used to produce the same sentence every time, which
+  // made digging a purchase rather than a decision. These are the two things
+  // depth now buys: more worth finding, and more that can go wrong. Each array
+  // is indexed by tier — [Uppers, Mids, Lowers, Deeps, Foundations].
+  excavationFinds: {
+    // Scrap from an untouched storeroom (parts come out at a sixth of it).
+    // The Uppers were lived in and stripped; the Foundations were not.
+    storesPerTier: [70, 130, 210, 320, 460],
+    // A half-flooded level, which is water the reclaimers did not have to make.
+    cisternPerTier: [60, 110, 170, 230, 300],
+    // Alloy from a sealed cache. Nothing else in the early silo makes alloy,
+    // so this is the reason to go down before the Foundry exists.
+    cacheAlloyPerTier: [0, 14, 26, 40, 58],
+    // Chance a cache also holds something the Laboratory can work on. The
+    // research tree turns artifact-gated below the Mids, and this is the
+    // second source besides the surface — a silo that never digs and never
+    // opens its airlock cannot finish the tree at all.
+    artifactChance: 0.45,
+    // Condition taken off a room on the floor above when a seal gives way.
+    collapseConditionPerTier: [12, 20, 30, 40, 52],
+    // Air quality lost when whatever was sealed in there is still leaking.
+    contaminationAirPerTier: [4, 8, 13, 18, 24],
+    // What the alloy spent on shoring actually buys: collapses become roughly
+    // a third as likely. Below `shoringRequiredBelowFloor` the dig is charged
+    // for it whether or not the player thinks about it, so the premium is
+    // visible in the cost and the payout is visible here.
+    shoredCollapseMultiplier: 0.35,
+  },
+
   // ------------------------------------------------------------------ air ---
   air: {
     start: 92,

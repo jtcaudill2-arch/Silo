@@ -21,6 +21,7 @@ import * as diplomacy from '../sim/diplomacy.js';
 import * as order from '../sim/order.js';
 import * as events from '../sim/events.js';
 import { streamFor } from './rng.js';
+import { digOutcome } from '../sim/dig.js';
 import { getRoom } from '../data/rooms.js';
 
 /** "water" -> "Water". The UI's own humanise lives in the DOM layer. */
@@ -351,7 +352,16 @@ export class Game {
   advanceConstruction(cycleNo) {
     const dig = this.state.silo.excavating;
     if (dig && cycleNo >= dig.untilCycle) {
-      this.store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: dig.floor });
+      // What is behind the door is rolled here, where the seeded streams live,
+      // and carried in the action so the reducer stays pure. Keyed on the
+      // floor rather than the cycle, so the same save always opens the same
+      // level and a catch-up replay agrees with live play.
+      const outcome = digOutcome(
+        this.state,
+        dig.floor,
+        streamFor(this.state.meta.seed, 'dig', dig.floor)
+      );
+      this.store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: dig.floor, outcome });
     }
     for (const id of Object.keys(this.state.silo.rooms)) {
       const room = this.state.silo.rooms[id];

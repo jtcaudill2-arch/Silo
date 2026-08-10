@@ -199,9 +199,39 @@ const siloReducers = {
       floor.shored = a.shored ?? floor.n < BAL.silo.excavation.shoringRequiredBelowFloor;
     }
     state.silo.excavating = null;
+
+    // What the crew found, rolled in sim/dig.js and passed in so this stays
+    // pure. Absent for an old save mid-dig, which opens onto bare rock as it
+    // always did.
+    const o = a.outcome;
+    if (o?.resources) {
+      for (const [k, v] of Object.entries(o.resources)) {
+        const cap = state.caps?.[k] ?? Infinity;
+        state.resources[k] = Math.min(cap, (state.resources[k] || 0) + v);
+      }
+    }
+    if (o?.artifact) {
+      state.research.artifacts[o.artifact] = (state.research.artifacts[o.artifact] || 0) + 1;
+    }
+    if (o?.air) {
+      state.air.quality = Math.max(BAL.air.min, Math.min(BAL.air.max, state.air.quality + o.air));
+    }
+    if (o?.condition) {
+      // The floor above is the one a seal gives way into. Worst-conditioned
+      // room there, so a collapse compounds a problem rather than spreading a
+      // scratch across a healthy silo.
+      const above = state.silo.floors[a.floor - 2];
+      const ids = [...new Set((above?.slots || []).filter((x) => x != null))];
+      const room = ids
+        .map((id) => state.silo.rooms[id])
+        .filter(Boolean)
+        .sort((x, y) => x.condition - y.condition)[0];
+      if (room) room.condition = Math.max(0, room.condition + o.condition);
+    }
     pushLog(state, {
-      kind: 'alert',
-      text: `Floor ${a.floor} is open. Six bays of bare rock and a lighting circuit.`,
+      kind: o?.kind || 'alert',
+      text: o?.text || `Floor ${a.floor} is open. Six bays of bare rock and a lighting circuit.`,
+      data: { floor: a.floor },
     });
     emit('alert', { kind: 'good', glyph: '⌗', text: `Floor ${a.floor} excavated`, floor: a.floor });
   },
