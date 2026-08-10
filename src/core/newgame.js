@@ -3,14 +3,21 @@
  *
  * The starting state is a deliberate design object, not a blank slate. Silo 12
  * has been running for three generations: the life-support spine is built and
- * upgraded, and nothing else is. Six rooms, per spec §4 — generator hall,
- * water, hydroponics, filtration, residences, cafeteria. There is no clinic,
- * no workshop and no airlock, which is why the opening 45 minutes has anything
- * to do.
+ * nothing else is. Five rooms — generator hall, water reclaimer, hydroponics,
+ * filtration, residences. There is no cafeteria, no clinic, no workshop and no
+ * airlock, which is why the first session has anything to do.
  *
- * Air filtration capacity is sized to just cover 180 people, so population
- * growth immediately runs into a wall the player has to build their way out
- * of. That's the intended first lesson.
+ * Nothing here is a fixed number: the population is `citizens.startPopulation`
+ * and the bays are sized against it in STARTING_ROOMS below, with the
+ * arithmetic written out. Filtration covers ninety against a starting
+ * forty-four, and the residences sleep sixty-three — headroom to grow into
+ * rather than a wall to hit on the first morning.
+ *
+ * (This paragraph described six rooms including a cafeteria, and filtration
+ * "sized to just cover 180 people", for several revisions after none of that
+ * was true. The header of the file that builds the silo is the worst place in
+ * the codebase to leave a stale description, so if you change the opening,
+ * change this.)
  */
 
 import { BAL, TIME } from '../config/balance.js';
@@ -40,17 +47,21 @@ import { RES_KEYS } from '../sim/economy.js';
  * whole — fuel burns to make power, power runs the reclaimer, the reclaimer
  * waters the crop, the crop feeds the people who work the generator.
  *
- * The margins are deliberately loose at this size: one hydroponics bay is rated
- * at eleven food a shift and forty-four people eat five and a half of it — one
- * a day each over eight shifts. That is not an oversight. Production here is
- * per-room and consumption is per-head, so the surplus closes on its own as the
- * population grows, and the silo starts asking for a second bay exactly when
- * the player has had time to learn what the first one does.
+ * The margins are deliberately loose at this size, and loose in *real* output
+ * rather than rated: forty-four people eat five and a half food a shift — one
+ * a day each over eight shifts — against a two-slot bay that rates about
+ * twenty-five and delivers ten to fifteen with a green crew. That is not an
+ * oversight. Production is per-room and consumption is per-head, so the
+ * surplus closes on its own as the population grows, and the silo asks for a
+ * second bay exactly when the player has had time to learn what the first
+ * one does.
  *
- * (Both figures moved when the opening did and the prose did not: it read
- * "twenty-eight people eat three and a half", which was the arithmetic of a
- * population this file no longer creates — and three and a half was not that
- * silo's figure either.)
+ * Eighteen posts across the four staffed bays, filled from forty-four people
+ * with plenty spare, so nothing runs part-crewed on the first morning.
+ *
+ * (These figures have gone stale twice while the rooms underneath them moved.
+ * If you change a width or the population, redo the arithmetic here — it is
+ * the only place the sizing is explained.)
  */
 const STARTING_ROOMS = [
   // Kept on consecutive floors so the whole silo is one screen — the player

@@ -205,7 +205,7 @@ for (const r of runs) {
 // Both of the lines this gate has had before were calendars wearing a
 // threshold's clothes. `order.contentThreshold` (55) sat above the level order
 // drifts to and so was crossed on day four or five of every silo ever played;
-// `unlocks.orderTroubleBelow` (45) sat below it and so was crossed only on the
+// a gate at 45 sat below it and so was crossed only on the
 // way past, and closed again on the way back. Neither had anything to do with
 // whether the silo had politics.
 //

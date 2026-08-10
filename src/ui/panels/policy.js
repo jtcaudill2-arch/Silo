@@ -43,7 +43,7 @@ export const policyPanel = {
   render(state, shell) {
     const body = el('div.panel-body');
     const order = state.order.value;
-    const cls = order < BAL.order.uprisingThreshold ? 'bad' : order < 45 ? 'warn' : 'good';
+    const cls = order < BAL.order.uprisingThreshold ? 'bad' : order < BAL.order.warnBelow ? 'warn' : 'good';
 
     body.appendChild(
       el(

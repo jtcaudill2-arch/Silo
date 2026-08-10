@@ -80,7 +80,7 @@ registerCoreReducers();
  * Fast-forward one silo. `scenario: 'sufficient'` starts from a silo that has
  * already solved its opening problems — that's the configuration that can
  * actually run 100 days, so it's the one divergence is measured against. The
- * default six-room start is a deliberately unsustainable opening position and
+ * default opening is the real starting position and
  * is only run as a short smoke test.
  */
 function run(label, { days, seed, scenario, expectSurvival, play }) {
@@ -283,7 +283,7 @@ run('stability — sufficient silo', {
   expectSurvival: true,
 });
 
-run('opening — six-room start, no intervention', {
+run('opening — the real start, no intervention', {
   days: Math.min(DAYS, 18),
   seed: SEED,
   scenario: 'default',
@@ -292,7 +292,7 @@ run('opening — six-room start, no intervention', {
 
 // The claim that matters for Phase 4: the real opening position is solvable.
 // A passive run can only prove it's lethal.
-const played = run('opening — six-room start, played', {
+const played = run('opening — the real start, played', {
   days: DAYS,
   seed: SEED,
   scenario: 'default',

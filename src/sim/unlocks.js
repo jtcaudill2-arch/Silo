@@ -24,7 +24,7 @@
  * reads true and then false.
  *
  * It is enforced because it was broken. `policy` used to read
- * `order.value < unlocks.orderTroubleBelow` — 45 — and order is pulled toward
+ * `order.value < 45` — and order is pulled toward
  * `order.driftToward`, 50, at a quarter of the gap a day. The gate sat *below*
  * the attractor, so every silo that crossed it was hauled back over the line
  * within two or three days and the Order panel vanished again:
@@ -254,7 +254,7 @@ export const UNLOCKS = [
      * ever played and the Order panel arrived second, ahead of Research,
      * having been earned by nothing.
      *
-     * `unlocks.orderTroubleBelow` — 45 — replaced it and was worse, because it
+     * a gate at 45 replaced it and was worse, because it
      * could close. It sits *under* the drift attractor, so a silo that crossed
      * it was pulled back above within two or three days and the panel it had
      * just been given disappeared, permanently and silently. That key is no

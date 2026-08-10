@@ -445,7 +445,7 @@ export function directives(state) {
   if (flow(state, 'scrap') <= 0 && count(state, 'recycling') === 0) {
     add({
       id: 'recycling',
-      text: 'Build a Recycling plant',
+      text: `Build a ${getRoom('recycling').name}`,
       room: 'recycling',
       why: 'The silo has no scrap income. Every room is built out of scrap, and the starting stores buy about five.',
       panel: 'build',
@@ -501,7 +501,7 @@ export function directives(state) {
   if (count(state, 'recycling') > 0 && flow(state, 'scrap') < wantScrap) {
     add({
       id: 'scrap_income',
-      text: 'Build another Recycling plant',
+      text: `Build another ${getRoom('recycling').name}`,
       room: 'recycling',
       why:
         `Salvage is running at ${flow(state, 'scrap').toFixed(1)} a shift for ${pop} people. ` +

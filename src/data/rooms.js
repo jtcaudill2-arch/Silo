@@ -200,7 +200,12 @@ export const ROOMS = {
 
   recycling: R({
     id: 'recycling',
-    name: 'Recycling',
+    // A noun phrase, like every other room in this file — Generator Hall,
+    // Water Reclaimer, Hydroponics Bay. It was the bare gerund "Recycling",
+    // which is why the standing order had to hand-write "Build a Recycling
+    // plant" while the catalogue row underneath it said "Recycling": two names
+    // for one room, an inch apart, and one of them ungrammatical.
+    name: 'Recycling Plant',
     category: 'production',
     width: 2,
     produces: { scrap: 6.0, fuel: 1.3 },

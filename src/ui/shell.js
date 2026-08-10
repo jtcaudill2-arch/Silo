@@ -763,13 +763,68 @@ export class Shell {
       timer: setTimeout(() => this.dropAlert(text), L.alertDwellMs),
     });
 
-    while (this.alertRail.children.length > L.alertMaxCards) {
-      const oldest = this.alertRail.firstChild;
+    // Let go of the oldest only once the stack itself is full. Everything
+    // between alertMaxCards and alertStackMax is still here, just folded.
+    while (this._alertNodes.size > L.alertStackMax) {
+      const oldest = this.alertRail.querySelector('.alert');
       const key = [...this._alertNodes].find(([, v]) => v.node === oldest)?.[0];
       if (key) this.dropAlert(key);
-      else oldest.remove();
+      else if (oldest) oldest.remove();
+      else break;
     }
+    this.layoutAlerts();
     if (floor != null) this.onAlertFloor?.(floor, kind);
+  }
+
+  /**
+   * Show the newest card and fold the rest behind a count.
+   *
+   * The rail used to stand three cards tall. On an ordinary day eleven — a
+   * brownout, a water warning and a worn room — that covered floors one to
+   * seven of the cross-section, which was every room the silo had: the player
+   * was told three things and shown none of them. One card is a notice; three
+   * are a curtain.
+   *
+   * The fold is not a dismissal. The older cards are still there, still hold
+   * their reason and their destination, and one tap brings them back.
+   */
+  layoutAlerts() {
+    const L = BAL.legibility;
+    const cards = [...this.alertRail.querySelectorAll('.alert')];
+    this._alertStackNode?.remove();
+    this._alertStackNode = null;
+    if (!cards.length) {
+      this._alertsOpen = false;
+      return;
+    }
+
+    const show = this._alertsOpen ? cards.length : Math.min(L.alertMaxCards, cards.length);
+    // Newest last, so the visible ones are the tail.
+    cards.forEach((c, i) => {
+      c.hidden = i < cards.length - show;
+    });
+
+    // The control stays put whether or not anything is currently folded —
+    // it was only rendered when `folded > 0`, so expanding the stack removed
+    // the only way to collapse it again and the rail was stuck open.
+    const folded = cards.length - show;
+    if (!folded && !this._alertsOpen) return;
+    const pill = el(
+      'button.alert-stack',
+      {
+        type: 'button',
+        'aria-label': this._alertsOpen
+          ? 'Show fewer alerts'
+          : `${folded} earlier alert${folded === 1 ? '' : 's'}`,
+        onclick: () => {
+          this._alertsOpen = !this._alertsOpen;
+          this.layoutAlerts();
+        },
+      },
+      this._alertsOpen ? 'Fewer' : `+${folded} earlier`
+    );
+    this._alertStackNode = pill;
+    this.alertRail.insertBefore(pill, this.alertRail.firstChild);
   }
 
   /**
@@ -868,6 +923,9 @@ export class Shell {
     clearTimeout(entry.timer);
     entry.node.remove();
     this._alertNodes.delete(text);
+    // The fold count is now wrong, and the card that was hiding behind it may
+    // be the one that should now be on screen.
+    this.layoutAlerts();
   }
 
   // ------------------------------------------------------------- places ---

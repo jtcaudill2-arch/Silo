@@ -41,7 +41,10 @@ let query = '';
 
 export const populationPanel = {
   id: 'population',
-  title: 'Residents',
+  // One name. The button said PEOPLE, this said Residents, and the guide said
+  // "the roster" — three words for one panel, two of them only ever seen by
+  // someone who had already found it.
+  title: 'People',
   nav: 'People',
   glyph: '☖',
   subtitle: (s) => `${s.citizenIds.length}`,

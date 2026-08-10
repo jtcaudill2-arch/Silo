@@ -571,6 +571,18 @@ export const BAL = {
     max: 100,
     min: 0,
     driftToward: 50,
+    // The line below which the Order figure is drawn as a warning rather than
+    // as normal. It sits under `driftToward`, so reaching it means the silo is
+    // genuinely losing its grip rather than merely drifting: deaths,
+    // overcrowding, idle hands, an execution.
+    //
+    // It lived in the `unlocks` block, as the level that opened the Order
+    // panel. That gate was rewritten to read only things the reducers
+    // increment — a gate under the drift attractor opened the panel and then
+    // closed it again two days later — which left this number with no reader
+    // at all, while `ui/panels/policy.js` had grown its own inline `45`
+    // alongside it. One number, two homes, neither of them right.
+    warnBelow: 45,
     driftRate: 0.25,
     kiaPenalty: -3,
     birthBonus: 1.5,
@@ -1086,24 +1098,6 @@ export const BAL = {
     resourceRunwayDays: 30,
     // Order at which the silo has politics and the Order panel opens.
     //
-    // This replaced an `order.contentThreshold: 55`, which has since been
-    // deleted — opening the Order panel was the only job that key ever had,
-    // and once unlocks.js stopped reading it nothing read it at all. 55 could
-    // not be the line anyway: order starts at 64 and drifts toward
-    // `order.driftToward` — 50 — at a quarter of the gap a day, so it crosses
-    // 55 on day four or five of every silo ever played, whatever the mayor
-    // does. Measured across three seeds: day 5, day 5, day 5. That is not
-    // politics arriving, it is a timer, and it put the Order panel on screen
-    // ahead of Research in every game.
-    //
-    // 45 is the number the Order panel itself already draws as a warning
-    // rather than as normal, and it sits under the drift attractor, so
-    // reaching it means the silo is genuinely losing its grip: deaths,
-    // overcrowding, idle hands, an execution. Measured on the same seeds it
-    // first trips on days 61, 75 and 83 — each time on a silo in real
-    // trouble. A player who wants the panel sooner can still have it for 120
-    // scrap: a Sheriff's Office opens it at any order at all.
-    orderTroubleBelow: 45,
   },
 
   // ---------------------------------------------------- legibility ---
@@ -1138,7 +1132,14 @@ export const BAL = {
     // The alert rail: how many cards stand at once, how long one lasts, and
     // how long a card that has been opened for its reason lasts. Both were
     // literals in shell.js.
-    alertMaxCards: 3,
+    // One card stands at a time. Three did, and on an ordinary day eleven —
+    // a brownout, a water warning and a worn room — the rail covered floors
+    // one to seven, which was every room the silo had. The two-tap card is
+    // worth reading; three of them at once are a blindfold. The rest of the
+    // stack collapses to a count, and the player opens it when they want it.
+    alertMaxCards: 1,
+    // How many are kept behind that count before the oldest is let go.
+    alertStackMax: 4,
     alertDwellMs: 7000,
     alertOpenedDwellMs: 14000,
     // Rooms named per side in a resource's own explanation. Beyond a handful
