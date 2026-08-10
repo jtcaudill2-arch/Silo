@@ -762,7 +762,11 @@ export class Shell {
   alertCard(a) {
     const why = a.why ? el('span.alert-why', a.why) : null;
     if (why) why.hidden = true;
-    const more = el('span.alert-more.mono', why ? '?' : '›');
+    // Somewhere to go, as well as something to say. A card with neither — a
+    // scripted crisis, which has already taken the whole screen once — gets no
+    // affordance, because a chevron that leads nowhere is a broken control.
+    const goes = !!(a.roomId || a.floor != null || a.resource || a.panel);
+    const more = why || goes ? el('span.alert-more.mono', why ? '?' : '›') : null;
     const card = el(
       'button.alert' + (a.kind ? '.' + a.kind : ''),
       { type: 'button', 'aria-label': a.text },
@@ -778,7 +782,7 @@ export class Shell {
     card.addEventListener('click', () => {
       if (why && why.hidden) {
         why.hidden = false;
-        more.textContent = '›';
+        if (more) more.textContent = goes ? '›' : '';
         card.classList.add('open');
         // Reading takes longer than glancing, so an opened card stands longer.
         const entry = this._alertNodes?.get(a.text);

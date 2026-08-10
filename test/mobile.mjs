@@ -264,6 +264,44 @@ try {
   if (nav.bottom > nav.vh + 1) fail(`navbar hangs ${nav.bottom - nav.vh}px below the viewport`);
   else ok(`navbar sits inside the viewport (${nav.h}px tall, bottom at ${nav.bottom}/${nav.vh})`);
 
+  // Position was the only thing asserted here, and position is not the whole
+  // question. A grid mistake once gave the navbar the 1fr track and the stage
+  // the auto one, producing a 456px navbar with the silo crushed into the top
+  // third — and this test passed the whole time, because a navbar can be
+  // absurd and still be entirely inside the viewport. Assert the proportions
+  // as well: chrome stays chrome, and the cross-section stays the thing you
+  // are looking at.
+  const share = await page.evaluate(() => {
+    const vh = window.innerHeight;
+    const px = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v));
+    const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+    const stage = rect('.stage') || rect('#silo-canvas');
+    return {
+      vh,
+      navH: rect('#navbar').height,
+      navVar: px('--navbar-h'),
+      topH: rect('#topbar')?.height ?? 0,
+      topVar: px('--topbar-h'),
+      stageH: stage ? stage.height : 0,
+    };
+  });
+  const slack = 1.5; // safe-area padding and a wrapped label are legitimate
+  if (share.navH > share.navVar * slack) {
+    fail(`navbar is ${Math.round(share.navH)}px against a --navbar-h of ${share.navVar}px`);
+  } else if (share.topH > share.topVar * slack) {
+    fail(`topbar is ${Math.round(share.topH)}px against a --topbar-h of ${share.topVar}px`);
+  } else if (share.stageH < share.vh * 0.45) {
+    fail(
+      `the cross-section gets ${Math.round((share.stageH / share.vh) * 100)}% of the screen — ` +
+        'chrome has taken the space the game is played in'
+    );
+  } else {
+    ok(
+      `chrome stays chrome: nav ${Math.round(share.navH)}px, top ${Math.round(share.topH)}px, ` +
+        `cross-section ${Math.round((share.stageH / share.vh) * 100)}% of the screen`
+    );
+  }
+
   // ---- 7. tapping a panel open and shut ------------------------------------
   await page.tap('.nav-btn[data-panel="resources"]');
   await page.waitForSelector('#panel-host:not([hidden]) .panel-title', { timeout: 4000 });
