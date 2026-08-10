@@ -18,6 +18,8 @@ import { runCatchup } from './core/catchup.js';
 import { showReturnReport } from './ui/returnReport.js';
 import { showEnding } from './ui/ending.js';
 import { showBriefing } from './ui/briefing.js';
+import { COLD_OPEN } from './data/briefing.js';
+import { startTutorial } from './ui/tutorial.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
@@ -228,19 +230,41 @@ async function main() {
   status('Ready.');
   boot.remove();
 
-  // A new silo opens on the handover note from the previous mayor. It's the
-  // tutorial, and it's a document rather than an overlay with arrows on it —
-  // the game is read, so its tutorial is too. Skippable, and reopenable from
-  // Settings afterwards.
-  if (isNewGame && !store.state.flags.tutorialSeen) {
+  // A new silo opens on two screens of the previous mayor's handover — who is
+  // handing over, and that the clock does not stop — with the silo paused
+  // behind it. That is all it does now: the teaching is the guided session
+  // below, on the real controls, one step at a time. The whole note is still
+  // in Settings for anybody who wants it.
+  //
+  // Read before the cold open writes it: a save that had already seen the
+  // handover before this build existed must not be handed a tutorial on
+  // day two hundred.
+  const hadHandover = !!store.state.flags.tutorialSeen;
+  if (isNewGame && !hadHandover) {
     shell.setSpeed(0);
     await showBriefing({
+      sections: COLD_OPEN,
       onDone: () => {
         store.dispatch({ type: 'FLAG_SET', flags: { tutorialSeen: true } });
         shell.setSpeed(1);
       },
     });
   }
+
+  // The guided first session. It spotlights the real control, waits for the
+  // player to use it, and does not advance on a timer. Skippable at any step,
+  // resumes where it was left after a reload, and never returns once it has
+  // been finished or skipped.
+  const tutorial = startTutorial({
+    store,
+    shell,
+    alreadySeen: hadHandover,
+    // Write each step through immediately. The autosave interval is twenty
+    // seconds, and a player who skips the guide and closes the tab inside that
+    // window would be shown it again on the way back in.
+    onPersist: () => autosave.saveNow('tutorial'),
+  });
+  window.DEEPWATER.tutorial = tutorial;
 
   // The report is the reward for coming back, so it gets the screen to
   // itself and the silo stays paused until it's been read.

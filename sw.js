@@ -49,6 +49,7 @@ const PRECACHE = [
   './src/data/rooms.js',
   './src/data/silos.js',
   './src/data/traits.js',
+  './src/data/tutorial.js',
   './src/main.js',
   './src/render/canvas.js',
   './src/render/citizens.js',
@@ -89,6 +90,8 @@ const PRECACHE = [
   './src/ui/settings.js',
   './src/ui/shell.js',
   './src/ui/styles.css',
+  './src/ui/tutorial.css',
+  './src/ui/tutorial.js',
 ];
 /* ---- PRECACHE:END ---- */
 

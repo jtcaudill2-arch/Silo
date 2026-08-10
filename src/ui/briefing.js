@@ -4,11 +4,14 @@
  * One section per screen, Back/Next, and a Skip that is always available and
  * never nags. It reuses the report furniture because it is the same kind of
  * object: a document the player reads at their own pace with the clock
- * stopped. There are no arrows pointing at buttons and nothing is gated
- * behind "tap here to continue" — the game is read, and so is its tutorial.
+ * stopped.
  *
- * Reopenable from Settings, because nobody remembers a tutorial they saw
- * once at three in the morning.
+ * It shows two different documents, and which one is a decision made by the
+ * caller. A new silo gets `COLD_OPEN` — two screens, and then the guided
+ * first session takes over and does the teaching on the real controls.
+ * Settings ⚙ reopens the whole note, because nobody remembers a handover they
+ * were shown once at three in the morning, and because everything in it is
+ * still true.
  */
 
 import { el, button } from './dom.js';
@@ -16,9 +19,13 @@ import { BRIEFING, PREDECESSOR } from '../data/briefing.js';
 
 /**
  * Show the handover. Resolves when the player finishes or skips it.
- * @param {object} opts { onDone } — called once, whichever way it ends.
+ * @param {object} opts
+ * @param {object[]} [opts.sections] which document to show; the full note by
+ *        default, so the Settings entry needs to know nothing about this.
+ * @param {function} [opts.onDone] called once, whichever way it ends.
  */
-export function showBriefing({ onDone } = {}) {
+export function showBriefing({ sections = BRIEFING, onDone } = {}) {
+  const PAGES = sections.length ? sections : BRIEFING;
   return new Promise((resolve) => {
     const root = document.getElementById('modal-root');
     let page = 0;
@@ -46,11 +53,11 @@ export function showBriefing({ onDone } = {}) {
 
     function go(n) {
       if (n < 0) return;
-      if (n >= BRIEFING.length) return finish();
+      if (n >= PAGES.length) return finish();
       page = n;
-      const section = BRIEFING[page];
+      const section = PAGES[page];
 
-      eyebrow.textContent = `Handover · ${PREDECESSOR.name} · ${page + 1} of ${BRIEFING.length}`;
+      eyebrow.textContent = `Handover · ${PREDECESSOR.name} · ${page + 1} of ${PAGES.length}`;
       title.textContent = section.heading;
       headline.textContent = page === 0 ? `${PREDECESSOR.title}, ${PREDECESSOR.years}` : '';
       headline.hidden = page !== 0;
@@ -58,11 +65,11 @@ export function showBriefing({ onDone } = {}) {
       body.replaceChildren();
       for (const para of section.body) body.appendChild(el('div.briefing-para', para));
       body.appendChild(
-        el('div.briefing-dots', ...BRIEFING.map((_, i) => el('i' + (i === page ? '.on' : ''))))
+        el('div.briefing-dots', ...PAGES.map((_, i) => el('i' + (i === page ? '.on' : ''))))
       );
 
       backBtn.disabled = page === 0;
-      nextBtn.textContent = page === BRIEFING.length - 1 ? 'Take the desk' : 'Next';
+      nextBtn.textContent = page === PAGES.length - 1 ? 'Take the desk' : 'Next';
       body.scrollTop = 0;
       nextBtn.focus();
     }

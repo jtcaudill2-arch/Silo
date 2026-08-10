@@ -12,6 +12,7 @@
 <link rel="icon" href="./assets/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="./assets/icon-192.png">
 <link rel="stylesheet" href="./src/ui/styles.css">
+<link rel="stylesheet" href="./src/ui/tutorial.css">
 <title>Deepwater — Silo 12</title>
 </head>
 <body>
@@ -69,6 +70,10 @@
 
 <div id="modal-root" class="modal-root"></div>
 <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+<!-- Guided first session. Empty and hidden unless the tutorial is running;
+     never intercepts a tap, so the player always presses the real control. -->
+<div id="tutorial-root" hidden></div>
 
 <noscript>
   <div class="noscript">Deepwater needs JavaScript. The silo does not run on paperwork alone.</div>

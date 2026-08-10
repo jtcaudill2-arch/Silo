@@ -23,7 +23,7 @@ import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
 import { readEnvironment } from './population.js';
 import { available as availableResearch } from './research.js';
-import { canBuild, canExcavate } from './build.js';
+import { canBuild, canExcavate, canRepair } from './build.js';
 import { getResearch } from '../data/research.js';
 import { canStart } from './research.js';
 
@@ -109,15 +109,20 @@ const aOrAn = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
  * game asking for something it will not let you do — so when the blocker is
  * money the line says so instead of repeating the instruction.
  */
-function shortfall(state, type) {
-  const def = getRoom(type);
-  if (!def) return null;
+function shortOf(state, cost) {
   const missing = [];
-  for (const [k, v] of Object.entries(def.buildCost || {})) {
+  for (const [k, v] of Object.entries(cost || {})) {
+    if (k === 'labor') continue;
     const have = state.resources[k] ?? 0;
     if (have < v) missing.push(`${Math.ceil(v - have)} ${k}`);
   }
   return missing.length ? missing.join(' and ') : null;
+}
+
+function shortfall(state, type) {
+  const def = getRoom(type);
+  if (!def) return null;
+  return shortOf(state, def.buildCost);
 }
 
 /** Is there anywhere at all this room could go right now? */
@@ -349,6 +354,11 @@ export function directives(state) {
     add({
       id: 'staff',
       text: empty.length === 1 ? `Crew the ${def?.name || empty[0].type}` : `Crew ${empty.length} empty rooms`,
+      // Which room, not just how many. An order that names a place can be
+      // pointed at one: the shell puts the floor on the bar and takes the
+      // cross-section there. "Crew 4 empty rooms" with no floor on it is a
+      // search task, and the silo is ninety-two floors deep.
+      roomId: empty[0].id,
       why: 'A room with nobody in it produces nothing at all. Auto-assign on the Residents panel will fill them.',
       panel: 'population',
       weight: 72,
@@ -548,6 +558,22 @@ export function directives(state) {
         weight: best.weight + 1,
       });
     }
+  }
+
+  // A repair the silo cannot pay for at all says so, but keeps its rank.
+  //
+  // Deliberately after the ranking above and deliberately without the
+  // unaffordable penalty. `blocked` is read by the UI to replace the do-it
+  // button with the shortfall, and that is all it is doing here: repairs are
+  // priced off the room, partial repairs are allowed, and a repair only fails
+  // outright when the silo cannot afford a single point of condition. Sinking
+  // it 40 places would also feed it to the hold-for-scrap branch above, which
+  // is written for "Build a …" orders and would produce "Save up for a Repair
+  // the Generator Hall on floor 4".
+  for (const d of out) {
+    if (d.id !== 'repair' || !d.roomId) continue;
+    const check = canRepair(state, d.roomId);
+    if (!check.ok && check.cost) d.blocked = shortOf(state, check.cost);
   }
 
   return out.sort((a, b) => b.weight - a.weight);

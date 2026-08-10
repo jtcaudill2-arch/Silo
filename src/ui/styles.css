@@ -168,8 +168,19 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
      which pushes the right-hand nav buttons off-screen where they can't be
      tapped. minmax(0, 1fr) is what lets the inner overflow:auto do its job. */
   grid-template-columns: minmax(0, 1fr);
-  /* The directive bar is auto-sized so it takes no room when hidden. */
-  grid-template-rows: var(--topbar-h) auto 1fr var(--navbar-h);
+  /* The directive bar and the shift report under it are both auto-sized, so
+     each takes no room at all when hidden — which the shift report is until
+     something has actually happened. Neither may overlap the stage: the
+     cross-section is what the player is looking at, and a banner floating
+     over it hides the thing it is talking about.
+
+     Every row is placed by hand rather than left to auto-flow, because a
+     `display:none` element is not a grid item at all: with the shift report
+     hidden, auto-placement handed the stage the auto track and the navbar the
+     1fr, and the bottom bar grew to four hundred pixels of empty concrete
+     while the silo was squeezed into the top third. Nothing in the test suite
+     noticed — a navbar can be absurd and still be inside the viewport. */
+  grid-template-rows: var(--topbar-h) auto auto 1fr var(--navbar-h);
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -225,8 +236,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    It sits above the fold because a thing you have to go looking for is a
    thing nobody looks for. */
 .directive {
-  display: grid; gap: 1px; text-align: left; min-width: 0;
-  padding: 9px 14px;
+  display: flex; align-items: center; gap: 10px; text-align: left; min-width: 0;
+  padding: 9px 12px 9px 14px;
   background: var(--concrete-deeper);
   border: 0; border-bottom: 1px solid var(--hairline);
   border-left: 3px solid var(--sodium);
@@ -234,6 +245,60 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   -webkit-tap-highlight-color: transparent;
 }
 .directive:active { background: var(--concrete-deep); }
+.directive-main { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.directive-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.directive-act { flex: 0 0 auto; display: flex; }
+
+/* The order, as a thing you can do. Not a <button>: it lives inside
+   #directive, which is one, and the parser will not keep a button inside a
+   button — so it carries role and tabindex and its own keyboard handler. */
+.act-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 34px; min-width: 66px; padding: 0 12px;
+  border: 1px solid var(--sodium); border-radius: var(--radius);
+  background: var(--sodium-dim); color: var(--sodium);
+  font-family: var(--font-display); font-size: 11.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; cursor: pointer; white-space: nowrap;
+}
+.act-btn:active { background: var(--sodium); color: var(--concrete-deeper); }
+.directive.urgent .act-btn {
+  border-color: var(--rust); background: var(--rust-dim); color: var(--rust);
+}
+.directive.urgent .act-btn:active { background: var(--rust); color: var(--bone); }
+/* An order that means "wait" is drawn as one: no accent, no button. */
+.directive.holding { border-left-color: var(--concrete-lit); }
+.directive.holding .directive-eyebrow { color: var(--bone-faint); }
+
+/* ---------------------------------------------------- the shift report --- */
+/* One line under the standing order: what moved last shift, and whether
+   anything is still unread. Tapping it opens the log on the same account. */
+.changeline {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 5px 12px 5px 14px; min-height: 34px;
+  background: var(--concrete-deep);
+  border: 0; border-bottom: 1px solid var(--hairline);
+  border-left: 3px solid var(--concrete-lit);
+  color: inherit; font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.changeline:active { background: var(--concrete); }
+.changeline.bad { border-left-color: var(--rust); }
+.changeline.good { border-left-color: var(--verdigris); }
+.changeline-eyebrow {
+  flex: 0 0 auto; white-space: nowrap;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--bone-faint);
+}
+.changeline-text {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11.5px; line-height: 1.32; color: var(--bone-dim);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.changeline-more {
+  flex: 0 0 auto; font-size: 10px; color: var(--sodium);
+  border: 1px solid var(--sodium-line); border-radius: 9px; padding: 0 6px;
+}
 .directive-eyebrow {
   font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--sodium);
@@ -244,16 +309,24 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .directive-why {
   font-size: 11.5px; color: var(--bone-faint); line-height: 1.4;
-  /* Two lines, not one. The reason is the half that teaches — clamping it to
-     a single line cut every order off mid-sentence ("Past it, rooms shut down
-     from the …"), which is worse than not explaining at all. */
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  /* Three lines, not one. The reason is the half that teaches — clamping it
+     to a single line cut every order off mid-sentence ("Past it, rooms shut
+     down from the …"), which is worse than not explaining at all. Two was
+     enough until the action button took ninety pixels off the width of this
+     column; at 390px that put most orders back to ending in an ellipsis. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
   overflow: hidden;
 }
 .directive.urgent { border-left-color: var(--rust); }
 .directive.urgent .directive-eyebrow { color: var(--rust); }
 
 /* -------------------------------------------------------------- topbar --- */
+.topbar { grid-row: 1; }
+.directive { grid-row: 2; }
+.changeline { grid-row: 3; }
+.stage { grid-row: 4; }
+.navbar { grid-row: 5; }
+
 .topbar {
   display: flex; align-items: stretch; gap: 0;
   background: var(--concrete-deeper);
@@ -292,7 +365,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   display: flex; flex-direction: column; justify-content: center;
   padding: 0 8px; min-width: 62px; flex: 0 0 auto;
   border-right: 1px solid var(--hairline);
-  height: 100%; text-align: left;
+  height: 100%; text-align: left; position: relative;
 }
 .res-label {
   font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.11em;
@@ -313,6 +386,23 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .res.critical .res-val { color: var(--rust); }
 .res.critical { background: var(--rust-dim); }
 .res.rad .res-val { color: var(--toxin); }
+
+/* The counter that moved.
+   A tint that stays for the life of the mark (so it survives reduced motion,
+   where every animation is cut to nothing) plus a rule along the bottom that
+   fades out. The duration is set inline from balance.js and the rule inherits
+   it explicitly, so the number stays in the config file where it belongs. */
+.res.moved { background: var(--sodium-dim); }
+.res.moved.up { background: var(--verdigris-dim); }
+.res.moved.down { background: var(--rust-dim); }
+.res.moved::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--sodium);
+  animation: counterfade linear both; animation-duration: inherit;
+}
+.res.moved.up::after { background: var(--verdigris); }
+.res.moved.down::after { background: var(--rust); }
+@keyframes counterfade { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
 
 /* --------------------------------------------------------------- stage --- */
 .stage {
@@ -339,19 +429,44 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .alert-rail {
   position: absolute; right: 8px; top: 8px; z-index: 5;
   display: flex; flex-direction: column; gap: 5px; align-items: flex-end;
-  pointer-events: none; max-width: 62%;
+  pointer-events: none; max-width: 72%;
 }
-.alert {
-  display: flex; align-items: center; gap: 6px;
+/* An alert is a fact, a cause and a place. The fact is the headline, the
+   cause is one sentence a tap away, and the place is a chip that takes the
+   cross-section there — so "something is wrong" is never the whole message.
+
+   Scoped to the rail, all of it. `alert` is also a log-entry kind and a
+   report-line kind, and a bare `.alert` selector reaches both: adding
+   flex-direction to this card turned every alert in the logbook into a
+   three-line block with its timestamp stranded above it. */
+.alert-rail .alert {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  width: 100%; text-align: left; min-height: 34px;
   background: var(--concrete-deeper); border-left: 3px solid var(--sodium);
-  padding: 5px 9px; border-radius: var(--radius);
-  font-size: 12px; pointer-events: auto;
+  padding: 6px 9px; border-radius: var(--radius);
+  font-size: 12px; color: inherit; pointer-events: auto; cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
-.alert .glyph { font-family: var(--font-mono); font-size: 12px; }
-.alert.warn { border-left-color: var(--rust); }
-.alert.rad { border-left-color: var(--toxin); }
-.alert.good { border-left-color: var(--verdigris); }
+.alert-rail .alert:active { background: var(--concrete-deep); }
+.alert-head { display: flex; align-items: center; gap: 6px; width: 100%; }
+.alert-text { flex: 1 1 auto; min-width: 0; }
+.alert-where {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 9.5px;
+  color: var(--sodium); border: 1px solid var(--sodium-line);
+  border-radius: 8px; padding: 0 5px;
+}
+.alert-more { flex: 0 0 auto; font-family: var(--font-mono); color: var(--bone-faint); }
+.alert-why {
+  font-size: 11px; line-height: 1.4; color: var(--bone-faint); width: 100%;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.alert-rail .alert.open .alert-more { color: var(--sodium); }
+.alert-rail .alert .glyph { font-family: var(--font-mono); font-size: 12px; }
+.alert-rail .alert.warn { border-left-color: var(--rust); }
+.alert-rail .alert.bad { border-left-color: var(--rust); }
+.alert-rail .alert.rad { border-left-color: var(--toxin); }
+.alert-rail .alert.good { border-left-color: var(--verdigris); }
 
 /* -------------------------------------------------------------- navbar --- */
 .navbar {
@@ -383,6 +498,13 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   font-family: var(--font-mono); font-size: 9px; line-height: 14px; text-align: center;
 }
 .nav-btn[disabled] { opacity: .35; cursor: not-allowed; }
+/* A panel that arrived while the player was watching, and has not been
+   opened yet. The announcement card expires; this is what is left. */
+.nav-btn.fresh { color: var(--sodium); }
+.nav-btn.fresh::after {
+  content: ''; position: absolute; bottom: 4px; left: 34%; right: 34%;
+  height: 2px; background: var(--sodium);
+}
 
 /* ---------------------------------------------------------- panel host --- */
 .panel-host {
@@ -558,8 +680,17 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* ------------------------------------------------------------- log ----- */
 .log-entry {
-  display: flex; gap: 9px; padding: 7px 12px;
+  display: flex; gap: 9px; padding: 7px 12px; align-items: flex-start;
   border-bottom: 1px solid var(--hairline); font-size: 12.5px;
+  min-height: 34px; width: 100%; text-align: left; color: inherit;
+}
+/* An entry that names a floor is a button that goes there. */
+button.log-entry { cursor: pointer; }
+button.log-entry:active { background: var(--sodium-dim); }
+.log-where {
+  flex: 0 0 auto; align-self: center;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--sodium);
+  border: 1px solid var(--sodium-line); border-radius: 8px; padding: 0 5px;
 }
 .log-when {
   font-family: var(--font-mono); font-size: 10.5px; color: var(--bone-faint);
@@ -608,6 +739,41 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   color: var(--rust); white-space: nowrap;
 }
 .cutline-rule { flex: 1; height: 1px; background: var(--rust); }
+
+/* ------------------------------------------ why a number is what it is --- */
+/* Opened from the counter in the top strip or from the ledger row. Every
+   line names a room and a floor, and every line takes you to it. */
+.res-why {
+  background: var(--concrete-deeper);
+  border-bottom: 1px solid var(--hairline);
+  padding: 0 12px 8px;
+}
+.why-head {
+  padding: 9px 0 7px; font-size: 12px; line-height: 1.45; color: var(--bone-dim);
+}
+.why-head .k { color: var(--bone-faint); }
+.why-group {
+  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--bone-faint); padding: 7px 0 3px;
+}
+.why-line {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  min-height: 32px; padding: 4px 0; text-align: left; color: inherit;
+  border-bottom: 1px solid var(--hairline);
+}
+.why-line:last-child { border-bottom: none; }
+button.why-line { cursor: pointer; }
+button.why-line:active { background: var(--sodium-dim); }
+.why-main { flex: 1 1 auto; min-width: 0; }
+.why-name { font-size: 12.5px; }
+.why-sub { font-size: 10.5px; color: var(--bone-faint); }
+.why-rate {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 12px;
+  font-variant-numeric: tabular-nums; color: var(--bone-dim);
+}
+.why-rate.up { color: var(--verdigris); }
+.why-rate.down { color: var(--rust); }
+.why-none { font-size: 11.5px; color: var(--bone-faint); padding: 4px 0 6px; }
 
 .flow-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));

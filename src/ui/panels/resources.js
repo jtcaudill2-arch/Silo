@@ -5,12 +5,20 @@
  * so it gets the real treatment: drag to reorder, a live cut-line showing
  * exactly where generation runs out, and the rooms below it drawn as already
  * dark. The player should be able to see the consequence before committing.
+ *
+ * The ledger's job is narrower and was not being done: a stockpile row said
+ * what the figure was and which way it was going, and nothing at all about
+ * why. A player watching water fall could read "−3.4 per cycle" all day
+ * without learning that one of their two reclaimers is unstaffed. So every
+ * row opens: what makes it, what spends it, at what rate, on which floor —
+ * and every line in that list takes the cross-section to the room it names.
  */
 
 import { BAL } from '../../config/balance.js';
 import { el, fmt, fmtDelta, row, sectionLabel, meter, emptyState, makeReorderable, toast } from '../dom.js';
 import { getRoom } from '../../data/rooms.js';
 import { RES_KEYS, orderedRoomIds, roomCapability, roomDraw } from '../../sim/economy.js';
+import { effects as researchEffects } from '../../sim/research.js';
 
 const LABELS = {
   power: 'Power', water: 'Water', food: 'Food', meds: 'Meds', scrap: 'Scrap',
@@ -18,7 +26,12 @@ const LABELS = {
   parts: 'Parts', fuel: 'Fuel', ore: 'Ore', coolant: 'Coolant',
 };
 
+/** Research that multiplies a yield, by the resource it multiplies. */
+const YIELD_KEY = { food: 'foodYield', water: 'waterYield', alloy: 'alloyYield' };
+
 let tab = 'ledger';
+/** Which stockpile is currently opened onto its own causes. */
+let opened = null;
 
 export const resourcesPanel = {
   id: 'resources',
@@ -26,6 +39,12 @@ export const resourcesPanel = {
   nav: 'Stores',
   glyph: '▤',
   subtitle: (s) => `${Math.round(s.power?.generation || 0)} / ${Math.round(s.power?.demand || 0)} PWR`,
+
+  /** Tapping a counter in the top strip opens that counter's own answer. */
+  focusResource(key) {
+    tab = 'ledger';
+    opened = key;
+  },
 
   render(state, shell) {
     const body = el('div.panel-body');
@@ -36,7 +55,7 @@ export const resourcesPanel = {
       tabBtn('air', 'Atmosphere', shell)
     );
 
-    if (tab === 'ledger') renderLedger(state, body);
+    if (tab === 'ledger') renderLedger(state, body, shell);
     else if (tab === 'power') renderPower(state, body, shell);
     else renderAir(state, body);
 
@@ -60,8 +79,8 @@ function tabBtn(id, label, shell) {
 
 // ---------------------------------------------------------------- ledger ---
 
-function renderLedger(state, body) {
-  body.appendChild(sectionLabel('Stockpiles'));
+function renderLedger(state, body, shell) {
+  body.appendChild(sectionLabel('Stockpiles — tap one for what moves it'));
   for (const key of RES_KEYS) {
     const amount = state.resources[key] || 0;
     const cap = state.caps?.[key] ?? Infinity;
@@ -69,13 +88,22 @@ function renderLedger(state, body) {
     const net = flow ? flow.in - flow.out : 0;
     // Skip resources the silo has never seen and isn't producing — the
     // ledger shouldn't teach the player about coolant on day one.
-    if (amount === 0 && !flow?.in && !flow?.out && key !== 'power') continue;
+    if (amount === 0 && !flow?.in && !flow?.out && key !== 'power' && key !== opened) continue;
 
     const perDay = net * BAL.time.CYCLES_PER_DAY;
     const runway = net < 0 && amount > 0 ? amount / -perDay : null;
+    const isOpen = opened === key;
 
     const node = el(
-      'div.row',
+      'button.row.tappable',
+      {
+        type: 'button',
+        'aria-expanded': isOpen ? 'true' : 'false',
+        onclick: () => {
+          opened = isOpen ? null : key;
+          shell.renderPanel(true);
+        },
+      },
       el(
         'div.row-main',
         el('div.row-title', LABELS[key] || key),
@@ -96,10 +124,12 @@ function renderLedger(state, body) {
           { class: net > 0.05 ? 'res-delta up' : net < -0.05 ? 'res-delta down' : 'res-delta flat' },
           fmtDelta(net) + '/c'
         )
-      )
+      ),
+      el('div.row-chevron', isOpen ? '⌄' : '›')
     );
     if (runway != null && runway < 2) node.classList.add('critical');
     body.appendChild(node);
+    if (isOpen) body.appendChild(explainResource(state, key, shell));
   }
 
   body.appendChild(sectionLabel('Capacity'));
@@ -109,6 +139,182 @@ function renderLedger(state, body) {
       sub: 'Each depot raises every stockpile cap. Cheap, and always the right call.',
       value: String(Object.values(state.silo.rooms).filter((r) => r.type === 'storage_depot').length),
     })
+  );
+}
+
+// ------------------------------------------------------ why a figure moves ---
+
+/**
+ * What is making this, what is spending it, and what that leaves.
+ *
+ * The totals are the economy's own — `state.flows` is what it actually
+ * charged last cycle, so the headline is never an estimate. The per-room
+ * lines are worked from the same inputs the economy uses (base rate ×
+ * capability, which already folds in crew, condition, level and merge width),
+ * and anything the rooms do not account for is shown as its own line rather
+ * than quietly dropped: for food and water that residue is the population,
+ * which is the whole answer most of the time.
+ */
+function explainResource(state, key, shell) {
+  const flow = state.flows?.[key] || { in: 0, out: 0 };
+  const net = flow.in - flow.out;
+  const amount = state.resources[key] || 0;
+  const label = LABELS[key] || key;
+  const yieldMult = 1 + (researchEffects(state)[YIELD_KEY[key]] || 0);
+
+  const makes = [];
+  const spends = [];
+  for (const room of Object.values(state.silo.rooms)) {
+    const def = getRoom(room.type);
+    if (!def) continue;
+    const building = room.buildingUntilCycle > 0;
+    const cap = roomCapability(state, room);
+    const live = !building && !!room.powered && cap > 0;
+    const makesPower = !!def.produces?.power;
+
+    if (def.produces?.[key]) {
+      makes.push({
+        room,
+        def,
+        // A generator is throttled to the load, so its plate figure is a
+        // ceiling rather than a reading. Everything else runs flat out.
+        rate: def.produces[key] * cap * (key === 'power' ? 1 : yieldMult),
+        cap: key === 'power',
+        live,
+        building,
+      });
+    }
+    if (key === 'power') {
+      if (makesPower) continue;
+      const draw = roomDraw(state, room, cap);
+      if (draw > 0) spends.push({ room, def, rate: draw, live: !!room.powered, building });
+    } else if (def.consumes?.[key]) {
+      // Fuel and coolant in a generator hall are charged against the load,
+      // not against capability, but the room is still the thing burning it.
+      spends.push({ room, def, rate: def.consumes[key] * cap, live, building });
+    }
+  }
+  makes.sort((a, b) => b.rate - a.rate);
+  spends.sort((a, b) => b.rate - a.rate);
+
+  const wrap = el('div.res-why');
+
+  // ---- the arithmetic, in a sentence -------------------------------------
+  const days = net < 0 && amount > 0 ? amount / (-net * BAL.time.CYCLES_PER_DAY) : null;
+  let verdict;
+  if (days != null) {
+    verdict =
+      ` At that rate the ${Math.round(amount)} in store lasts ` +
+      `${days < 1 ? 'less than a day' : `about ${Math.floor(days)} day${Math.floor(days) === 1 ? '' : 's'}`}.`;
+  } else if (net < -0.05) {
+    verdict = ' The store is already empty — whatever arrives is spent as it lands.';
+  } else if (net > 0.05) {
+    verdict = ' The store is growing.';
+  } else {
+    verdict = ' The store is holding.';
+  }
+  wrap.appendChild(
+    el(
+      'div.why-head',
+      el('span.k', 'Per shift: '),
+      `${flow.in.toFixed(1)} in, ${flow.out.toFixed(1)} out. `,
+      el('span', { class: net > 0.05 ? 'res-delta up' : net < -0.05 ? 'res-delta down' : '' }, `Net ${fmtDelta(net)}.`),
+      verdict
+    )
+  );
+
+  // ---- who makes it -------------------------------------------------------
+  wrap.appendChild(el('div.why-group', 'Making it'));
+  if (!makes.length) {
+    wrap.appendChild(
+      el(
+        'div.why-none',
+        key === 'chits'
+          ? 'No room makes chits. They come from trade and from what expeditions carry home.'
+          : `Nothing in the silo makes ${label.toLowerCase()}. Everything in store came in from outside.`
+      )
+    );
+  } else {
+    const shown = makes.slice(0, BAL.legibility.resourceRoomsShown);
+    for (const m of shown) wrap.appendChild(whyLine(shell, m, '+'));
+    if (makes.length > shown.length) {
+      wrap.appendChild(el('div.why-none', `…and ${makes.length - shown.length} more.`));
+    }
+  }
+  const madeBy = makes.reduce((sum, m) => sum + (m.live ? m.rate : 0), 0);
+  if (flow.in - madeBy > 0.05 && makes.length) {
+    wrap.appendChild(otherLine(`Carried in, traded or salvaged`, flow.in - madeBy, '+'));
+  }
+
+  // ---- who spends it ------------------------------------------------------
+  wrap.appendChild(el('div.why-group', 'Spending it'));
+  const shownSpends = spends.slice(0, BAL.legibility.resourceRoomsShown);
+  for (const s of shownSpends) wrap.appendChild(whyLine(shell, s, '−'));
+  if (spends.length > shownSpends.length) {
+    wrap.appendChild(el('div.why-none', `…and ${spends.length - shownSpends.length} more.`));
+  }
+  const spentBy = spends.reduce((sum, s) => sum + (s.live ? s.rate : 0), 0);
+  const residue = flow.out - spentBy;
+  if (residue > 0.05) {
+    const pop = state.citizenIds.length;
+    wrap.appendChild(
+      otherLine(
+        key === 'food' || key === 'water'
+          ? `${pop} resident${pop === 1 ? '' : 's'}, eating and drinking`
+          : 'Everything else drawing on it',
+        residue,
+        '−'
+      )
+    );
+  } else if (!spends.length) {
+    wrap.appendChild(el('div.why-none', 'Nothing is drawing on it.'));
+  }
+
+  return wrap;
+}
+
+/** One room's contribution, and a way to go and look at it. */
+function whyLine(shell, entry, sign) {
+  const { room, def, rate, live, building } = entry;
+  const state = shell.state;
+  const why = building
+    ? 'Still under construction.'
+    : !room.powered
+      ? 'No power — it is below the cut line.'
+      : !live
+        ? 'Unstaffed, or stopped. It is producing nothing.'
+        : null;
+  return el(
+    'button.why-line',
+    {
+      type: 'button',
+      'aria-label': `${def.name}, floor ${room.floor}`,
+      onclick: () => {
+        if (state.silo.rooms[room.id]) shell.onOpenRoom?.(room.id);
+        else {
+          shell.focusFloor(room.floor);
+          shell.close();
+        }
+      },
+    },
+    el(
+      'div.why-main',
+      el('div.why-name', def.name),
+      el('div.why-sub', `Floor ${room.floor}${why ? ' · ' + why : ''}`)
+    ),
+    el(
+      'span.why-rate.mono' + (live ? (sign === '+' ? '.up' : '.down') : ''),
+      live ? `${entry.cap ? 'up to ' : ''}${sign}${rate.toFixed(1)}` : '—'
+    )
+  );
+}
+
+/** A contribution with no room behind it: people, trade, the surface. */
+function otherLine(text, rate, sign) {
+  return el(
+    'div.why-line',
+    el('div.why-main', el('div.why-name', text)),
+    el('span.why-rate.mono' + (sign === '+' ? '.up' : '.down'), `${sign}${rate.toFixed(1)}`)
   );
 }
 

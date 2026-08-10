@@ -45,9 +45,20 @@ export class DepthGauge {
     this.canvas.height = Math.round(this.h * this.dpr);
   }
 
-  /** Flash a tick at a floor. Kinds: warn, rad, good, alert. */
-  flag(floor, kind = 'alert', ms = 9000) {
-    this.alerts.set(floor, { kind, until: this.time + ms });
+  /**
+   * Flash a tick at a floor. Kinds: warn, rad, good, alert, focus.
+   *
+   * `focus` is the one the player asked for rather than one the silo raised:
+   * it fires when a tap on a line of text — an alert, a log entry, a standing
+   * order, a room in the resource breakdown — sends the camera somewhere. The
+   * cross-section eases toward the floor over several frames, and without a
+   * mark on the rail there is nothing to tell you where in ninety-two floors
+   * you have just been sent. It is drawn as a bracket rather than a wash, and
+   * it is deliberately short: it is a pointer, not a warning.
+   */
+  flag(floor, kind = 'alert', ms) {
+    const life = ms ?? (kind === 'focus' ? BAL.legibility.gaugeFocusMs : 9000);
+    this.alerts.set(floor, { kind, until: this.time + life, life });
   }
 
   /** Pixel geometry: the rail always shows all 92 floors, scaled to fit. */
@@ -119,14 +130,31 @@ export class DepthGauge {
         continue;
       }
       const y = pad + (floor - 1) * step;
+      const h = Math.max(2, barH + 2);
+
+      if (a.kind === 'focus') {
+        // A bracket closing on the floor you were just sent to, fading as it
+        // goes. Never a wash: a wash reads as an alarm, and this is a pointer.
+        const left = Math.max(0, 1 - (a.until - this.time) / (a.life || 1));
+        ctx.fillStyle = withAlpha(PALETTE.bone, 0.85 * (1 - left));
+        const arm = 4 + 5 * (1 - left);
+        ctx.fillRect(0, y - 2, arm, 1);
+        ctx.fillRect(this.w - arm, y - 2, arm, 1);
+        ctx.fillRect(0, y + h, arm, 1);
+        ctx.fillRect(this.w - arm, y + h, arm, 1);
+        ctx.fillStyle = withAlpha(PALETTE.bone, 0.28 * (1 - left));
+        ctx.fillRect(0, y - 1, this.w, h);
+        continue;
+      }
+
       const pulse = state.settings.reducedMotion
         ? 1
         : 0.55 + 0.45 * Math.sin(this.time * 0.006);
       ctx.fillStyle = withAlpha(alertColour(a.kind), pulse);
-      ctx.fillRect(0, y - 1, this.w, Math.max(2, barH + 2));
+      ctx.fillRect(0, y - 1, this.w, h);
       // A notch on the edge, so the alert survives a colourblind read.
       ctx.fillStyle = alertColour(a.kind);
-      ctx.fillRect(this.w - 3, y - 1, 3, Math.max(2, barH + 2));
+      ctx.fillRect(this.w - 3, y - 1, 3, h);
     }
 
     // ---- viewport bracket -------------------------------------------------

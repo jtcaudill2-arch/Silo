@@ -140,6 +140,13 @@ export class Game {
         if (warned[key] === band) continue;
         next[key] = band;
         const whole = Math.max(0, Math.floor(days));
+        // The arithmetic behind the warning, in one clause. A figure in days
+        // is the right thing to shout, but it is derived from two numbers the
+        // player never sees together, and "why is it falling" is the next
+        // question every time.
+        const cause =
+          `${flow.in.toFixed(1)} in against ${flow.out.toFixed(1)} out per shift, ` +
+          `with ${Math.round(stock)} in store.`;
         actions.push({
           type: 'LOG',
           entry: {
@@ -147,15 +154,18 @@ export class Game {
             text:
               band === 'critical'
                 ? `${humanise(key)} runs out in ${whole === 0 ? 'under a day' : `${whole} day${whole === 1 ? '' : 's'}`}. ` +
-                  'People start dying after that, and there is no warning shorter than this one.'
+                  'People start dying after that, and there is no warning shorter than this one. ' +
+                  cause
                 : `${humanise(key)} is falling. About ${whole} days left at the current rate — ` +
-                  'the tank is still full, and that is the problem.',
+                  `the tank is still full, and that is the problem. ${cause}`,
           },
         });
         emit('alert', {
           kind: band === 'critical' ? 'bad' : 'warn',
           glyph: '⌛',
           text: `${humanise(key)}: ${whole}d left`,
+          why: cause,
+          resource: key,
         });
       } else if (warned[key]) {
         delete next[key];
@@ -193,13 +203,23 @@ export class Game {
                 'Repair it or plan to do without it.'
               : `${where} is wearing out — condition ${Math.round(room.condition)}. ` +
                 'Maintenance crews slow this down; they do not stop it.',
+          // Where it is, carried as data rather than left in the prose for
+          // the UI to parse back out. The log makes an entry with a floor on
+          // it tappable, and it takes the cross-section there.
+          data: { floor: room.floor, roomId: room.id },
         },
       });
       emit('alert', {
         kind: band === 'critical' ? 'bad' : 'warn',
         glyph: '⚙',
         text: `${def?.name || room.type}: ${Math.round(room.condition)}%`,
+        why:
+          `Every room wears as it runs. This one is on floor ${room.floor} and ` +
+          (band === 'critical'
+            ? 'stops producing entirely at zero — if it makes power, the rooms below it in the priority list stop too.'
+            : 'output starts falling below 40. A Maintenance Bay slows the wear; a repair reverses it.'),
         floor: room.floor,
+        roomId: room.id,
       });
     }
     if (Object.keys(nextWorn).length !== Object.keys(wornWarned).length ||
@@ -228,7 +248,15 @@ export class Game {
               'and nothing will be until somebody picks a project.',
           },
         });
-        emit('alert', { kind: 'warn', glyph: '⌬', text: 'Labs idle — pick a project' });
+        emit('alert', {
+          kind: 'warn',
+          glyph: '⌬',
+          text: 'Labs idle — pick a project',
+          why:
+            `${Math.floor(state.research.points)} points banked and nothing being worked on for ` +
+            `${state.clock.day - since} days. Points accrue either way; nothing completes until a project is chosen.`,
+          panel: 'research',
+        });
       }
     } else if (state.flags.idleResearchSince != null) {
       actions.push({ type: 'FLAG_SET', flags: { idleResearchSince: null, idleResearchWarned: false } });
@@ -332,7 +360,11 @@ export class Game {
         const def = getRoom(room.type);
         this.store.dispatch({
           type: 'LOG',
-          entry: { kind: 'alert', text: `${def?.name || room.type} on floor ${room.floor} is finished and online.` },
+          entry: {
+            kind: 'alert',
+            text: `${def?.name || room.type} on floor ${room.floor} is finished and online.`,
+            data: { floor: room.floor, roomId: id },
+          },
         });
       }
       if (room.upgradingUntilCycle && cycleNo >= room.upgradingUntilCycle) {

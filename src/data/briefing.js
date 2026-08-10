@@ -1,15 +1,26 @@
 /**
  * briefing.js — the handover (spec §17, Phase 10).
  *
- * The tutorial is a document, not an overlay with arrows on it. Your
- * predecessor left it on the desk, and it teaches the game by being a
+ * Your predecessor left a note on the desk. It teaches the game by being a
  * competent person's honest account of the job: here is what will kill you
  * first, here is the order I would do things in, here is the thing nobody
  * told me. Everything factual in it is true of the simulation.
  *
  * The voice is administrative and unsentimental — this is a person filing a
- * handover note, not a narrator. She is original to this game, as is
+ * handover note, not a narrator. He is original to this game, as is
  * everything else in it.
+ *
+ * Two documents live here, and the split matters.
+ *
+ * `COLD_OPEN` is what a new silo actually opens on: two screens, who you are
+ * and what the desk does, and then it gets out of the way. The teaching is
+ * done by the guided first session (ui/tutorial.js), on the real controls,
+ * one step at a time — because seven screens of prose before anybody has
+ * touched anything is a thing to be got past rather than a thing to be read.
+ *
+ * `BRIEFING` is the whole note, and it is still worth reading. It lives in
+ * Settings ⚙, where somebody who wants it can find it and somebody who
+ * doesn't is not made to page through it at three in the morning.
  */
 
 export const PREDECESSOR = {
@@ -19,7 +30,45 @@ export const PREDECESSOR = {
 };
 
 /**
- * Sections of the note. Each is a screen. `heading` is the only thing set
+ * The cold open: two screens, and then the desk.
+ *
+ * It carries only what the guided session cannot show by pointing at it —
+ * who is handing over, what the job is, and that the clock does not stop.
+ * Everything operational is deliberately left out; the standing order says it
+ * better, in the moment it matters, with the real numbers in it.
+ */
+export const COLD_OPEN = [
+  {
+    id: 'desk',
+    heading: 'To whoever has the desk',
+    body: [
+      'You will have been told the office is mostly signatures. It is not. It is ' +
+        'deciding which of two things gets the power, and then living in the silo ' +
+        'where you decided it.',
+      'I ran Silo 12 for fourteen years. What I am leaving you is fourteen floors ' +
+        'dug out of ninety-two, about a season of margin on everything that matters, ' +
+        'and a desk that will tell you what it needs if you let it.',
+    ],
+  },
+  {
+    id: 'how',
+    heading: 'How the desk works',
+    body: [
+      'The clock does not stop. A shift is a minute, the silo keeps running while ' +
+        'the door is shut, and there is a report waiting whenever you come back.',
+      'There is a standing order across the top of the screen. It is worked out ' +
+        'again every shift from what the silo actually has, so it is never out of ' +
+        'date — on a bad week it is the only line worth reading. Do what it says, ' +
+        'in the order it says it.',
+      'The rest of the note is in Settings if you want it. All of it is true. None ' +
+        'of it is as urgent as the order in front of you.',
+      '— Halvard Sten, Mayor of Silo 12, Y0–Y14',
+    ],
+  },
+];
+
+/**
+ * Sections of the full note. Each is a screen. `heading` is the only thing set
  * in display type; the body is prose, deliberately, because the game is
  * read rather than watched.
  */

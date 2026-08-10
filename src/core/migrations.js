@@ -13,7 +13,7 @@
  * schema version is a code fact, not a tuning knob.
  */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -44,6 +44,24 @@ export const MIGRATIONS = {
     state.flags.tutorialSeen ??= false;
     state.meta ??= {};
     state.meta.ending ??= null;
+    return state;
+  },
+
+  // 12 -> 13: the guided first session. It persists which step it is on, so a
+  // reload halfway through resumes halfway through rather than starting the
+  // silo's induction over. -1 means finished or skipped and is never shown
+  // again; null means not started.
+  //
+  // The important half of this step is the second line. A save that had
+  // already read the handover has already had its tutorial, and a silo on day
+  // two hundred must not be met with a spotlight telling it to build its first
+  // Recycling plant — so those are stamped finished on the way in, rather than
+  // being left to the engine to guess about later.
+  12: (state) => {
+    state.flags ??= {};
+    if (state.flags.tutorialStep === undefined) {
+      state.flags.tutorialStep = state.flags.tutorialSeen ? -1 : null;
+    }
     return state;
   },
 };

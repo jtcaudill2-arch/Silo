@@ -8,6 +8,22 @@
  *
  * It also owns placement mode — the half of construction that happens on the
  * cross-section rather than in a panel. See the placement section below.
+ *
+ * And it owns the four questions a player asks while watching a silo run,
+ * because all four are answered by the chrome rather than by any one panel:
+ *
+ *   what just changed — the shift report under the standing order, and the
+ *     flash on the counter that moved. One line per shift, not a firehose;
+ *     the returning-player report covers absences, this covers the minute
+ *     you looked away from the screen.
+ *   why it happened   — every alert carries a sentence of cause, and every
+ *     counter can be opened onto what produces it, what spends it and what
+ *     the net is.
+ *   what to do next   — the standing order carries the action itself, not
+ *     just a description of it. Orders that mean "wait" carry no button, and
+ *     orders the silo cannot pay for say what they are short of.
+ *   where things are  — anything that names a room takes the cross-section
+ *     to it: alerts, log entries, standing orders, the resource breakdown.
  */
 
 import { BAL } from '../config/balance.js';
@@ -16,31 +32,58 @@ import { on } from '../core/events.js';
 import { topDirective } from '../sim/directives.js';
 import { getRoom } from '../data/rooms.js';
 import { setPlacement } from '../render/canvas.js';
-import { allPlacements, canBuild, build, describeCost } from '../sim/build.js';
+import {
+  allPlacements,
+  canBuild,
+  build,
+  describeCost,
+  canRepair,
+  repair,
+  canExcavate,
+  startExcavation,
+} from '../sim/build.js';
+import { autoAssign } from '../sim/jobs.js';
+import { liveResourceKeys, newlyUnlocked, unlockedIds } from '../sim/unlocks.js';
 
 /** Resources shown in the top strip, in this order. */
 const STRIP = [
-  { key: 'power', label: 'PWR' },
-  { key: 'food', label: 'FOOD' },
-  { key: 'water', label: 'WATER' },
-  { key: 'scrap', label: 'SCRAP' },
-  { key: 'parts', label: 'PARTS' },
-  { key: 'fuel', label: 'FUEL' },
-  { key: 'meds', label: 'MEDS' },
-  { key: 'alloy', label: 'ALLOY' },
-  { key: 'ammo', label: 'AMMO' },
-  { key: 'chits', label: 'CHITS' },
-  { key: 'filters', label: 'FILT' },
+  { key: 'power', label: 'PWR', name: 'Power' },
+  { key: 'food', label: 'FOOD', name: 'Food' },
+  { key: 'water', label: 'WATER', name: 'Water' },
+  { key: 'scrap', label: 'SCRAP', name: 'Scrap' },
+  { key: 'parts', label: 'PARTS', name: 'Parts' },
+  { key: 'fuel', label: 'FUEL', name: 'Fuel' },
+  { key: 'meds', label: 'MEDS', name: 'Meds' },
+  { key: 'alloy', label: 'ALLOY', name: 'Alloy' },
+  { key: 'ammo', label: 'AMMO', name: 'Ammunition' },
+  { key: 'chits', label: 'CHITS', name: 'Chits' },
+  { key: 'filters', label: 'FILT', name: 'Filters' },
 ];
 
-/**
- * Always on the strip, even at zero — these four are the ones a decision is
- * ever made about on the first morning, and a counter that vanishes when it
- * empties is worse than one that reads zero.
- */
-const ALWAYS_SHOWN = new Set(['power', 'food', 'water', 'scrap']);
+const RES_NAME = Object.fromEntries(STRIP.map((d) => [d.key, d.name]));
 
 const SPEEDS = [0, 1, 2, 4];
+
+/**
+ * How loud each kind of change is, when a shift produced several.
+ *
+ * The bar has room for one line, so it has to be the right one: somebody
+ * dying outranks a bay coming online, and a supply line crossing into deficit
+ * outranks one crossing back out of it. Ties break toward the newest.
+ */
+const CHANGE_WEIGHT = {
+  death: 100,
+  brownout: 92,
+  turned_down: 84,
+  lost: 76,
+  unlock: 64,
+  turned_up: 52,
+  online: 44,
+  started: 30,
+  counter: 28,
+  birth: 20,
+  plain: 10,
+};
 
 /**
  * Panels hold slow-moving data, so they redraw at 2Hz rather than every
@@ -75,9 +118,29 @@ export class Shell {
     this.directive = document.getElementById('directive');
     this.directiveText = document.getElementById('directive-text');
     this.directiveWhy = document.getElementById('directive-why');
-    this.directive.addEventListener('click', () => {
-      if (this._directivePanel) this.open(this._directivePanel);
-    });
+    this.buildDirective();
+    this.directive.addEventListener('click', () => this.openDirective());
+
+    // ---- what just changed ------------------------------------------------
+    // A shift report, one line, directly under the order it may well have
+    // invalidated. It is its own row in the app grid rather than an overlay:
+    // the cross-section is the thing the player is looking at and nothing new
+    // is allowed to sit on top of it.
+    this.changes = [];
+    this.unreadChanges = 0;
+    this._snap = null;
+    this._flash = new Map(); // resource key -> {dir, until}
+    this._flashTimer = null;
+    this.buildChangeLine();
+    on('cycle', () => this.onCycle());
+
+    // Unlock announcements. The baseline is null until the first paint, which
+    // is what stops a save opened on a Thursday announcing five systems at
+    // once; after that it is a list of *ids*, because reducers write state in
+    // place and a held state reference always reports that nothing changed.
+    this._unlockIds = null;
+    this._announced = new Set();
+    this._freshPanels = new Set();
 
     this.speedBtn.addEventListener('click', () => this.cycleSpeed());
     document.getElementById('btn-clock').addEventListener('click', () => this.open('log'));
@@ -140,6 +203,10 @@ export class Shell {
       btn.hidden = !!locked;
       btn.disabled = !!locked;
       btn.title = locked || panel?.title || '';
+      // A panel that arrived while the player was watching keeps a mark until
+      // they have opened it once. The announcement is a card that expires;
+      // this is what is still there afterwards.
+      btn.classList.toggle('fresh', this._freshPanels.has(id));
 
       const badgeCount = panel?.badge?.(this.state) || 0;
       let badge = btn.querySelector('.badge');
@@ -162,6 +229,7 @@ export class Shell {
     // Opening anything at all ends a half-placed building. Leaving the lit bays
     // up behind another panel would be a mode the player cannot see they're in.
     if (this.placement) this.endPlacement(false);
+    this._freshPanels.delete(id);
     this.activePanel = id;
     this.store.dispatch({ type: 'UI_SET', ui: { view: id } });
     panel.onOpen?.(this.state);
@@ -371,34 +439,178 @@ export class Shell {
     const state = this.state;
     this.renderStrip(state);
     this.renderDirective(state);
+    this.checkUnlocks(state);
+    this.renderChangeLine(state);
     this.clockDate.textContent = fmtClock(state.clock);
     this.clockShift.textContent = `SHIFT ${state.clock.shift + 1}/${BAL.time.CYCLES_PER_DAY}`;
     this.syncNav();
     if (this.activePanel) this.renderPanel();
   }
 
+  // ---------------------------------------------------------- directive ---
+  //
+  // The standing order used to be a sentence that opened a panel. A panel is
+  // not the action: the player still had to find the room in a catalogue of
+  // twenty-eight, or the resident in a roster of four hundred. The order now
+  // carries the action itself — one tap places the building, orders the
+  // repair, crews the empty post — with two deliberate exceptions. An order
+  // flagged `wait` means "do nothing today" and must not offer a button, or
+  // the player learns that the bar always wants a tap. An order the silo
+  // cannot pay for shows the shortfall instead, because a button that toasts
+  // "not enough scrap" is a worse answer than the number.
+
+  /**
+   * Split the bar into a text column and an action column. Done in script
+   * rather than markup because the three spans are already in the document
+   * and keep their ids — anything else that reads #directive-text still can.
+   */
+  buildDirective() {
+    this.directiveEyebrow = this.directive.querySelector('.directive-eyebrow');
+    this.directiveMeta = el('span.directive-meta');
+    this.directiveAct = el('span.directive-act');
+    const main = el('span.directive-main');
+    main.append(this.directiveEyebrow, this.directiveText, this.directiveWhy, this.directiveMeta);
+    this.directive.append(main, this.directiveAct);
+  }
+
   /**
    * The one thing worth doing next. Recomputed from state, so it stays true
    * whether the player follows it, ignores it, or comes back after a week.
    * Text only changes when the underlying directive does — a line that
-   * rewrites itself every cycle is a line nobody can read.
+   * rewrites itself every cycle is a line nobody can read. Affordability is
+   * part of the key: an order can become payable without a word of it
+   * changing, and the button has to appear when it does.
    */
   renderDirective(state) {
     const d = topDirective(state);
     if (!d) {
       this.directive.hidden = true;
-      this._directiveId = null;
+      this._directive = null;
+      this._directiveKey = null;
       return;
     }
     this.directive.hidden = false;
+    this._directive = d;
     this._directivePanel = d.panel;
-    if (this._directiveId === d.id && this._directiveWhy === d.why) return;
-    this._directiveId = d.id;
-    this._directiveWhy = d.why;
+    const key = `${d.id}|${d.why}|${d.blocked || ''}|${d.wait ? 'wait' : ''}`;
+    if (this._directiveKey === key) return;
+    this._directiveKey = key;
     this.directiveText.textContent = d.text;
     this.directiveWhy.textContent = d.why;
     this.directive.classList.toggle('urgent', d.weight >= 85);
+    this.directive.classList.toggle('holding', !!d.wait);
+    this.directiveEyebrow.textContent = d.wait ? 'Standing order · hold' : 'Standing order';
+
+    // ---- where, and what it is short of ----------------------------------
+    clear(this.directiveMeta);
+    const room = d.roomId ? state.silo.rooms[d.roomId] : null;
+    if (room) this.directiveMeta.appendChild(chip(`Floor ${room.floor}`));
+    if (d.blocked) this.directiveMeta.appendChild(chip(`Short ${d.blocked}`, 'bad'));
+    else if (d.room) {
+      const cost = getRoom(d.room)?.buildCost;
+      if (cost) this.directiveMeta.appendChild(chip(describeCost(cost)));
+    }
+    this.directiveMeta.hidden = !this.directiveMeta.childNodes.length;
+
+    // ---- the action itself ------------------------------------------------
+    clear(this.directiveAct);
+    const act = this.directiveAction(d);
+    this.directiveAct.hidden = !act;
+    if (!act) return;
+    // Not a <button>: this sits inside #directive, which is itself a button,
+    // and nesting one inside the other is not something the HTML parser will
+    // keep. A role and a keyboard handler get the same behaviour honestly.
+    const node = el(
+      'span.act-btn',
+      {
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': `${act.label}: ${d.text}`,
+        onclick: (e) => {
+          e.stopPropagation();
+          act.run();
+        },
+        onkeydown: (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          act.run();
+        },
+      },
+      act.label
+    );
+    this.directiveAct.appendChild(node);
   }
+
+  /**
+   * The order, as something that can be done. Null when there is nothing to
+   * offer — which is a real answer for a hold, and the honest one for an
+   * order the treasury cannot cover.
+   */
+  directiveAction(d) {
+    if (d.wait || d.blocked) return null;
+    const state = this.state;
+    if (d.room) {
+      if (!allPlacements(state, d.room).length) return null;
+      return { label: 'Place', run: () => this.startPlacement(d.room) };
+    }
+    if (d.id === 'repair' && d.roomId) return { label: 'Repair', run: () => this.doRepair(d.roomId) };
+    if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
+    if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
+    const panel = this.panels.get(d.panel);
+    if (panel && !panel.locked?.(state)) return { label: 'Open', run: () => this.openDirective() };
+    return null;
+  }
+
+  /** Tapping the bar itself: the panel that acts on the order, and the place. */
+  openDirective() {
+    const d = this._directive;
+    const room = d?.roomId ? this.state.silo.rooms[d.roomId] : null;
+    if (room) this.focusFloor(room.floor);
+    if (d?.panel) this.open(d.panel);
+  }
+
+  doRepair(roomId) {
+    const state = this.state;
+    const room = state.silo.rooms[roomId];
+    const check = canRepair(state, roomId);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      return;
+    }
+    this.store.dispatchAll(repair(state, roomId));
+    const name = getRoom(room?.type)?.name || 'The room';
+    toast(
+      check.partial
+        ? `${name}: patched as far as the stores allow.`
+        : `${name} on floor ${room.floor} repaired.`
+    );
+    if (room) this.focusFloor(room.floor);
+  }
+
+  doAutoAssign() {
+    const actions = autoAssign(this.state);
+    if (!actions.length) {
+      toast('Nobody is spare. Every working resident already has a post.', 'bad');
+      return;
+    }
+    this.store.dispatchAll(actions);
+    toast(`${actions.length} resident${actions.length === 1 ? '' : 's'} posted.`);
+  }
+
+  doExcavate() {
+    const check = canExcavate(this.state);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      return;
+    }
+    const floor = check.floor;
+    this.store.dispatchAll(startExcavation(this.state));
+    toast(`Excavation of floor ${floor} has begun.`);
+    if (floor) this.focusFloor(floor);
+  }
+
+  // -------------------------------------------------------------- strip ---
 
   renderStrip(state) {
     // Rebuilt in place: each tile keeps its node so the strip doesn't
@@ -411,16 +623,24 @@ export class Shell {
         const delta = el('span.res-delta.mono', '');
         const node = el(
           'button.res',
-          { type: 'button', role: 'listitem', onclick: () => this.open('resources'), dataset: { res: def.key } },
+          {
+            type: 'button',
+            role: 'listitem',
+            // Not "open the ledger" any more: open *this* resource, with what
+            // makes it, what spends it and the net written out. A number you
+            // cannot interrogate is a number you learn to ignore.
+            onclick: () => this.openResource(def.key),
+            dataset: { res: def.key },
+          },
           el('span.res-label', def.label),
           el('span.res-row', val, delta)
         );
         this.strip.appendChild(node);
-        this._stripNodes.set(def.key, { node, val, delta });
+        this._stripNodes.set(def.key, { node, val, delta, flash: '' });
       }
     }
 
-    const live = this.liveResources(state);
+    const live = liveResourceKeys(state);
     for (const def of STRIP) {
       const ref = this._stripNodes.get(def.key);
       const amount = state.resources[def.key] || 0;
@@ -439,42 +659,32 @@ export class Shell {
         amount <= 0 || (net < 0 && perDay > 0 && amount / perDay < 1);
       ref.node.classList.toggle('critical', !!critical);
       ref.node.title =
-        `${def.label} ${amount.toFixed(1)}${cap === Infinity ? '' : ' / ' + cap}` +
-        `\n${fmtDelta(net)} per cycle`;
+        `${def.name} ${amount.toFixed(1)}${cap === Infinity ? '' : ' / ' + cap}` +
+        `\n${fmtDelta(net)} per shift` +
+        (flow ? `\n${flow.in.toFixed(1)} in, ${flow.out.toFixed(1)} out` : '') +
+        '\nTap for what moves it.';
+
+      // The counter that moved wears the mark, so "a number dropped" has an
+      // answer without reading anything. Toggled only on change: re-adding
+      // the class every paint would restart the fade sixty times a second.
+      const flash = this._flash.get(def.key)?.dir || '';
+      if (ref.flash !== flash) {
+        ref.node.classList.remove('moved', 'up', 'down', 'new');
+        if (flash) {
+          ref.node.style.animationDuration = `${BAL.legibility.counterFlashMs}ms`;
+          ref.node.classList.add('moved', flash);
+        }
+        ref.flash = flash;
+      }
 
       ref.node.hidden = !live.has(def.key);
     }
   }
 
-  /**
-   * Which counters the strip should carry.
-   *
-   * Eleven of them on the first morning — most reading a starting stock the
-   * silo has no way to spend or replace for hours — is a good part of what
-   * makes this look impenetrable, and it buries the three that decide whether
-   * anybody lives. A resource earns its place when the silo actually handles
-   * it: some room you have built makes it or burns it. Alloy arrives with the
-   * foundry, ammunition with the armoury, filters with the scrubbers.
-   *
-   * Derived from the rooms rather than remembered, so it survives a reload
-   * and never disagrees with itself.
-   */
-  liveResources(state) {
-    const live = new Set(ALWAYS_SHOWN);
-    for (const room of Object.values(state.silo.rooms)) {
-      const def = getRoom(room.type);
-      if (!def) continue;
-      for (const k of Object.keys(def.produces || {})) live.add(k);
-      for (const k of Object.keys(def.consumes || {})) live.add(k);
-    }
-    // Chits are nobody's output — no room makes or burns them — so they need
-    // their own rule. They start mattering when there is a soldier drawing a
-    // stipend or somebody on the radio to trade with. Not on room level: the
-    // silo you inherit already has rooms at level three.
-    if (state.military.squadIds.length || (state.world.radioTier || 0) > 0) {
-      live.add('chits');
-    }
-    return live;
+  /** Open the ledger with one resource already opened onto its own causes. */
+  openResource(key) {
+    this.panels.get('resources')?.focusResource?.(key);
+    this.open('resources');
   }
 
   cycleSpeed() {
@@ -492,8 +702,22 @@ export class Shell {
     this.speedBtn.classList.toggle('paused', mult === 0);
   }
 
-  /** Transient banner in the top-right of the stage. */
-  pushAlert({ kind = 'alert', glyph = '!', text, floor }) {
+  /**
+   * Transient banner in the top-right of the stage.
+   *
+   * An alert is three things at once and used to be one: the fact, the cause,
+   * and the place. The card carries all three now — the headline stays short
+   * enough to read at a glance, the cause is one sentence behind a tap, and
+   * the floor is a chip that takes the cross-section there. Alerts raised by
+   * reducers cannot carry prose (they are dispatched from state mutation, not
+   * from anything that knows how to write), so `explainAlert` derives the
+   * missing sentence from live state instead.
+   */
+  pushAlert({ kind = 'alert', glyph = '!', text, why, floor, roomId, resource, panel }) {
+    const L = BAL.legibility;
+    const detail = { kind, glyph, text, floor, roomId, resource, panel };
+    detail.why = why || this.explainAlert(detail, this.state);
+
     // One rail entry per distinct message. A condition that flickers — the
     // brownout does, as generation crosses demand and crosses back — fires on
     // every transition, and each one used to stack another identical card
@@ -505,26 +729,22 @@ export class Shell {
     const existing = this._alertNodes?.get(text);
     if (existing) {
       clearTimeout(existing.timer);
-      existing.timer = setTimeout(() => this.dropAlert(text), 7000);
+      existing.timer = setTimeout(() => this.dropAlert(text), L.alertDwellMs);
       // Move it back to the bottom so the newest thing is where the eye is.
       this.alertRail.appendChild(existing.node);
       if (floor != null) this.onAlertFloor?.(floor, kind);
       return;
     }
 
-    const node = el(
-      'div.alert' + (kind ? '.' + kind : ''),
-      el('span.glyph', glyph),
-      el('span', text)
-    );
+    const node = this.alertCard(detail);
     this.alertRail.appendChild(node);
     this._alertNodes ??= new Map();
     this._alertNodes.set(text, {
       node,
-      timer: setTimeout(() => this.dropAlert(text), 7000),
+      timer: setTimeout(() => this.dropAlert(text), L.alertDwellMs),
     });
 
-    while (this.alertRail.children.length > 3) {
+    while (this.alertRail.children.length > L.alertMaxCards) {
       const oldest = this.alertRail.firstChild;
       const key = [...this._alertNodes].find(([, v]) => v.node === oldest)?.[0];
       if (key) this.dropAlert(key);
@@ -533,12 +753,433 @@ export class Shell {
     if (floor != null) this.onAlertFloor?.(floor, kind);
   }
 
+  /**
+   * One card. The first tap answers "why", the second answers "where" — in
+   * that order deliberately, because navigating away on the first tap means
+   * the sentence explaining the alert is never read by anybody who wanted to
+   * go and look at the thing.
+   */
+  alertCard(a) {
+    const why = a.why ? el('span.alert-why', a.why) : null;
+    if (why) why.hidden = true;
+    const more = el('span.alert-more.mono', why ? '?' : '›');
+    const card = el(
+      'button.alert' + (a.kind ? '.' + a.kind : ''),
+      { type: 'button', 'aria-label': a.text },
+      el(
+        'span.alert-head',
+        el('span.glyph', a.glyph),
+        el('span.alert-text', a.text),
+        a.floor != null ? el('span.alert-where.mono', `FL ${a.floor}`) : null,
+        more
+      ),
+      why
+    );
+    card.addEventListener('click', () => {
+      if (why && why.hidden) {
+        why.hidden = false;
+        more.textContent = '›';
+        card.classList.add('open');
+        // Reading takes longer than glancing, so an opened card stands longer.
+        const entry = this._alertNodes?.get(a.text);
+        if (entry) {
+          clearTimeout(entry.timer);
+          entry.timer = setTimeout(() => this.dropAlert(a.text), BAL.legibility.alertOpenedDwellMs);
+        }
+        return;
+      }
+      if (a.roomId && this.state.silo.rooms[a.roomId]) this.onOpenRoom?.(a.roomId);
+      else if (a.floor != null) this.focusFloor(a.floor);
+      else if (a.resource) this.openResource(a.resource);
+      else if (a.panel) this.open(a.panel);
+    });
+    return card;
+  }
+
+  /**
+   * The sentence an alert did not come with.
+   *
+   * Every alert raised inside a reducer arrives as a headline and nothing
+   * else — `emit` is called from the middle of a state mutation, which is the
+   * wrong place to be composing prose and has no business knowing what the
+   * player can see. Rather than push explanations back into the reducers,
+   * they are derived here from the state at the moment the alert lands, which
+   * also makes them specific: "demand 84 against 71 generated" rather than a
+   * canned line about brownouts.
+   */
+  explainAlert(a, state) {
+    if (/^Brownout/i.test(a.text)) {
+      const gen = Math.round(state.power?.generation || 0);
+      const demand = Math.round(state.power?.demand || 0);
+      const dark = Object.values(state.silo.rooms).filter((r) => !r.powered).length;
+      return (
+        `Demand is ${demand} against ${gen} generated, so ${dark || 'some'} room` +
+        `${dark === 1 ? '' : 's'} at the bottom of the power priority are dark. ` +
+        'Fix it with another Generator Hall, or by reordering the list.'
+      );
+    }
+    if (/excavated$/i.test(a.text)) {
+      return `Six more bays, empty. Nothing is built down there until you build it.`;
+    }
+    if (/^Investigation/i.test(a.text)) {
+      const inv = (state.order.investigations || [])[0];
+      return inv
+        ? `A crime was committed and the sheriff has suspects. The verdict is yours, and a wrong one costs order.`
+        : 'The sheriff has opened a case. The verdict is yours.';
+    }
+    if (/raider/i.test(a.text)) {
+      return 'Somebody is at the door. Squads defend the silo; without one, the raid takes what it wants.';
+    }
+    if (a.resource) {
+      const flow = state.flows?.[a.resource];
+      return flow
+        ? `${flow.in.toFixed(1)} in against ${flow.out.toFixed(1)} out per shift.`
+        : null;
+    }
+    return null;
+  }
+
   dropAlert(text) {
     const entry = this._alertNodes?.get(text);
     if (!entry) return;
     clearTimeout(entry.timer);
     entry.node.remove();
     this._alertNodes.delete(text);
+  }
+
+  // ------------------------------------------------------------- places ---
+
+  /**
+   * Take the cross-section to a floor and mark it on the gauge, so a jump
+   * made from a line of text can be followed by eye. Both hooks are wired in
+   * main.js; neither is required for the shell to work.
+   */
+  focusFloor(floor) {
+    if (floor == null) return;
+    this.onFocusFloor?.(floor);
+    this.onAlertFloor?.(floor, 'focus');
+  }
+
+  // ------------------------------------------------------ what changed ---
+  //
+  // A silo run at 1× resolves a shift every ninety seconds, and most of what
+  // it does it does quietly: a number moves, a bay goes dark, a line crosses
+  // zero with the tank still full. The log records all of it and is therefore
+  // no use for this — reading a hundred entries to find the one that explains
+  // the figure you just noticed is not reading, it is searching.
+  //
+  // So the shell keeps its own account, one shift at a time: it snapshots the
+  // handful of things a player would notice, diffs them on the next shift
+  // boundary, and writes the difference as a sentence. The bar under the
+  // standing order shows the loudest one; the Log panel's Changes tab has the
+  // rest. Nothing here is persisted — this is what happened while you were
+  // watching, and `returnReport.js` is what happened while you were not.
+
+  buildChangeLine() {
+    this._flipAt = new Map();
+    this.changeEyebrow = el('span.changeline-eyebrow', 'Last shift');
+    this.changeText = el('span.changeline-text');
+    this.changeMore = el('span.changeline-more.mono');
+    this.changeMore.hidden = true;
+    this.changeLine = el(
+      'button.changeline',
+      {
+        type: 'button',
+        id: 'change-line',
+        hidden: true,
+        'aria-label': 'What changed last shift',
+        onclick: () => this.openChanges(),
+      },
+      this.changeEyebrow,
+      this.changeText,
+      this.changeMore
+    );
+    this.directive.insertAdjacentElement('afterend', this.changeLine);
+  }
+
+  /** The shift boundary: diff, then repaint. */
+  onCycle() {
+    this.collectChanges(this.state);
+    this.markDirty();
+  }
+
+  /** Everything the account watches, as of now. */
+  snapshot(state) {
+    const rooms = {};
+    for (const [id, r] of Object.entries(state.silo.rooms)) {
+      rooms[id] = {
+        type: r.type,
+        floor: r.floor,
+        width: r.width,
+        building: r.buildingUntilCycle > 0,
+      };
+    }
+    const dir = {};
+    const res = {};
+    for (const def of STRIP) {
+      res[def.key] = state.resources[def.key] || 0;
+      dir[def.key] = flowDirection(state, def.key);
+    }
+    return {
+      cycle: state.clock.cycle,
+      res,
+      dir,
+      live: liveResourceKeys(state),
+      rooms,
+      logLen: state.log.length,
+      // The brownout flag lives on flags, not on power — `state.power` is
+      // rewritten wholesale every cycle with only generation and demand on it.
+      brownout: !!state.flags.brownout,
+    };
+  }
+
+  collectChanges(state) {
+    const prev = this._snap;
+    const now = this.snapshot(state);
+    this._snap = now;
+    // No baseline on the first shift after boot, deliberately: the difference
+    // between "before you opened the tab" and "now" is the return report's
+    // job, and it does it better.
+    if (!prev) return;
+
+    const L = BAL.legibility;
+
+    // ---- supply lines, and the counters that carry them -------------------
+    for (const def of STRIP) {
+      const key = def.key;
+      if (!now.live.has(key)) continue;
+      const flow = state.flows?.[key] || { in: 0, out: 0 };
+
+      if (!prev.live.has(key)) {
+        // A counter that appears out of nowhere is its own small mystery.
+        this.flashCounter(key, 'new');
+        this.recordChange({
+          kind: 'counter',
+          res: key,
+          text:
+            `${def.name} is on the strip now — the silo has started ` +
+            `${flow.in > 0 ? 'producing' : 'drawing on'} it.`,
+        });
+        continue;
+      }
+
+      const quiet = this._flipAt.get(key);
+      const canSpeak = quiet == null || now.cycle - quiet >= L.changeQuietCycles;
+      if (now.dir[key] !== prev.dir[key] && canSpeak) {
+        if (now.dir[key] === 'down') {
+          this._flipAt.set(key, now.cycle);
+          this.flashCounter(key, 'down');
+          this.recordChange({
+            kind: 'turned_down',
+            res: key,
+            text:
+              `${def.name} has turned negative — ${flow.in.toFixed(1)} in against ` +
+              `${flow.out.toFixed(1)} out a shift.${runwayClause(state, key)}`,
+          });
+          continue;
+        }
+        if (now.dir[key] === 'up' && prev.dir[key] === 'down') {
+          this._flipAt.set(key, now.cycle);
+          this.flashCounter(key, 'up');
+          this.recordChange({
+            kind: 'turned_up',
+            res: key,
+            text:
+              `${def.name} is back in surplus — ${flow.in.toFixed(1)} in against ` +
+              `${flow.out.toFixed(1)} out a shift.`,
+          });
+          continue;
+        }
+      }
+
+      // Anything that moved by a real amount in one shift gets marked, even
+      // when nothing is wrong with it: paying 220 scrap for a Laboratory is
+      // the commonest reason a number drops, and it should be visible that
+      // *that* is the number that moved.
+      if (this._flash.has(key)) continue;
+      const moved = Math.abs(now.res[key] - prev.res[key]);
+      const cap = state.caps?.[key];
+      const bar = Math.max(L.stockMoveMin, Number.isFinite(cap) ? cap * L.stockMoveFraction : 0);
+      if (moved >= bar) this.flashCounter(key, now.res[key] > prev.res[key] ? 'up' : 'down');
+    }
+
+    // ---- the building itself ----------------------------------------------
+    for (const [id, r] of Object.entries(now.rooms)) {
+      const before = prev.rooms[id];
+      const name = getRoom(r.type)?.name || r.type;
+      if (!before) {
+        this.recordChange({
+          kind: 'started',
+          floor: r.floor,
+          roomId: id,
+          text: `${name} started on floor ${r.floor}.`,
+        });
+      } else if (before.building && !r.building) {
+        this.recordChange({
+          kind: 'online',
+          floor: r.floor,
+          roomId: id,
+          text: `${name} on floor ${r.floor} is finished and online.`,
+        });
+      } else if (r.width > before.width) {
+        this.recordChange({
+          kind: 'online',
+          floor: r.floor,
+          roomId: id,
+          text: `${name} on floor ${r.floor} is ${r.width} bays wide now.`,
+        });
+      }
+    }
+    for (const [id, r] of Object.entries(prev.rooms)) {
+      if (now.rooms[id]) continue;
+      const name = getRoom(r.type)?.name || r.type;
+      this.recordChange({
+        kind: 'lost',
+        floor: r.floor,
+        text: `${name} on floor ${r.floor} is gone.`,
+      });
+    }
+
+    // ---- power ------------------------------------------------------------
+    if (now.brownout !== prev.brownout) {
+      this.recordChange(
+        now.brownout
+          ? {
+              kind: 'brownout',
+              panel: 'resources',
+              text:
+                `Brownout: demand ${Math.round(state.power?.demand || 0)} against ` +
+                `${Math.round(state.power?.generation || 0)} generated. Rooms are shutting down ` +
+                'from the bottom of the power priority.',
+            }
+          : { kind: 'plain', panel: 'resources', text: 'Generation is covering demand again.' }
+      );
+    }
+
+    // ---- people -----------------------------------------------------------
+    // Read off the log rather than off the headcount: the log entries were
+    // written with a name and a cause on them, and a name is the difference
+    // between "population fell by one" and knowing what happened.
+    const fresh = state.log.slice(prev.logLen);
+    const deaths = fresh.filter((e) => e.kind === 'death');
+    if (deaths.length === 1) {
+      this.recordChange({ kind: 'death', text: deaths[0].text, floor: floorOfEntry(deaths[0]) });
+    } else if (deaths.length > 1) {
+      this.recordChange({
+        kind: 'death',
+        text: `${deaths.length} deaths this shift. ${deaths[0].text}`,
+      });
+    }
+    const births = fresh.filter((e) => e.kind === 'birth');
+    if (births.length === 1) this.recordChange({ kind: 'birth', text: births[0].text });
+    else if (births.length > 1) {
+      this.recordChange({ kind: 'birth', text: `${births.length} children born this shift.` });
+    }
+  }
+
+  recordChange(c) {
+    const state = this.state;
+    this.changes.push({ ...c, day: state.clock.day, cycle: state.clock.cycle });
+    if (this.changes.length > BAL.legibility.changeLogMax) {
+      this.changes.splice(0, this.changes.length - BAL.legibility.changeLogMax);
+    }
+    this.unreadChanges++;
+  }
+
+  flashCounter(key, dir) {
+    this._flash.set(key, { dir, until: performance.now() + BAL.legibility.counterFlashMs });
+    if (!this._flashTimer) {
+      this._flashTimer = setTimeout(() => this.sweepFlashes(), BAL.legibility.counterFlashMs + 20);
+    }
+  }
+
+  sweepFlashes() {
+    this._flashTimer = null;
+    const now = performance.now();
+    let soonest = 0;
+    for (const [key, f] of [...this._flash]) {
+      if (f.until <= now) this._flash.delete(key);
+      else soonest = Math.max(soonest, f.until - now);
+    }
+    if (soonest) this._flashTimer = setTimeout(() => this.sweepFlashes(), soonest + 20);
+    this.markDirty();
+  }
+
+  /**
+   * The loudest thing that has happened since the player last read this. Not
+   * the newest: a bay coming online must not push a death off the bar.
+   */
+  renderChangeLine(state) {
+    const L = BAL.legibility;
+    if (!this.changes.length) {
+      this.changeLine.hidden = true;
+      return;
+    }
+    const unread = Math.min(this.unreadChanges, this.changes.length);
+    const pool = unread > 0 ? this.changes.slice(-unread) : this.changes.slice(-1);
+    let best = pool[0];
+    for (const c of pool) {
+      if (weightOfChange(c) >= weightOfChange(best)) best = c;
+    }
+    // A line nobody came back for stops being news after most of a day.
+    if (!unread && state.clock.cycle - best.cycle > L.changeLineShifts) {
+      this.changeLine.hidden = true;
+      return;
+    }
+    this.changeLine.hidden = false;
+    const eyebrow = unread > 1 ? 'Since you looked' : 'Last shift';
+    const more = unread > 1 ? `+${unread - 1}` : '';
+    if (this.changeEyebrow.textContent !== eyebrow) this.changeEyebrow.textContent = eyebrow;
+    if (this.changeText.textContent !== best.text) this.changeText.textContent = best.text;
+    if (this.changeMore.textContent !== more) this.changeMore.textContent = more;
+    this.changeMore.hidden = !more;
+    const tone = toneOfChange(best);
+    this.changeLine.className = 'changeline' + (tone ? ' ' + tone : '');
+  }
+
+  /** Read the account. Opens the Log panel on the Changes tab. */
+  openChanges() {
+    this.unreadChanges = 0;
+    this.panels.get('log')?.focusTab?.('changes');
+    this.open('log');
+    this.markDirty();
+  }
+
+  // ----------------------------------------------------------- unlocks ---
+
+  /**
+   * Say it once, out loud, when a system arrives.
+   *
+   * A panel that appears in the bar silently is indistinguishable from one
+   * that was always there and never noticed — and the whole unlock spine
+   * exists to make the game arrive in readable pieces, which only works if
+   * each piece announces itself. The baseline is a list of ids rather than a
+   * state: reducers write in place, so a held state reference is this frame's
+   * state and would report that nothing has ever changed. Null until the
+   * first paint, so a save opened on a Thursday announces nothing.
+   */
+  checkUnlocks(state) {
+    const ids = unlockedIds(state);
+    const prev = this._unlockIds;
+    this._unlockIds = ids;
+    if (prev == null || prev.join() === ids.join()) return;
+
+    for (const u of newlyUnlocked(prev, state)) {
+      if (this._announced.has(u.id)) continue;
+      this._announced.add(u.id);
+      this._freshPanels.add(u.panel);
+      // A toast rather than a card on the alert rail, for one reason: the rail
+      // is inside the stage and an open panel covers it, and an unlock lands
+      // most often while the player is in the panel that caused it. The toast
+      // sits directly above the bar it is talking about, and the button it
+      // names keeps its mark until the panel has been opened once.
+      toast(`${u.label} is open — a new panel on the bar below.`, 'good');
+      this.recordChange({
+        kind: 'unlock',
+        panel: u.panel,
+        text: `${u.label} is open — a new panel on the bar at the bottom.`,
+      });
+    }
   }
 
   onKey(e) {
@@ -580,6 +1221,44 @@ export class Shell {
       }
     }
   }
+}
+
+/** up / down / flat, with a deadband so rounding noise is not a direction. */
+function flowDirection(state, key) {
+  const flow = state.flows?.[key];
+  const net = flow ? flow.in - flow.out : 0;
+  const dead = BAL.legibility.flowFlipDeadband;
+  return net > dead ? 'up' : net < -dead ? 'down' : 'flat';
+}
+
+/** " The store is gone in 6 days at that rate." — or nothing, if it is not. */
+function runwayClause(state, key) {
+  const flow = state.flows?.[key];
+  const net = flow ? flow.in - flow.out : 0;
+  if (net >= 0) return '';
+  const days = (state.resources[key] ?? 0) / (-net * BAL.time.CYCLES_PER_DAY);
+  if (!Number.isFinite(days) || days > 60) return '';
+  const whole = Math.max(0, Math.floor(days));
+  return whole === 0
+    ? ' The store is gone within the day at that rate.'
+    : ` The store is gone in about ${whole} day${whole === 1 ? '' : 's'} at that rate.`;
+}
+
+function weightOfChange(c) {
+  return CHANGE_WEIGHT[c.kind] ?? CHANGE_WEIGHT.plain;
+}
+
+function toneOfChange(c) {
+  if (['death', 'lost', 'turned_down', 'brownout'].includes(c.kind)) return 'bad';
+  if (['turned_up', 'online', 'unlock', 'birth'].includes(c.kind)) return 'good';
+  return '';
+}
+
+/** Where a log entry happened: what it was written with, or what it says. */
+export function floorOfEntry(entry) {
+  if (entry?.data?.floor != null) return entry.data.floor;
+  const m = /\bfloor (\d{1,2})\b/i.exec(entry?.text || '');
+  return m ? Number(m[1]) : null;
 }
 
 /** The lit floor closest to the one the player is already looking at. */
