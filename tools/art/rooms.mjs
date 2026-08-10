@@ -1,7 +1,8 @@
 /**
  * rooms.mjs — the room art.
  *
- * Two families, both drawn with the primitives in ./lib.mjs and nothing else:
+ * Two families, both drawn on lib.mjs's painter, palette and seeded rng — see
+ * WHY SO LITTLE OF lib.mjs's SHAPE VOCABULARY IS USED HERE for the shapes:
  *
  *   ROOM_FIXTURES  64x36, TRANSPARENT background. This is the machinery seen
  *                  in the silo cross-section. The renderer fills the interior
@@ -17,7 +18,9 @@
  *                  contents standing on it.
  *
  * House rules, same as the rest of the pipeline:
- *   - every solid form carries a 1px PAL.ink keyline — see THE KEYLINE BUDGET,
+ *   - every solid form carries a PAL.ink keyline: four-sided if it is big
+ *     enough to afford one, otherwise on its shaded edges — see THE KEYLINE
+ *     BUDGET, which is where the whole of that argument lives,
  *   - light comes from the upper left, always,
  *   - colour is a PAL entry or ONE shade() of a PAL entry, never a shade of a
  *     shade — see THE PALETTE RAY,
@@ -48,15 +51,37 @@
  *   2. SUB-DETAILS living inside an already-outlined shell carry NO ink of
  *      their own. Tone does the separating: lit face on top and left, shaded
  *      face on bottom and right, which is the same light the shell obeys.
- *   3. THIN RUNS — pipes, benches, shelves, rails, floor plates — carry their
- *      keyline on the SHADED side only (underneath, or to the right), because
- *      that is the edge that reads as a silhouette; the lit side is a
- *      highlight and an ink line on top of a highlight is just a lost pixel.
- *      ledge(), pipeh() and pipev() below are the only ways to draw one.
+ *   3. THIN RUNS — pipes, benches, shelves, rails, floor plates — and anything
+ *      below 6x5 carry their keyline on the SHADED side only (underneath, or to
+ *      the right), because that is the edge that reads as a silhouette; the lit
+ *      side is a highlight and an ink line on top of a highlight is just a lost
+ *      pixel. ledge(), pipeh(), pipev() and solid()'s own small-shape path are
+ *      the only ways to draw one.
+ *   4. AN OBJECT STANDING ON THE FLOOR ENDS ON THE CONTACT LINE, not one row
+ *      above it. ground() lays a full-width ink row at y=32 for exactly this;
+ *      stopping short leaves the object's own bottom keyline stacked on top of
+ *      it, which is a 2px black band under every machine in the silo and, over
+ *      the set, several hundred pixels of keyline drawn twice.
  *
- * The budget that falls out is roughly 20% ink for a fixture and 14% for a
- * cutaway, and runSelfTest() fails the build above those. If a sprite is over,
- * the fix is always fewer and bigger shapes, never a thinner outline.
+ * The self-test measures two different things and they are not the same number:
+ *
+ *   LACE, the ink that touches no empty pixel — a keyline drawn around
+ *   something that was already inside an outline — is budgeted hard, at 12% of
+ *   painted pixels. This is the quantity the audit was actually looking at when
+ *   it said the sprites read as black lace, and it is the one that responds to
+ *   drawing better.
+ *
+ *   TOTAL INK keeps a loose 30% ceiling as a backstop. It cannot be pushed much
+ *   below that on a transparent sprite without abolishing the keyline, and the
+ *   keyline is the style: an outlined solid costs (2(w+h)-4)/(w*h), which is 15%
+ *   for a 24x20 machine but 25% for a 12x20 hanging suit, so a 64x36 frame
+ *   holding three or four objects that size against the bare shaft is a quarter
+ *   ink before a single detail is drawn. A flat 15-18% target is not reachable
+ *   by outlined art at this size, and anything reporting that it had been met
+ *   would be reporting that the outlines were gone.
+ *
+ * If a sprite is over either number, the fix is always fewer and bigger shapes,
+ * never a thinner outline.
  *
  * ---------------------------------------------------------------------------
  * THE PALETTE RAY
@@ -155,7 +180,6 @@ function tone(c, t = 0) {
 // ------------------------------------------------------------ working tones ---
 
 const CONC = tone(PAL.concrete);
-const CONC_DK = tone(PAL.concrete, -0.3);
 const STEEL = tone(PAL.steel);
 const STEEL_LIT = tone(PAL.steelLit);
 const DARK = tone(PAL.steelDark);
@@ -195,9 +219,19 @@ export const ROOM_IDS = [
  *
  * The highlight owns the whole top row and the whole left column; the shade is
  * inset one pixel from each, so the two never fight over a corner and the
- * shape reads as a box rather than as a frame with a stripe in it. Below 5px
- * on either axis there is no interior left to light — use ledge() or inner().
+ * shape reads as a box rather than as a frame with a stripe in it.
+ *
+ * SMALL SHAPES GET AN L, NOT A FRAME. A four-sided keyline costs 2(w+h)-4 of
+ * w*h, which is 15% of a 24x20 machine and 70% of a 5x4 chip — the same
+ * arithmetic that turned lib's box() into a black domino at small sizes. Below
+ * 6x5 the keyline drops to the bottom and right edges, which under light from
+ * the upper left are the two that read as silhouette; the top and left are
+ * already carrying a highlight, and ink on top of a highlight is a lost pixel.
+ * This is the compromise ledge() makes, applied consistently.
  */
+const MIN_FRAME_W = 6;
+const MIN_FRAME_H = 5;
+
 function solid(p, x, y, w, h, c, o = {}) {
   const lit = o.lit ?? 0.22;
   const dark = o.dark ?? -0.24;
@@ -209,7 +243,14 @@ function solid(p, x, y, w, h, c, o = {}) {
     if (h > 3) p.hline(x + 2, y + h - 2, w - 3, tone(c, dark));
     if (w > 3) p.vline(x + w - 2, y + 2, h - 3, tone(c, dark));
   }
-  if (ink) p.frame(x, y, w, h, ink);
+  if (!ink) return p;
+  if (w >= MIN_FRAME_W && h >= MIN_FRAME_H) p.frame(x, y, w, h, ink);
+  else {
+    p.hline(x, y, w, tone(c, lit + 0.14));
+    p.vline(x, y, h, tone(c, lit + 0.14));
+    p.hline(x, y + h - 1, w, ink);
+    p.vline(x + w - 1, y, h, ink);
+  }
   return p;
 }
 
@@ -441,6 +482,22 @@ function hazardBand(p, x, y, w, h, c = AMBER) {
   return p;
 }
 
+/**
+ * A line cut INTO a surface: a lid joint, a bedding plane in rock, a panel
+ * seam. Dark row on top, lit row beneath — the reverse of ledge(), and not a
+ * mistake. A shape standing proud takes the light on its top face; a groove is
+ * shadowed under its upper lip and lit on its lower one. An audit of the first
+ * draft found eleven places where a shelf edge had these two rows the wrong way
+ * round and the whole game read as lit from the floor; the way to keep that
+ * from coming back is for every deliberate inversion to say that it is one, so
+ * this is the only function in the file that puts dark above light.
+ */
+function seam(p, x, y, w, c, t = -0.5) {
+  p.hline(x, y, w, tone(c, t));
+  p.hline(x, y + 1, w, tone(c, Math.min(0.4, t + 0.62)));
+  return p;
+}
+
 /** A row of rivet highlights. */
 function rivets(p, x, y, n, step, c = STEEL_LIT) {
   for (let i = 0; i < n; i++) p.set(x + i * step, y, c);
@@ -509,11 +566,16 @@ function motes(p, x, y, w, h, c, n, seed) {
 // FURNITURE — the objects rooms are built out of.
 // =============================================================================
 
-/** A shipping crate: banded box with a stencil mark. */
-function crate(p, x, y, w, h, c = WOOD) {
-  solid(p, x, y, w, h, c, { lit: 0.22, dark: -0.26 });
+/**
+ * A shipping crate: banded box with a stencil mark. `inside:true` is for a
+ * crate racked in an already-outlined shell — rule 2 of the keyline budget —
+ * where tone alone separates it from its neighbours; six framed crates on one
+ * set of shelves was the single largest block of lace in the file.
+ */
+function crate(p, x, y, w, h, c = WOOD, o = {}) {
+  solid(p, x, y, w, h, c, { lit: 0.22, dark: -0.26, ink: o.inside ? null : undefined });
   if (h > 7) p.hline(x + 1, y + (h >> 1), w - 2, tone(c, -0.34));
-  if (w > 9 && h > 7) {
+  if (w > 9 && h > 5) {
     p.rect(x + 2, y + 2, 4, 3, tone(PAL.bone, -0.2));
     p.hline(x + 2, y + 2, 4, tone(PAL.bone, -0.05));
   }
@@ -533,14 +595,18 @@ function drum(p, x, y, w, h, c = tone(PAL.rust)) {
  * dithered spill under it. Three rows and one ink row, so a full-width run
  * costs one keyline instead of two.
  */
-function lampBar(p, x, y, w, c = AMBER, drop = 3) {
+function lampBar(p, x, y, w, c = AMBER, drop = 3, caps = true) {
   p.hline(x, y, w, PAL.ink);
   p.hline(x, y + 1, w, tone(PAL.rust, -0.3));
   p.hline(x + 1, y + 1, w - 2, tone(PAL.rust, -0.12));
   p.hline(x, y + 2, w, c);
   p.hline(x + 1, y + 2, w - 2, tone(c, 0.4));
-  p.set(x, y + 2, PAL.ink);
-  p.set(x + w - 1, y + 2, PAL.ink);
+  if (caps) {
+    // Closing the ends costs two ink pixels; leaving them open is what lets a
+    // full-width run cross the bay seam without a black notch every 64px.
+    p.vline(x, y + 1, 2, PAL.ink);
+    p.vline(x + w - 1, y + 1, 2, PAL.ink);
+  }
   if (drop) spill(p, x + 1, y + 3, w - 2, drop, tone(c, -0.5), 0.55);
   return p;
 }
@@ -557,13 +623,19 @@ function canopy(p, x, y, w, h, c = LEAF, seed = 'leaf') {
   const base = y + h;
   let i = 0;
   while (i < w) {
-    const cw = Math.min(3 + ((r() * 2) | 0), w - i);
-    const top = y + (r() < 0.45 ? 0 : 2);
+    const cw = Math.min(3 + ((r() * 3) | 0), w - i);
+    const lift = [0, 2, 3, 1, 2][(r() * 5) | 0];
+    const top = y + lift;
     p.rect(x + i, top, cw, base - top, c);
     p.hline(x + i, top, cw, tone(c, 0.3));
-    p.hline(x + i, top + 1, cw, tone(c, 0.1));
+    p.hline(x + i, top + 1, cw, tone(c, 0.08));
+    // A crown leaf above the clump, so the row is not a flat-topped bar chart.
+    if (lift > 0 && cw >= 4 && r() < 0.6) {
+      p.set(x + i + 1, top - 1, tone(c, 0.26));
+      p.set(x + i + 2, top - 1, tone(c, 0.06));
+    }
     if (i > 0) p.vline(x + i, top, base - top, tone(c, -0.36));
-    if (r() < 0.3) p.set(x + i + 1, base - 2, tone(c, -0.28));
+    if (r() < 0.4) p.set(x + i + 1, base - 2, tone(c, -0.28));
     i += cw;
   }
   p.hline(x, base, w, PAL.ink);
@@ -575,8 +647,13 @@ function canopy(p, x, y, w, h, c = LEAF, seed = 'leaf') {
  * is already the boundary, and a 1px ink separator on a 3px repeat turns a
  * bookshelf into a picket fence — and one deliberately lighter spine per shelf
  * so the eye has somewhere to land.
+ *
+ * The line under the shelf is a shadow tone rather than ink: three shelves of
+ * books live inside an outlined case, so by rule 2 they get no keyline of their
+ * own, and 28px of ink under each was the case's own outline drawn three more
+ * times.
  */
-function spines(p, x, y, w, h, seed = 'books') {
+function spines(p, x, y, w, h, seed = 'books', under = tone(PAL.rust, -0.72)) {
   const r = rng(seed);
   const tones = [
     tone(PAL.rust, -0.2), tone(PAL.verdigris, -0.3),
@@ -595,7 +672,7 @@ function spines(p, x, y, w, h, seed = 'books') {
     i += bw;
     k++;
   }
-  p.hline(x, y + h, w, PAL.ink);
+  p.hline(x, y + h, w, under);
   return p;
 }
 
@@ -635,8 +712,11 @@ function longarmFlat(p, x, y, w) {
  * fractional resample and reads as a disc of grey noise.
  */
 function target(p, cx, cy, r) {
-  const bone = tone(PAL.bone, -0.06);
-  const boneLit = tone(PAL.bone, 0.0);
+  // PAL.bone is the top of its own ray, so shading bone toward bone is a no-op
+  // and there is no such thing as a brighter white here. The lit face is bone
+  // itself and the contrast comes from darkening everything around it.
+  const boneLit = PAL.bone;
+  const bone = tone(PAL.bone, -0.12);
   const red = tone(PAL.rust, 0.02);
   for (let j = -r; j <= r; j++) {
     for (let i = -r; i <= r; i++) {
@@ -660,19 +740,26 @@ function target(p, cx, cy, r) {
  * and the two patterns cancelled into static. Solid masses, flat ground.
  */
 function impeller(p, cx, cy, r, c = STEEL) {
-  disc(p, cx, cy, r, tone(PAL.deep, 0.03));
-  const seg = (Math.PI * 2) / 3;
+  disc(p, cx, cy, r, tone(PAL.deep, -0.2));
+  const TAU = Math.PI * 2;
+  const seg = TAU / 3;
+  // One flat tone per blade, chosen by which blade it is rather than by where
+  // the pixel is. Shading each blade across its own width splits it in two and
+  // the fan reads as a globe with continents on it, which is what happened.
+  const face = [tone(c, 0.32), tone(c, 0.0), tone(c, -0.3)];
   for (let j = -r; j <= r; j++) {
     for (let i = -r; i <= r; i++) {
       const d = Math.sqrt(i * i + j * j);
-      if (d > r - 1.4 || d < 1.6) continue;
-      let a = Math.atan2(j, i) - d * 0.14;
-      a = ((a % seg) + seg) % seg;
-      if (a < seg * 0.42) p.set(cx + i, cy + j, i + j < 0 ? tone(c, 0.26) : tone(c, -0.06));
-      else if (a < seg * 0.5) p.set(cx + i, cy + j, tone(c, -0.5));
+      if (d > r - 1.2 || d < 1.4) continue;
+      const raw = Math.atan2(j, i) - d * 0.16;
+      const norm = ((raw % TAU) + TAU) % TAU;
+      const k = Math.floor(norm / seg) % 3;
+      const a = norm - k * seg;
+      if (a < seg * 0.56) p.set(cx + i, cy + j, face[k]);
+      else if (a < seg * 0.7) p.set(cx + i, cy + j, tone(c, -0.62));
     }
   }
-  disc(p, cx, cy, Math.max(2, (r * 0.24) | 0), STEEL_LIT, null);
+  disc(p, cx, cy, Math.max(2, (r * 0.26) | 0), STEEL_LIT, null);
   return p;
 }
 
@@ -721,40 +808,49 @@ function drawerBank(p, x, y, w, h, cols, rows, c = DARK) {
  * The pillow is NOT framed. A 1px frame on a 5x3 pillow leaves a 3x1 interior,
  * which turns the brightest and most identifying pixel group on a bed into a
  * black rectangle; it gets ink on its trailing edge only.
+ *
+ * Row y+th-1 is the bed's contact keyline, so callers place a bed with that row
+ * ON the room's floor line — the headboard ends there too, and the legs drop
+ * into the floor plate below it. `th` exists because a bed drawn 5 rows deep is
+ * right in a 36-row fixture and is a stripe on the floor in an 88-row cutaway.
  */
-function bed(p, x, y, w, blanket = tone(PAL.denim, -0.24)) {
+function bed(p, x, y, w, { blanket = tone(PAL.denim, -0.24), th = 5, head = 5 } = {}) {
   const hb = Math.max(4, (w * 0.13) | 0);
-  solid(p, x, y - 5, hb, 11, IRON, { lit: 0.26, dark: -0.28 });
-  p.rect(x + hb, y, w - hb, 5, IRON);
+  const bt = th - 2;
+  solid(p, x, y - head, hb, head + th, IRON, { lit: 0.26, dark: -0.28 });
+  p.rect(x + hb, y, w - hb, th, IRON);
   p.hline(x + hb, y, w - hb, tone(IRON, 0.3));
   const pw = Math.max(5, (w * 0.24) | 0);
-  p.rect(x + hb, y + 1, pw, 3, tone(PAL.bone, -0.16));
+  p.rect(x + hb, y + 1, pw, bt, tone(PAL.bone, -0.16));
   p.hline(x + hb, y + 1, pw, PAL.bone);
-  p.vline(x + hb + pw, y + 1, 3, PAL.ink);
-  p.rect(x + hb + pw + 1, y + 1, w - hb - pw - 2, 3, blanket);
+  p.vline(x + hb + pw, y + 1, bt, tone(PAL.bone, -0.7));
+  p.rect(x + hb + pw + 1, y + 1, w - hb - pw - 2, bt, blanket);
   p.hline(x + hb + pw + 1, y + 1, w - hb - pw - 2, tone(blanket, 0.28));
-  p.hline(x + hb + pw + 1, y + 3, w - hb - pw - 2, tone(blanket, -0.3));
-  p.hline(x + hb, y + 4, w - hb, PAL.ink);
-  p.vline(x + hb + 1, y + 5, 3, PAL.ink);
-  p.vline(x + w - 2, y + 5, 3, PAL.ink);
+  p.hline(x + hb + pw + 1, y + bt, w - hb - pw - 2, tone(blanket, -0.3));
+  p.hline(x + hb, y + th - 1, w - hb, PAL.ink);
+  p.vline(x + hb + 1, y + th, 2, PAL.ink);
+  p.vline(x + w - 2, y + th, 2, PAL.ink);
   return p;
 }
 
-/** A low military cot: bare frame, rolled blanket at the head. */
+/**
+ * A low military cot: bare frame, rolled blanket at the head, kit bag at the
+ * foot. Row y+4 is its contact keyline, so a caller places it with y+4 on the
+ * room's floor line and the legs drop into the plate below.
+ */
 function cot(p, x, y, w, blanket = tone(PAL.rust, -0.3)) {
-  p.rect(x, y, w, 4, IRON);
+  p.rect(x, y, w, 5, IRON);
   p.hline(x, y, w, tone(IRON, 0.3));
-  p.rect(x + 1, y + 1, w - 2, 2, CLOTH);
-  p.hline(x + 1, y + 1, w - 2, tone(PAL.bone, -0.04));
-  p.rect(x + 1, y + 1, 5, 2, blanket);
-  p.hline(x + 1, y + 1, 5, tone(blanket, 0.3));
-  if (w >= 18) {
-    p.rect(x + w - 7, y + 1, 6, 2, blanket);
-    p.hline(x + w - 7, y + 1, 6, tone(blanket, 0.3));
-  }
-  p.hline(x, y + 4, w, PAL.ink);
-  p.vline(x + 1, y + 5, 3, PAL.ink);
-  p.vline(x + w - 2, y + 5, 3, PAL.ink);
+  p.rect(x + 1, y + 1, w - 2, 3, tone(PAL.bone, -0.36));
+  p.hline(x + 1, y + 1, w - 2, tone(PAL.bone, -0.2));
+  p.hline(x + 1, y + 3, w - 2, tone(PAL.bone, -0.54));
+  p.rect(x + 1, y, 5, 4, blanket);
+  p.hline(x + 1, y, 5, tone(blanket, 0.3));
+  p.hline(x + 1, y + 3, 5, tone(blanket, -0.34));
+  p.hline(x, y + 4, w, tone(IRON, -0.4));
+  p.hline(x, y + 5, w, PAL.ink);
+  p.vline(x + 1, y + 6, 2, PAL.ink);
+  p.vline(x + w - 2, y + 6, 2, PAL.ink);
   return p;
 }
 
@@ -774,25 +870,70 @@ function bunkStack(p, x, y, w, h, blanket = tone(PAL.denim, -0.24)) {
     p.rect(x + 3 + pw, y + dy + 1, w - 5 - pw, bh - 2, blanket);
     p.hline(x + 3 + pw, y + dy + 1, w - 5 - pw, tone(blanket, 0.3));
     p.hline(x + 3 + pw, y + dy + bh - 2, w - 5 - pw, tone(blanket, -0.32));
-    p.vline(x + 2 + pw, y + dy + 1, bh - 2, PAL.ink);
+    p.vline(x + 2 + pw, y + dy + 1, bh - 2, tone(PAL.bone, -0.66));
     p.hline(x + 2, y + dy + bh - 1, w - 4, PAL.ink);
   }
+  // The ladder rung between the berths is a bright bar on its own shadow, not
+  // on a keyline: it is inside the recess, and the recess is already outlined.
   const mid = y + 1 + bh + (((h - 2 - bh * 2) >> 1) | 0);
   p.hline(x + 2, mid, w - 4, STEEL_LIT);
-  p.hline(x + 2, mid + 1, w - 4, PAL.ink);
+  p.hline(x + 2, mid + 1, w - 4, tone(STEEL, -0.55));
   return p;
 }
 
-/** A hanging env-suit. Amber, because amber does all the warm work. */
+/**
+ * A hanging env-suit. Amber, because amber does all the warm work.
+ *
+ * All the shaping is done in tone inside one outline: a yoke seam under the
+ * shoulders, a chest pocket, the regulator, a rust belt, an inseam and dark
+ * boots. Splitting the torso and legs into two outlined shapes would read no
+ * better and would cost a second keyline on the tallest object in the set —
+ * without the shaping it is a flat amber slab, which is what it was.
+ */
 function suitHang(p, x, y, w, h) {
   const hx = x + ((w - 5) >> 1);
-  solid(p, hx, y, 5, 4, STEEL_LIT, { lit: 0.25, dark: -0.28 });
-  p.rect(hx + 1, y + 1, 3, 2, GLASS);
-  p.hline(hx + 1, y + 1, 3, tone(PAL.verdigris, -0.2));
-  solid(p, x, y + 4, w, h - 4, AMBER, { lit: 0.2, dark: -0.32 });
-  p.hline(x + 1, y + 6, w - 2, tone(AMBER, -0.44));
-  p.hline(x + 1, y + h - 5, w - 2, tone(AMBER, -0.44));
-  p.rect(x + 2, y + 8, 3, 3, tone(AMBER, -0.3));
+  p.hline(hx + 1, y, 3, PAL.ink);
+  p.rect(hx, y + 1, 5, 3, STEEL_LIT);
+  p.hline(hx + 1, y + 1, 3, tone(PAL.steelLit, 0.2));
+  p.rect(hx + 1, y + 2, 3, 2, GLASS);
+  p.hline(hx + 1, y + 2, 3, tone(PAL.verdigris, -0.2));
+  p.set(hx, y + 1, PAL.ink);
+  p.set(hx + 4, y + 1, PAL.ink);
+  p.vline(hx, y + 2, 2, PAL.ink);
+  p.vline(hx + 4, y + 2, 2, PAL.ink);
+
+  // The silhouette is drawn row by row rather than as a box, because the whole
+  // difference between a hung suit and an amber wardrobe is the outline:
+  // chamfered shoulders, a torso, a step in at the waist, narrower legs.
+  const ty = y + 4;
+  const bh = h - 4;
+  const waist = (bh * 0.44) | 0;
+  const legIn = 2;
+  for (let j = 0; j < bh; j++) {
+    const in0 = Math.max(j < 2 ? 1 : 0, j > waist ? legIn : 0);
+    const x0 = x + in0;
+    const x1 = x + w - 1 - in0;
+    p.hline(x0, ty + j, x1 - x0 + 1, AMBER);
+    p.set(x0 + 1, ty + j, tone(AMBER, 0.2));
+    p.set(x1 - 1, ty + j, tone(AMBER, -0.32));
+    p.set(x0, ty + j, PAL.ink);
+    p.set(x1, ty + j, PAL.ink);
+  }
+  p.hline(x + 1, ty, w - 2, PAL.ink);
+  p.hline(x + 2, ty + 1, w - 4, tone(AMBER, 0.3));
+  p.hline(x + legIn, ty + bh - 1, w - legIn * 2, PAL.ink);
+  p.hline(x, ty + waist + 1, legIn + 1, PAL.ink);
+  p.hline(x + w - 1 - legIn, ty + waist + 1, legIn + 1, PAL.ink);
+
+  p.hline(x + 1, ty + 3, w - 2, tone(AMBER, -0.44));
+  inner(p, x + 2, ty + 5, 4, 4, tone(AMBER, -0.3));
+  inner(p, x + w - 5, ty + 5, 3, 3, tone(PAL.verdigris, -0.16));
+  p.vline(hx + 2, ty, 2, tone(STEEL, -0.36));
+  p.hline(x + 1, ty + waist - 1, w - 2, tone(PAL.rust, -0.24));
+  p.hline(x + 1, ty + waist, w - 2, tone(PAL.rust, -0.56));
+  p.vline(x + (w >> 1), ty + waist + 2, bh - waist - 5, tone(AMBER, -0.52));
+  p.rect(x + legIn + 1, ty + bh - 4, w - legIn * 2 - 2, 3, tone(PAL.rust, -0.5));
+  p.hline(x + legIn + 1, ty + bh - 4, w - legIn * 2 - 2, tone(PAL.rust, -0.34));
   return p;
 }
 
@@ -800,7 +941,7 @@ function suitHang(p, x, y, w, h) {
 function rails(p, x, y, w) {
   p.hline(x, y, w, STEEL_LIT);
   p.hline(x, y + 1, w, PAL.ink);
-  for (let i = x + (4 - (x % 4)); i < x + w; i += 4) p.rect(i, y + 2, 2, 1, RUST_DK);
+  for (let i = x + ((4 - (x % 4)) % 4); i < x + w; i += 4) p.rect(i, y + 2, 2, 1, RUST_DK);
   return p;
 }
 
@@ -856,8 +997,7 @@ function rockface(p, x, y, w, h, seed = 'rock') {
     let i = 3 + ((r() * 4) | 0);
     while (i < w - 4) {
       const seg = 4 + ((r() * 9) | 0);
-      p.hline(x + i, y + j, Math.min(seg, w - 4 - i), tone(base, -0.45));
-      p.hline(x + i, y + j + 1, Math.min(seg, w - 4 - i), tone(base, 0.18));
+      seam(p, x + i, y + j, Math.min(seg, w - 4 - i), base, -0.45);
       i += seg + 2 + ((r() * 4) | 0);
     }
   }
@@ -872,22 +1012,32 @@ function rockface(p, x, y, w, h, seed = 'rock') {
   return p;
 }
 
-/** A sheriff's star on a backing disc. Arms scale with r — a fixed 5px glyph
- *  in a 21px disc is a blank plate with a smudge in the middle. */
+/**
+ * A sheriff's star on a backing disc — the only thing that identifies the
+ * sheriff's office, since a desk, a noticeboard and a filing cabinet are
+ * generic. Rasterised from the five-pointed polygon at whatever r it is given:
+ * a fixed 5px glyph vanished inside a 21px disc, and a thin plus with four
+ * corner pixels — which is what replaced it — reads as a sunburst, not a badge.
+ */
 function star(p, cx, cy, r, c = AMBER) {
   disc(p, cx, cy, r, tone(PAL.bone, -0.3));
-  const arm = Math.max(2, r - 1);
-  const dia = Math.max(1, Math.round(r * 0.55));
-  const th = r >= 8 ? 1 : 0;
-  for (let d = -th; d <= th; d++) {
-    p.hline(cx - arm, cy + d, arm * 2 + 1, c);
-    p.vline(cx + d, cy - arm, arm * 2 + 1, c);
+  const pts = [];
+  for (let k = 0; k < 10; k++) {
+    const a = -Math.PI / 2 + (k * Math.PI) / 5;
+    const rad = k % 2 ? r * 0.46 : r - 0.5;
+    pts.push([Math.cos(a) * rad, Math.sin(a) * rad]);
   }
-  for (let k = 1; k <= dia; k++) {
-    p.set(cx - k, cy - k, c); p.set(cx + k, cy - k, c);
-    p.set(cx - k, cy + k, c); p.set(cx + k, cy + k, c);
+  for (let j = -r; j <= r; j++) {
+    for (let i = -r; i <= r; i++) {
+      let inside = false;
+      for (let a = 0, b = 9; a < 10; b = a++) {
+        const [xa, ya] = pts[a];
+        const [xb, yb] = pts[b];
+        if ((ya > j) !== (yb > j) && i < ((xb - xa) * (j - ya)) / (yb - ya) + xa) inside = !inside;
+      }
+      if (inside) p.set(cx + i, cy + j, i + j < -r * 0.35 ? tone(c, 0.28) : i + j > r * 0.55 ? tone(c, -0.24) : c);
+    }
   }
-  p.rect(cx - 1, cy - 1, 2, 2, tone(c, 0.45));
   return p;
 }
 
@@ -906,27 +1056,34 @@ const FX_LINE = 32; // the ink contact line: everything in the room stands on it
  * collar spacing is 16 because 16 divides 64 — at 19 the run stuttered at
  * every bay seam and clipped a collar in half at x=63.
  *
- * Rows 0-1 are left clear because the renderer paints a lamp bar and a glow
- * band over them, which is also why the conduit's keyline goes underneath it:
- * an ink row at the top of the frame would sit inside that wash and be lost,
- * while the highlight reads as the lamp catching the pipe.
+ * The conduit's keyline goes underneath it, never on top: the renderer washes
+ * the top rows of every fixture with lamp light, so an ink row up there sits
+ * inside the wash and is lost, while a highlight reads as the lamp catching the
+ * pipe. It is four rows deep rather than three for the same reason a keyline is
+ * only worth drawing around something big — one ink row serving four rows of
+ * duct is half the cost of one serving two.
  *
  * Row 32 is ink and is the contact line for the whole sprite — the keyline
  * every object standing on the floor would otherwise have to draw for itself.
  * A citizen sprite's feet land on row 33, the plate's lit face.
+ *
+ * So an object standing on the floor ENDS ON ROW 32, not on row 31. Ending a
+ * row short leaves its own bottom keyline sitting directly above this one: a
+ * 2px black band under every machine in the silo, and, across the set, several
+ * hundred pixels of keyline drawn twice.
  */
 function ground(p, seed, o = {}) {
   const W = p.w;
   const H = p.h;
-  p.hline(0, H - 4, W, PAL.ink);
-  p.rect(0, H - 3, W, 3, CONC);
-  p.hline(0, H - 3, W, tone(CONC, 0.28));
+  p.hline(0, FX_LINE, W, PAL.ink);
+  p.rect(0, FX_LINE + 1, W, H - FX_LINE - 1, CONC);
+  p.hline(0, FX_LINE + 1, W, tone(CONC, 0.28));
   p.hline(0, H - 1, W, tone(CONC, -0.24));
   for (let i = o.seam ?? 8; i < W; i += 16) p.vline(i, H - 2, 2, tone(CONC, -0.36));
-  p.speckle(0, H - 3, W, 3, RUST_DK, o.grime ?? 0.05, seed + ':grime');
+  p.speckle(0, FX_LINE + 1, W, H - FX_LINE - 1, RUST_DK, o.grime ?? 0.05, seed + ':grime');
   if (o.conduit !== false) {
-    pipeh(p, 0, 2, W, 3, o.conduitColor ?? DARK);
-    for (let i = 8; i < W; i += 16) collarH(p, i, 2, 3);
+    pipeh(p, 0, 1, W, 4, o.conduitColor ?? DARK);
+    for (let i = 8; i < W; i += 16) collarH(p, i, 1, 4);
   }
   return p;
 }
@@ -988,7 +1145,7 @@ function vaultShell(p, seed, o = {}) {
   const W = p.w;
   const H = p.h;
   const chamfer = o.chamfer ?? 14;
-  const floorH = o.floor ?? 10;
+  const floorH = o.floor ?? CUT_H - CUT_FLOOR;
   const wall = o.wall ?? CONC;
   const top = H - floorH;
 
@@ -1066,14 +1223,16 @@ const FIXTURE_ART = {
     for (let i = 0; i < 2; i++) {
       const x = 2 + i * 31;
       pipev(p, x + 8, 10, 4, 2, tone(PAL.rust, -0.2));
-      solid(p, x, 13, 29, 19, IRON, { lit: 0.26, dark: -0.3 });
-      port(p, x + 2, 16, 13, 9, AMBER_DIM);
-      p.rect(x + 4, 18, 9, 5, AMBER);
+      solid(p, x, 13, 29, 20, IRON, { lit: 0.26, dark: -0.3 });
+      port(p, x + 2, 16, 13, 10, AMBER_DIM);
+      p.rect(x + 4, 18, 9, 6, AMBER);
       p.hline(x + 4, 18, 9, tone(AMBER, 0.42));
-      disc(p, x + 21, 21, 5, tone(STEEL, -0.12));
+      // The flywheel's rim is a dark tone, not a keyline: it lives inside the
+      // block's outline, so an ink annulus here is a ring of lace.
+      disc(p, x + 21, 21, 5, tone(STEEL, -0.12), tone(IRON, -0.3));
       ring(p, x + 21, 21, 2, tone(STEEL, -0.44));
-      inner(p, x + 2, 27, 25, 3, tone(IRON, -0.2));
-      rivets(p, x + 3, 28, 7, 4, tone(IRON, 0.34));
+      inner(p, x + 2, 28, 25, 3, tone(IRON, -0.2));
+      rivets(p, x + 3, 29, 7, 4, tone(IRON, 0.34));
     }
   },
 
@@ -1105,18 +1264,20 @@ const FIXTURE_ART = {
     ground(p, s, { conduitColor: tone(PAL.verdigris, -0.34) });
     pipeh(p, 0, 8, FX_W, 3, STEEL);
     for (let i = 8; i < FX_W; i += 16) collarH(p, i, 8, 3);
-    const a = tube(p, 1, 14, 30, 18, STEEL);
-    port(p, a.x, 17, a.w, 12, tone(PAL.verdigris, -0.28));
+    const a = tube(p, 1, 14, 30, 19, STEEL);
+    port(p, a.x, 17, a.w, 13, tone(PAL.verdigris, -0.28));
     p.hline(a.x + 1, 20, a.w - 2, tone(PAL.verdigris, 0.44));
     p.hline(a.x + 1, 21, a.w - 2, tone(PAL.verdigris, 0.14));
-    motes(p, a.x + 1, 23, a.w - 2, 5, tone(PAL.verdigris, 0.34), 5, s + ':bub');
-    const b = tube(p, 34, 17, 22, 15, STEEL);
-    port(p, b.x, 20, b.w, 9, tone(PAL.verdigris, -0.28));
+    motes(p, a.x + 1, 23, a.w - 2, 6, tone(PAL.verdigris, 0.34), 5, s + ':bub');
+    const b = tube(p, 34, 17, 22, 16, STEEL);
+    port(p, b.x, 20, b.w, 10, tone(PAL.verdigris, -0.28));
     p.hline(b.x + 1, 23, b.w - 2, tone(PAL.verdigris, 0.44));
     pipev(p, 16, 12, 3, 2, STEEL);
     pipev(p, 44, 12, 6, 2, STEEL);
-    wheel(p, 60, 17, 4);
-    pipev(p, 59, 21, 11, 2, STEEL);
+    // The return riser: a full-height standpipe off the main with its handwheel
+    // where the two meet, rather than a wheel on a stick.
+    pipev(p, 58, 12, 21, 3, STEEL);
+    wheel(p, 59, 16, 4);
     motes(p, 6, 10, 12, 3, tone(PAL.bone, -0.3), 4, s + ':vapour');
   },
 
@@ -1126,7 +1287,7 @@ const FIXTURE_ART = {
     ground(p, s, { conduit: false });
     for (let k = 0; k < 2; k++) {
       const y = 3 + k * 14;
-      lampBar(p, 0, y, FX_W, AMBER, 2);
+      lampBar(p, 0, y, FX_W, AMBER, 2, false);
       canopy(p, 0, y + 6, FX_W, 5, LEAF, `${s}:row${k}`);
       ledge(p, 0, y + 11, FX_W, 2, tone(STEEL, -0.22), { caps: false });
     }
@@ -1143,11 +1304,11 @@ const FIXTURE_ART = {
     for (let i = 0; i < 2; i++) {
       const x = 1 + i * 32;
       pipev(p, x + 14, 10, 3, 2, STEEL);
-      solid(p, x + 8, 12, 14, 5, DARK, { lit: 0.26, dark: -0.3 });
-      const v = tube(p, x, 17, 30, 15, tone(STEEL, -0.3));
-      port(p, v.x, 20, v.w, 9, tone(SLUDGE, -0.2));
+      solid(p, x + 8, 12, 14, 6, DARK, { lit: 0.26, dark: -0.3 });
+      const v = tube(p, x, 17, 30, 16, tone(STEEL, -0.3));
+      port(p, v.x, 20, v.w, 10, tone(SLUDGE, -0.2));
       p.hline(v.x + 1, 23, v.w - 2, tone(SLUDGE, 0.26));
-      motes(p, v.x + 1, 24, v.w - 2, 4, tone(SLUDGE, 0.44), 5, `${s}:b${i}`);
+      motes(p, v.x + 1, 25, v.w - 2, 4, tone(SLUDGE, 0.44), 5, `${s}:b${i}`);
       tap(p, x + 26, 24);
     }
   },
@@ -1157,7 +1318,7 @@ const FIXTURE_ART = {
   air_filtration(p, s) {
     ground(p, s, { conduit: false });
     ledge(p, 0, 2, FX_W, 5, DARK, { caps: false });
-    for (let i = 6; i < FX_W; i += 12) p.vline(i, 3, 4, tone(DARK, -0.35));
+    for (let i = 8; i < FX_W; i += 16) p.vline(i, 3, 4, tone(DARK, -0.35));
     solid(p, 1, 10, 30, 22, DARK, { lit: 0.22, dark: -0.26 });
     impeller(p, 16, 21, 9, STEEL);
     pipev(p, 15, 8, 3, 2, STEEL);
@@ -1177,11 +1338,11 @@ const FIXTURE_ART = {
   residences(p, s) {
     ground(p, s);
     ledge(p, 0, 6, FX_W, 3, DARK, { caps: false });
-    bunkStack(p, 1, 12, 23, 20);
-    bunkStack(p, 40, 12, 23, 20);
-    solid(p, 26, 12, 12, 20, DARK, { lit: 0.2, dark: -0.26 });
-    inner(p, 28, 15, 8, 15, tone(STEEL, -0.26));
-    p.vline(31, 15, 15, tone(STEEL, -0.46));
+    bunkStack(p, 1, 12, 23, 21);
+    bunkStack(p, 40, 12, 23, 21);
+    solid(p, 26, 12, 12, 21, DARK, { lit: 0.2, dark: -0.26 });
+    inner(p, 28, 15, 8, 16, tone(STEEL, -0.26));
+    p.vline(31, 15, 16, tone(STEEL, -0.46));
     p.set(30, 23, STEEL_LIT);
     p.set(32, 23, STEEL_LIT);
     inner(p, 28, 10, 8, 2, AMBER);
@@ -1194,7 +1355,7 @@ const FIXTURE_ART = {
     ground(p, s);
     ledge(p, 0, 6, FX_W, 2, tone(PAL.rust, -0.4), { caps: false });
     lampBar(p, 2, 9, 26, AMBER, 3);
-    solid(p, 1, 17, 28, 15, WOOD, { lit: 0.24, dark: -0.28 });
+    solid(p, 1, 17, 28, 16, WOOD, { lit: 0.24, dark: -0.28 });
     p.rect(2, 18, 26, 2, tone(PAL.bone, -0.3));
     p.hline(2, 18, 26, tone(PAL.bone, -0.05));
     for (let k = 0; k < 3; k++) inner(p, 4 + k * 8, 21, 6, 4, tone(STEEL, 0.06));
@@ -1213,22 +1374,33 @@ const FIXTURE_ART = {
 
   // Two beds under a curtain rail, the vitals monitor, and the drug cabinet
   // with its red cross — the one prop that says clinic and not dormitory.
+  //
+  // The instrument trolley is on the LEFT and the beds are pushed right,
+  // because the renderer paints the level pips at 60% bone across the
+  // bottom-left strip and a bed puts its pillow — the palest thing in the
+  // room — exactly there. Dark kit under the pips, pale linen away from them.
   clinic(p, s) {
     ground(p, s);
     ledge(p, 0, 6, FX_W, 2, STEEL, { caps: false });
-    for (let i = 5; i < FX_W; i += 9) p.set(i, 6, tone(STEEL, -0.5));
-    deskPanel(p, 2, 11, 18, 12, LEAF);
-    solid(p, 47, 10, 15, 14, tone(PAL.bone, -0.32), { lit: 0.22, dark: -0.26 });
-    p.rect(53, 13, 3, 8, tone(PAL.rust, 0.02));
-    p.rect(50, 16, 9, 3, tone(PAL.rust, 0.02));
-    p.hline(48, 25, 13, tone(PAL.bone, -0.5));
-    p.hline(48, 26, 13, PAL.ink);
-    bed(p, 1, 27, 22, tone(PAL.verdigris, 0.02));
-    bed(p, 26, 27, 20, tone(PAL.verdigris, 0.02));
-    p.vline(24, 12, 20, PAL.ink);
-    p.vline(23, 12, 20, STEEL_LIT);
-    inner(p, 22, 9, 5, 4, tone(PAL.bone, -0.12));
-    p.rect(23, 10, 3, 2, tone(PAL.verdigris, 0.16));
+    for (let i = 4; i < FX_W; i += 8) p.set(i, 6, tone(STEEL, -0.5));
+    deskPanel(p, 1, 10, 18, 13, LEAF);
+    solid(p, 1, 25, 15, 8, DARK, { lit: 0.2, dark: -0.26 });
+    p.hline(3, 28, 11, tone(STEEL, 0.1));
+    p.hline(3, 29, 11, tone(STEEL, -0.5));
+    for (let k = 0; k < 3; k++) p.set(4 + k * 4, 27, tone(PAL.bone, -0.2));
+    disc(p, 4, 32, 2, tone(PAL.deep, 0.04), null);
+    disc(p, 13, 32, 2, tone(PAL.deep, 0.04), null);
+    solid(p, 45, 10, 17, 15, tone(PAL.bone, -0.32), { lit: 0.22, dark: -0.26 });
+    p.rect(52, 13, 3, 9, tone(PAL.rust, 0.02));
+    p.rect(49, 16, 9, 3, tone(PAL.rust, 0.02));
+    p.hline(46, 26, 15, tone(PAL.bone, -0.5));
+    p.hline(46, 27, 15, PAL.ink);
+    bed(p, 18, 28, 21, { blanket: tone(PAL.verdigris, 0.02) });
+    bed(p, 41, 28, 22, { blanket: tone(PAL.verdigris, 0.02) });
+    p.vline(40, 12, 20, PAL.ink);
+    p.vline(39, 12, 20, STEEL_LIT);
+    inner(p, 38, 9, 5, 4, tone(PAL.bone, -0.12));
+    p.rect(39, 10, 3, 2, tone(PAL.verdigris, 0.16));
   },
 
   // Fume hood, distillation column, and the bench that says what this room is
@@ -1237,13 +1409,13 @@ const FIXTURE_ART = {
     ground(p, s);
     pipeh(p, 0, 6, FX_W, 2, tone(PAL.verdigris, -0.34));
     for (let i = 8; i < FX_W; i += 16) collarH(p, i, 6, 2);
-    solid(p, 1, 10, 26, 22, DARK, { lit: 0.22, dark: -0.26 });
+    solid(p, 1, 10, 26, 23, DARK, { lit: 0.22, dark: -0.26 });
     port(p, 3, 13, 22, 14, GLASS);
     inner(p, 6, 17, 5, 9, tone(PAL.verdigris, 0.1));
     inner(p, 15, 19, 5, 7, tone(PAL.rust, 0.1));
     motes(p, 5, 15, 18, 3, tone(PAL.bone, -0.36), 5, s + ':fume');
-    inner(p, 3, 28, 22, 3, tone(DARK, -0.3));
-    const col = tube(p, 30, 8, 11, 24, STEEL);
+    inner(p, 3, 29, 22, 3, tone(DARK, -0.3));
+    const col = tube(p, 30, 8, 11, 25, STEEL);
     for (const y of [13, 19, 25]) {
       p.hline(col.x - 1, y, col.w + 2, tone(STEEL, 0.2));
       p.hline(col.x - 1, y + 1, col.w + 2, tone(STEEL, -0.44));
@@ -1295,33 +1467,68 @@ const FIXTURE_ART = {
     sparks(p, 16, 20, 6, 4, 4, s + ':grind');
   },
 
-  // Hopper, the conveyor of salvage that runs the length of the floor, the
-  // crusher at the end of it, and the fuel drum it decants into.
+  // Salvage in at the hopper, along the belt that runs the length of the floor,
+  // into the crusher — and the fuel it renders down standing under the belt,
+  // because this room is the only fuel source above the Deeps and the art had
+  // never said so.
   recycling(p, s) {
     ground(p, s);
-    solid(p, 1, 6, 22, 8, DARK, { lit: 0.2, dark: -0.26 });
-    inner(p, 3, 8, 18, 4, tone(DARK, -0.3));
-    solid(p, 5, 14, 14, 5, DARK, { lit: 0.2, dark: -0.26 });
     const r = rng(s + ':junk');
+    const junk = () => [tone(PAL.rust, -0.06), tone(STEEL, -0.14), tone(PAL.verdigris, -0.3), WOOD][(r() * 4) | 0];
+    // The intake hopper, heaped over its rim and tapering into the chute. A
+    // rectangle with a rectangle inside it — which is what this was — reads as
+    // a picture frame, and said nothing about what the room takes in.
     for (let k = 0; k < 5; k++) {
-      const x = 3 + k * 9;
-      const w = 4 + ((r() * 3) | 0);
-      const h = 3 + ((r() * 3) | 0);
-      const c = [tone(PAL.rust, -0.1), tone(STEEL, -0.15), tone(PAL.verdigris, -0.3)][(r() * 3) | 0];
-      solid(p, x, 22 - h, w, h, c, { lit: 0.24, dark: -0.28 });
+      const w = 4 + ((r() * 4) | 0);
+      const x = 2 + ((r() * 15) | 0);
+      solid(p, x, 4 + ((r() * 3) | 0), Math.min(w, 22 - x), 7, junk(), { lit: 0.24, dark: -0.28 });
+    }
+    for (let j = 0; j < 13; j++) {
+      const in0 = j < 6 ? 0 : Math.min(7, (j - 5) * 2);
+      const x0 = 1 + in0;
+      const x1 = 22 - in0;
+      p.hline(x0, 9 + j, x1 - x0 + 1, tone(STEEL, -0.44));
+      p.set(x0 + 1, 9 + j, tone(STEEL, -0.16));
+      p.set(x1 - 1, 9 + j, tone(STEEL, -0.58));
+      p.set(x0, 9 + j, PAL.ink);
+      p.set(x1, 9 + j, PAL.ink);
+    }
+    p.hline(1, 8, 22, PAL.ink);
+    p.hline(2, 9, 20, tone(STEEL, -0.1));
+    for (let k = 0; k < 3; k++) {
+      const w = 3 + ((r() * 3) | 0);
+      const x = 4 + ((r() * 12) | 0);
+      solid(p, x, 10, Math.min(w, 20 - x), 4, junk(), { lit: 0.24, dark: -0.28 });
+    }
+    // The belt, and what is riding it.
+    for (let k = 0; k < 4; k++) {
+      const w = 4 + ((r() * 4) | 0);
+      const h = 3 + ((r() * 4) | 0);
+      solid(p, 18 + k * 7, 22 - h, w, h, junk(), { lit: 0.24, dark: -0.28 });
     }
     ledge(p, 0, 22, FX_W, 4, DARK, { caps: false });
-    for (let i = 2; i < FX_W; i += 6) {
+    for (let i = 3; i < FX_W; i += 8) {
       p.vline(i, 23, 3, STEEL_LIT);
       p.vline(i + 1, 23, 3, tone(STEEL, -0.44));
     }
-    solid(p, 45, 8, 18, 19, IRON, { lit: 0.22, dark: -0.26 });
-    for (let j = 12; j < 24; j += 4) {
-      p.hline(47, j, 14, tone(STEEL, 0.16));
-      p.hline(47, j + 1, 14, tone(STEEL, -0.46));
+    // The crusher: a lit mouth with the rollers in it, not a cabinet.
+    solid(p, 44, 7, 20, 26, IRON, { lit: 0.22, dark: -0.26 });
+    port(p, 46, 10, 16, 12, tone(PAL.rust, -0.62));
+    for (let k = 0; k < 2; k++) {
+      const cy = 12 + k * 5;
+      p.rect(47, cy, 14, 3, tone(STEEL, -0.3));
+      p.hline(47, cy, 14, tone(STEEL, 0.1));
+      for (let i = 48 + k * 2; i < 61; i += 4) p.vline(i, cy + 1, 2, tone(STEEL, 0.26));
     }
-    drum(p, 48, 27, 10, 5, tone(PAL.verdigris, -0.3));
-    p.rect(51, 29, 4, 1, tone(AMBER, -0.3));
+    sparks(p, 48, 15, 12, 4, 5, s + ':grind');
+    inner(p, 46, 27, 16, 3, tone(IRON, -0.3));
+    p.hline(48, 28, 12, tone(PAL.sodium, -0.3));
+    // Fuel out: the decanting drum stands under the belt, with its sight glass.
+    drum(p, 30, 27, 10, 6, tone(PAL.verdigris, -0.3));
+    p.rect(34, 29, 3, 3, AMBER);
+    p.hline(34, 29, 3, tone(AMBER, 0.4));
+    leg(p, 4, 27, 6, IRON);
+    leg(p, 24, 27, 6, IRON);
   },
 
   // Furnace with a lit mouth under a smoke hood, and the crucible pouring into
@@ -1330,11 +1537,11 @@ const FIXTURE_ART = {
     ground(p, s, { conduitColor: tone(PAL.rust, -0.34) });
     ledge(p, 0, 6, FX_W, 3, tone(PAL.rust, -0.5), { caps: false });
     pipev(p, 12, 9, 3, 3, tone(PAL.rust, -0.28));
-    solid(p, 1, 12, 27, 20, tone(PAL.rust, -0.44), { lit: 0.2, dark: -0.26 });
+    solid(p, 1, 12, 27, 21, tone(PAL.rust, -0.44), { lit: 0.2, dark: -0.26 });
     port(p, 4, 16, 17, 13, AMBER_DIM);
     p.rect(6, 18, 13, 9, AMBER);
     p.rect(9, 20, 7, 5, tone(AMBER, 0.5));
-    rivets(p, 3, 30, 7, 4, tone(PAL.rust, 0.06));
+    rivets(p, 3, 31, 7, 4, tone(PAL.rust, 0.06));
     solid(p, 35, 11, 20, 11, IRON, { lit: 0.22, dark: -0.26 });
     inner(p, 37, 13, 16, 5, AMBER);
     p.vline(44, 22, 6, AMBER);
@@ -1351,7 +1558,7 @@ const FIXTURE_ART = {
   // bench that runs the length of the line.
   munitions(p, s) {
     ground(p, s);
-    solid(p, 1, 6, 24, 22, DARK, { lit: 0.22, dark: -0.26 });
+    solid(p, 1, 6, 24, 23, DARK, { lit: 0.22, dark: -0.26 });
     port(p, 4, 10, 18, 13, tone(PAL.deep, 0.02));
     inner(p, 7, 11, 11, 6, STEEL);
     inner(p, 9, 17, 7, 3, STEEL_LIT);
@@ -1381,29 +1588,33 @@ const FIXTURE_ART = {
     p.rect(3, 14, 30, 11, tone(PAL.concrete, -0.06));
     p.hline(3, 14, 30, tone(PAL.concrete, 0.14));
     for (let k = 0; k < 4; k++) longarm(p, 6 + k * 8, 14, 11);
-    ledge(p, 0, 28, 38, 3, WOOD_LIT);
+    ledge(p, 0, 29, 38, 3, WOOD_LIT);
     solid(p, 22, 23, 9, 5, STEEL_LIT, { lit: 0.24, dark: -0.3 });
     p.rect(24, 25, 5, 2, GLASS);
-    locker(p, 39, 12, 12, 20);
-    locker(p, 51, 12, 12, 20);
+    locker(p, 39, 12, 12, 21);
+    locker(p, 51, 12, 12, 21);
   },
 
-  // A squad bay: three cots in a rank under the kit rail every soldier's
-  // webbing hangs from.
+  // A squad bay: three bed spaces in a rank — footlocker, cot, pack on the kit
+  // rail — rather than three ranks of horizontal bars. The old version put the
+  // lockers in mid-air above the cots and the eye had nothing vertical to hold
+  // on to, so the room read as a barcode.
   barracks(p, s) {
     ground(p, s);
     ledge(p, 0, 8, FX_W, 2, STEEL, { caps: false });
-    for (let k = 0; k < 4; k++) {
-      const x = 4 + k * 16;
-      solid(p, x, 11, 10, 9, tone(PAL.rust, -0.34), { lit: 0.22, dark: -0.28 });
-      p.hline(x + 1, 14, 8, tone(PAL.rust, -0.12));
-      p.hline(x + 1, 17, 8, tone(PAL.rust, -0.5));
-      p.set(x + 5, 10, STEEL_LIT);
-    }
+    const blankets = [tone(PAL.rust, -0.3), tone(PAL.denim, -0.24), tone(PAL.verdigris, -0.34)];
     for (let k = 0; k < 3; k++) {
-      const x = 2 + k * 21;
-      cot(p, x, 27, 18);
-      solid(p, x + 3, 22, 11, 4, IRON, { lit: 0.2, dark: -0.26 });
+      const x = 1 + k * 21;
+      solid(p, x + 3, 11, 13, 12, tone(PAL.rust, -0.34), { lit: 0.22, dark: -0.28 });
+      p.hline(x + 4, 14, 11, tone(PAL.rust, -0.1));
+      p.hline(x + 4, 19, 11, tone(PAL.rust, -0.5));
+      inner(p, x + 5, 15, 4, 4, tone(PAL.rust, -0.5));
+      p.set(x + 9, 10, STEEL_LIT);
+      p.set(x + 9, 9, PAL.ink);
+      solid(p, x, 25, 7, 8, WOOD, { lit: 0.22, dark: -0.28 });
+      p.hline(x + 1, 28, 5, tone(WOOD, -0.42));
+      p.set(x + 3, 29, STEEL_LIT);
+      cot(p, x + 8, 27, 12, blankets[k]);
     }
   },
 
@@ -1413,7 +1624,7 @@ const FIXTURE_ART = {
   training_yard(p, s) {
     ground(p, s);
     ledge(p, 0, 26, FX_W, 5, tone(PAL.rust, -0.46), { caps: false });
-    for (let i = 4; i < FX_W; i += 9) p.vline(i, 27, 4, tone(PAL.rust, -0.58));
+    for (let i = 4; i < FX_W; i += 8) p.vline(i, 27, 4, tone(PAL.rust, -0.58));
     target(p, 40, 14, 7);
     p.vline(40, 21, 6, PAL.ink);
     p.vline(39, 21, 6, DARK);
@@ -1453,27 +1664,36 @@ const FIXTURE_ART = {
 
   // Three barred cells, because the room provides six of them and a player
   // will count. The bars catch the light; they are not black. A dark cell
-  // behind bright bars is the whole read.
+  // behind bright bars is the whole read — which is also why the block stands
+  // clear of the frame instead of filling it: at 97% coverage the renderer's
+  // category tint had nothing to show through, and this was the one room in the
+  // silo with no colour of its own.
   holding_cells(p, s) {
     ground(p, s);
-    p.rect(0, 6, FX_W, 26, VOID);
-    p.frame(0, 6, FX_W, 26, PAL.ink);
+    p.rect(3, 9, 58, 24, tone(PAL.deeper, 0.06));
+    p.frame(3, 9, 58, 24, PAL.ink);
+    p.hline(4, 10, 56, tone(PAL.deeper, 0.16));
     for (let k = 0; k < 3; k++) {
-      const x = 1 + k * 21;
-      const w = k === 2 ? 21 : 20;
-      p.rect(x + 3, 21, w - 7, 4, IRON);
-      p.hline(x + 3, 21, w - 7, tone(IRON, 0.32));
-      p.rect(x + 4, 22, 6, 2, CLOTH);
-      p.hline(x + 3, 25, w - 7, PAL.ink);
-      for (let i = x + 1; i < x + w - 1; i += 4) {
-        p.vline(i, 7, 24, tone(STEEL, 0.12));
-        p.vline(i + 1, 7, 24, tone(STEEL, -0.46));
+      const x = 4 + k * 19;
+      const w = 19;
+      p.rect(x + 2, 23, w - 5, 4, IRON);
+      p.hline(x + 2, 23, w - 5, tone(IRON, 0.32));
+      p.rect(x + 3, 24, 6, 2, CLOTH);
+      p.hline(x + 3, 24, 6, tone(PAL.bone, -0.08));
+      p.hline(x + 2, 27, w - 5, PAL.ink);
+      for (let i = x; i < x + w - 2; i += 4) {
+        p.vline(i, 10, 22, tone(STEEL, 0.14));
+        p.vline(i + 1, 10, 22, tone(STEEL, -0.46));
       }
-      p.hline(x, 12, w, tone(STEEL, 0.06));
-      p.hline(x, 13, w, PAL.ink);
-      inner(p, x + 8, 15, 5, 5, STEEL_LIT);
-      if (k) p.vline(x - 1, 7, 24, PAL.ink);
+      p.hline(x - 1, 15, w + 1, tone(STEEL, 0.08));
+      p.hline(x - 1, 16, w + 1, tone(STEEL, -0.5));
+      inner(p, x + 7, 18, 5, 5, STEEL_LIT);
+      if (k) p.vline(x - 2, 10, 22, PAL.ink);
     }
+    // A warder's lamp over the corridor, so the block is not one flat black.
+    solid(p, 27, 5, 10, 4, tone(PAL.rust, -0.3), { lit: 0.2, dark: -0.26 });
+    p.hline(29, 8, 6, AMBER);
+    spill(p, 26, 9, 12, 4, tone(AMBER, -0.5), 0.5);
   },
 
   // The centrifuge, the research console — amber-lit, because four rooms
@@ -1484,13 +1704,12 @@ const FIXTURE_ART = {
     pipeh(p, 0, 6, FX_W, 2, STEEL);
     for (let i = 8; i < FX_W; i += 16) collarH(p, i, 6, 2);
     const c = tube(p, 1, 13, 19, 19, STEEL_LIT);
-    p.hline(c.x - 2, 17, c.w + 4, tone(PAL.steelLit, -0.42));
-    p.hline(c.x - 2, 18, c.w + 4, tone(PAL.steelLit, 0.2));
+    seam(p, c.x - 2, 17, c.w + 4, PAL.steelLit, -0.42);
     inner(p, c.x, 21, c.w, 6, tone(PAL.steelLit, -0.28));
     pipev(p, 9, 9, 4, 2, STEEL);
     deskPanel(p, 23, 10, 20, 15, tone(PAL.sodium, -0.28));
     ledge(p, 23, 26, 20, 3, DARK, { caps: false });
-    solid(p, 46, 9, 17, 23, DARK, { lit: 0.2, dark: -0.26 });
+    solid(p, 46, 9, 17, 24, DARK, { lit: 0.2, dark: -0.26 });
     for (let k = 0; k < 3; k++) {
       const y = 12 + k * 7;
       for (let i = 0; i < 6; i++) {
@@ -1507,19 +1726,22 @@ const FIXTURE_ART = {
   // board runs the width so the stacks continue into the next bay.
   archive(p, s) {
     ground(p, s);
+    // The gantry board runs the width and is the element that joins the bays;
+    // the case hangs a row clear of its keyline so that line reads as the
+    // board's underside rather than as the top of the case.
     ledge(p, 0, 6, FX_W, 3, WOOD, { caps: false });
-    solid(p, 1, 10, 32, 22, WOOD, { lit: 0.22, dark: -0.28 });
+    solid(p, 1, 11, 32, 22, WOOD, { lit: 0.22, dark: -0.28 });
     for (let k = 0; k < 3; k++) {
-      const y = 12 + k * 7;
+      const y = 13 + k * 6;
       spines(p, 3, y, 28, 5, `${s}:shelf${k}`);
       p.hline(2, y + 6, 30, tone(WOOD, 0.2));
     }
-    drawerBank(p, 37, 15, 20, 17, 3, 3, WOOD_LIT);
+    drawerBank(p, 37, 15, 20, 18, 3, 3, WOOD_LIT);
     solid(p, 37, 11, 20, 4, WOOD, { lit: 0.24, dark: -0.3 });
     solid(p, 58, 17, 6, 4, tone(PAL.verdigris, -0.24), { lit: 0.2, dark: -0.26 });
     p.hline(59, 20, 4, AMBER);
     spill(p, 58, 21, 6, 3, tone(AMBER, -0.5), 0.5);
-    p.vline(60, 21, 11, PAL.ink);
+    p.vline(60, 21, 12, PAL.ink);
   },
 
   // A blackboard, a row of small desks, and the globe.
@@ -1551,7 +1773,7 @@ const FIXTURE_ART = {
   // a different object and this room has no ladder.
   radio_room(p, s) {
     ground(p, s);
-    solid(p, 1, 6, 25, 26, DARK, { lit: 0.22, dark: -0.26 });
+    solid(p, 1, 6, 25, 27, DARK, { lit: 0.22, dark: -0.26 });
     disc(p, 10, 14, 7, tone(PAL.deep, 0.02));
     ring(p, 10, 14, 6, tone(PAL.verdigris, 0.2));
     p.hline(5, 14, 11, tone(PAL.verdigris, 0.46));
@@ -1603,7 +1825,7 @@ const FIXTURE_ART = {
   suit_bay(p, s) {
     ground(p, s);
     ledge(p, 0, 7, FX_W, 2, STEEL_LIT, { caps: false });
-    for (let k = 0; k < 3; k++) suitHang(p, 2 + k * 15, 10, 12, 21);
+    for (let k = 0; k < 3; k++) suitHang(p, 1 + k * 15, 10, 14, 21);
     solid(p, 47, 22, 16, 10, DARK, { lit: 0.22, dark: -0.26 });
     disc(p, 52, 27, 3, STEEL);
     inner(p, 57, 25, 5, 5, tone(PAL.bone, -0.34));
@@ -1616,11 +1838,11 @@ const FIXTURE_ART = {
   // Racked and stacked. Boring, cheap, always the right call.
   storage_depot(p, s) {
     ground(p, s);
-    solid(p, 1, 6, 32, 26, DARK, { lit: 0.2, dark: -0.26 });
+    solid(p, 1, 6, 32, 27, DARK, { lit: 0.2, dark: -0.26 });
     for (let k = 0; k < 3; k++) {
       const y = 8 + k * 8;
-      crate(p, 3, y, 13, 6, k === 1 ? tone(PAL.rust, -0.24) : WOOD);
-      crate(p, 18, y, 13, 6, k === 1 ? WOOD : tone(PAL.rust, -0.24));
+      crate(p, 3, y, 13, 6, k === 1 ? tone(PAL.rust, -0.24) : WOOD, { inside: true });
+      crate(p, 18, y, 13, 6, k === 1 ? WOOD : tone(PAL.rust, -0.24), { inside: true });
       p.hline(2, y + 6, 30, tone(STEEL, 0.14));
       p.hline(2, y + 7, 30, tone(STEEL, -0.42));
     }
@@ -1630,9 +1852,15 @@ const FIXTURE_ART = {
     drum(p, 53, 7, 10, 10, tone(PAL.verdigris, -0.3));
   },
 
-  // A tunnel receding to a working face: the roof beam and the track run edge
-  // to edge so three bays read as one drift, and the ore is in the cart,
-  // because ore is what this room makes.
+  // A drift with a rib of unmined rock at its right-hand edge: the roof beam
+  // and the track run edge to edge so the bays read as one continuous tunnel,
+  // and the ore is heaped in the cart, because ore is what this room makes.
+  //
+  // A single working face at the end of a three-slot mine is not drawable here
+  // and asking for it is a category error: floors.js repeats this ONE frame per
+  // bay, so anything that appears once would have to be a different frame
+  // (room_deep_mine_left/_mid/_right) and a change to drawFixture's loop. A rib
+  // per bay is the read that survives the repeat.
   deep_mine(p, s) {
     ground(p, s, { conduit: false });
     ledge(p, 0, 2, FX_W, 4, DARK, { caps: false });
@@ -1666,13 +1894,13 @@ const FIXTURE_ART = {
     for (let k = 0; k < 6; k++) {
       inner(p, 3 + (k % 3) * 7, 8 + ((k / 3) | 0) * 6, 6, 5, tone(PAL.bone, -0.22 - r() * 0.34));
     }
-    solid(p, 1, 24, 21, 8, tone(PAL.rust, -0.22), { lit: 0.22, dark: -0.28 });
+    solid(p, 1, 24, 21, 9, tone(PAL.rust, -0.22), { lit: 0.22, dark: -0.28 });
     p.hline(2, 28, 19, tone(PAL.rust, -0.48));
     disc(p, 5, 31, 2, DARK);
     disc(p, 18, 31, 2, DARK);
     inner(p, 4, 21, 9, 3, DARK);
     ladder(p, 26, 6, 8, 26);
-    solid(p, 38, 18, 15, 14, DARK, { lit: 0.22, dark: -0.26 });
+    solid(p, 38, 18, 15, 15, DARK, { lit: 0.22, dark: -0.26 });
     inner(p, 40, 20, 5, 5, tone(PAL.bone, -0.34));
     p.rect(47, 21, 4, 8, tone(STEEL, -0.22));
     p.hline(47, 21, 4, tone(STEEL, 0.12));
@@ -1882,29 +2110,43 @@ const CUTAWAY_ART = {
     contact(p, 3, 79, 50);
   },
 
+  // The room that gates all healing read as an unfurnished corridor with two
+  // stripes on the floor: a 5-row bed is right in a 36-row fixture and is
+  // nothing in an 88-row one. Full-height beds on the floor line, a curtain
+  // half-drawn between the bays, an exam light over each bed and the drip at
+  // the foot of the second — which is what a ward looks like.
   clinic(p, s) {
     vaultShell(p, s, { coneW: 58 });
     wallPipes(p, 16, 10, 108, STEEL, 2, 30);
     ledge(p, 4, 24, 120, 2, STEEL, { caps: false });
-    for (let i = 8; i < 124; i += 9) p.set(i, 24, tone(STEEL, -0.5));
-    deskPanel(p, 6, 30, 32, 24, LEAF);
-    solid(p, 94, 28, 28, 30, tone(PAL.bone, -0.32), { lit: 0.22, dark: -0.26 });
-    p.rect(106, 34, 5, 18, tone(PAL.rust, 0.02));
-    p.rect(100, 40, 17, 5, tone(PAL.rust, 0.02));
-    p.hline(95, 58, 26, tone(PAL.bone, -0.5));
-    p.hline(95, 59, 26, PAL.ink);
+    for (let i = 8; i < 124; i += 8) p.set(i, 24, tone(STEEL, -0.5));
+    p.rect(56, 26, 15, 41, CLOTH);
+    p.hline(56, 26, 15, tone(PAL.bone, -0.04));
+    for (let i = 58; i < 70; i += 3) p.vline(i, 27, 40, tone(PAL.bone, -0.42));
+    p.vline(55, 26, 41, PAL.ink);
+    p.vline(71, 26, 41, PAL.ink);
+    p.hline(56, 67, 15, PAL.ink);
+    deskPanel(p, 4, 32, 22, 20, LEAF);
+    solid(p, 96, 28, 26, 26, tone(PAL.bone, -0.32), { lit: 0.22, dark: -0.26 });
+    p.rect(107, 33, 5, 16, tone(PAL.rust, 0.02));
+    p.rect(101, 38, 17, 5, tone(PAL.rust, 0.02));
+    ledge(p, 94, 57, 30, 3, STEEL, { caps: false });
+    drawerBank(p, 98, 62, 24, 17, 2, 2, DARK);
     for (let k = 0; k < 2; k++) {
-      const x = 6 + k * 58;
-      bed(p, x, 71, 48, tone(PAL.verdigris, 0.02));
-      contact(p, x - 1, 79, 50);
+      const x = 4 + k * 44;
+      bed(p, x, 67, 40, { blanket: tone(PAL.verdigris, 0.02), th: 12, head: 13 });
+      contact(p, x - 1, 79, 42);
+      const lx = x + 30;
+      p.vline(lx, 26, 6, PAL.ink);
+      p.vline(lx - 1, 26, 6, STEEL_LIT);
+      solid(p, lx - 6, 32, 13, 6, tone(PAL.rust, -0.24), { lit: 0.2, dark: -0.26 });
+      p.hline(lx - 4, 37, 9, AMBER);
+      spill(p, lx - 8, 38, 17, 7, tone(AMBER, -0.5), 0.5);
     }
-    p.vline(56, 30, 48, PAL.ink);
-    p.vline(55, 30, 48, STEEL_LIT);
-    solid(p, 52, 26, 9, 8, tone(PAL.bone, -0.14), { lit: 0.22, dark: -0.26 });
-    p.rect(54, 28, 5, 4, tone(PAL.verdigris, 0.14));
-    p.hline(54, 28, 5, tone(PAL.verdigris, 0.4));
-    solid(p, 94, 62, 28, 16, DARK, { lit: 0.22, dark: -0.26 });
-    drawerBank(p, 96, 64, 24, 12, 2, 2, DARK);
+    p.vline(90, 40, 38, STEEL_LIT);
+    p.vline(91, 40, 38, PAL.ink);
+    solid(p, 86, 34, 9, 7, tone(PAL.bone, -0.2), { lit: 0.24, dark: -0.28 });
+    p.rect(88, 36, 4, 4, tone(PAL.verdigris, 0.1));
   },
 
   chem_lab(p, s) {
@@ -1978,37 +2220,87 @@ const CUTAWAY_ART = {
     contact(p, 69, 79, 52);
   },
 
+  // Salvage in at the top left, scrap and fuel out at the bottom right. The
+  // first draft was three grey rectangles, a grey belt and a grey cabinet, all
+  // the same tone: nothing said what came in, what happened to it, or what came
+  // out, and the room is the only fuel source above the Deeps.
   recycling(p, s) {
-    vaultShell(p, s);
-    solid(p, 4, 16, 50, 14, DARK, { lit: 0.2, dark: -0.26 });
-    inner(p, 7, 19, 44, 8, tone(DARK, -0.3));
-    solid(p, 12, 30, 34, 12, DARK, { lit: 0.2, dark: -0.26 });
-    solid(p, 20, 42, 18, 10, DARK, { lit: 0.2, dark: -0.26 });
+    vaultShell(p, s, { coneW: 42, lightX: 34 });
     const r = rng(s + ':salvage');
+    const junk = () => [tone(PAL.rust, -0.06), tone(STEEL, -0.14), tone(PAL.verdigris, -0.3), WOOD][(r() * 4) | 0];
+
+    // The intake hopper: a trapezoid heaped over the rim, tapering into the
+    // chute that feeds the belt.
     for (let k = 0; k < 9; k++) {
-      const x = 6 + k * 10;
-      const w = 5 + ((r() * 5) | 0);
-      const h = 4 + ((r() * 6) | 0);
-      const c = [tone(PAL.rust, -0.08), tone(STEEL, -0.16), tone(PAL.verdigris, -0.32), WOOD][(r() * 4) | 0];
-      solid(p, x, 58 - h, w, h, c, { lit: 0.24, dark: -0.28 });
+      const w = 5 + ((r() * 7) | 0);
+      const x = 6 + ((r() * 44) | 0);
+      solid(p, x, 12 + ((r() * 4) | 0), Math.min(w, 58 - x), 7, junk(), { lit: 0.24, dark: -0.28 });
     }
-    ledge(p, 0, 58, 96, 7, DARK, { caps: false });
-    for (let i = 4; i < 94; i += 7) {
-      p.vline(i, 60, 4, STEEL_LIT);
-      p.vline(i + 1, 60, 4, tone(STEEL, -0.44));
+    for (let j = 0; j < 15; j++) {
+      const x0 = 4 + Math.round(j * 1.2);
+      const x1 = 60 - Math.round(j * 1.2);
+      p.hline(x0, 19 + j, x1 - x0 + 1, tone(STEEL, -0.38));
+      p.hline(x0 + 1, 19 + j, 2, tone(STEEL, -0.1));
+      p.set(x1 - 1, 19 + j, tone(STEEL, -0.54));
+      p.set(x0, 19 + j, PAL.ink);
+      p.set(x1, 19 + j, PAL.ink);
     }
-    leg(p, 8, 66, 12, IRON);
-    leg(p, 86, 66, 12, IRON);
-    solid(p, 96, 28, 28, 50, IRON, { lit: 0.22, dark: -0.26 });
-    for (let j = 36; j < 66; j += 6) {
-      p.hline(99, j, 22, tone(STEEL, 0.16));
-      p.hline(99, j + 1, 22, tone(STEEL, -0.46));
+    p.hline(4, 18, 57, PAL.ink);
+    p.rect(22, 34, 20, 18, tone(STEEL, -0.44));
+    p.vline(23, 34, 18, tone(STEEL, -0.16));
+    p.vline(40, 34, 18, tone(STEEL, -0.58));
+    p.vline(22, 34, 18, PAL.ink);
+    p.vline(41, 34, 18, PAL.ink);
+    seam(p, 23, 42, 18, STEEL, -0.6);
+
+    // The belt, running into the crusher, with salvage riding it.
+    for (let k = 0; k < 7; k++) {
+      const w = 5 + ((r() * 6) | 0);
+      const h = 4 + ((r() * 7) | 0);
+      solid(p, 3 + k * 10, 52 - h, w, h, junk(), { lit: 0.24, dark: -0.28 });
     }
-    wheel(p, 110, 32, 5);
-    drum(p, 76, 62, 18, 16, tone(PAL.verdigris, -0.3));
-    p.rect(81, 68, 8, 2, tone(AMBER, -0.3));
-    p.speckle(98, 68, 24, 10, RUST_DK, 0.12, s + ':grind');
-    contact(p, 95, 79, 30);
+    ledge(p, 0, 52, 74, 7, DARK, { caps: false });
+    for (let i = 3; i < 72; i += 7) {
+      p.vline(i, 54, 4, STEEL_LIT);
+      p.vline(i + 1, 54, 4, tone(STEEL, -0.44));
+    }
+    leg(p, 6, 60, 18, IRON);
+    leg(p, 66, 60, 18, IRON);
+
+    // The crusher: a lit mouth with the rollers turning in it, and the swarf
+    // and sparks that come off them.
+    solid(p, 76, 16, 48, 62, IRON, { lit: 0.22, dark: -0.26 });
+    rivets(p, 79, 19, 14, 3, tone(IRON, 0.34));
+    port(p, 80, 26, 40, 26, tone(PAL.rust, -0.62));
+    for (let k = 0; k < 2; k++) {
+      const cy = 34 + k * 10;
+      p.rect(83, cy, 34, 6, tone(STEEL, -0.3));
+      p.hline(83, cy, 34, tone(STEEL, 0.1));
+      p.hline(83, cy + 5, 34, tone(STEEL, -0.6));
+      for (let i = 84 + k * 3; i < 117; i += 6) {
+        p.vline(i, cy + 1, 4, tone(STEEL, 0.28));
+        p.vline(i + 1, cy + 1, 4, tone(STEEL, -0.55));
+      }
+    }
+    sparks(p, 84, 40, 32, 8, 12, s + ':grind');
+    inner(p, 80, 56, 40, 5, tone(IRON, -0.3));
+    p.hline(82, 58, 36, tone(PAL.sodium, -0.3));
+
+    // Decanting: the fuel drum with its sight glass, and the jerrican rack.
+    drum(p, 14, 60, 18, 18, tone(PAL.verdigris, -0.3));
+    p.rect(19, 65, 4, 9, tone(AMBER, -0.5));
+    p.rect(19, 69, 4, 5, AMBER);
+    p.hline(19, 69, 4, tone(AMBER, 0.4));
+    for (let k = 0; k < 3; k++) {
+      const x = 38 + k * 11;
+      solid(p, x, 66, 9, 12, tone(PAL.sodium, -0.34), { lit: 0.22, dark: -0.3 });
+      p.hline(x + 2, 68, 5, tone(PAL.sodium, -0.06));
+      p.set(x + 4, 65, tone(STEEL, -0.2));
+      p.set(x + 4, 64, PAL.ink);
+    }
+    p.speckle(78, 68, 44, 9, RUST_DK, 0.12, s + ':swarf');
+    contact(p, 13, 79, 20);
+    contact(p, 75, 79, 50);
   },
 
   foundry(p, s) {
@@ -2101,7 +2393,7 @@ const CUTAWAY_ART = {
     }
     for (let k = 0; k < 3; k++) {
       const x = 6 + k * 40;
-      cot(p, x, 72, 34);
+      cot(p, x, 73, 34);
       solid(p, x + 2, 56, 30, 7, IRON, { lit: 0.22, dark: -0.28 });
       p.rect(x + 4, 58, 26, 4, CLOTH);
       p.rect(x + 4, 58, 9, 4, tone(PAL.rust, -0.3));
@@ -2171,41 +2463,73 @@ const CUTAWAY_ART = {
     contact(p, 89, 79, 34);
   },
 
+  // Three cells and the warder's post. A wall of bars filling the whole frame
+  // is a texture rather than a room: the block stops short of the ceiling and
+  // of the right-hand wall so that the vault, the lamp, the desk and the keys
+  // have somewhere to be, and each cell keeps a lit back wall behind its bars
+  // so there is depth to see into.
   holding_cells(p, s) {
-    vaultShell(p, s, { coneW: 40 });
-    p.rect(4, 18, 120, 60, VOID);
-    p.frame(4, 18, 120, 60, PAL.ink);
+    vaultShell(p, s, { coneW: 44, lightX: 104 });
+    const bx = 4;
     for (let k = 0; k < 3; k++) {
-      const x = 5 + k * 40;
-      const w = 39;
-      p.rect(x + 4, 52, w - 10, 7, IRON);
-      p.hline(x + 4, 52, w - 10, tone(IRON, 0.32));
-      p.rect(x + 6, 54, 12, 4, CLOTH);
-      p.hline(x + 6, 54, 12, tone(PAL.bone, -0.06));
-      p.hline(x + 4, 59, w - 10, PAL.ink);
-      leg(p, x + 5, 60, 6, IRON);
-      leg(p, x + w - 8, 60, 6, IRON);
-      for (let i = x + 1; i < x + w - 2; i += 5) {
-        p.vline(i, 19, 58, tone(STEEL, 0.14));
-        p.vline(i + 1, 19, 58, tone(STEEL, -0.46));
+      const x = bx + 1 + k * 29;
+      const w = 28;
+      p.rect(x, 25, w, 53, tone(PAL.deep, -0.06));
+      fade(p, x, 25, w, 20, tone(PAL.deeper, -0.14), 0.95);
+      p.hline(x, 25, w, tone(PAL.deeper, -0.3));
+      // The bunk against the cell's back wall, and the slop bucket.
+      p.rect(x + 3, 58, 20, 6, IRON);
+      p.hline(x + 3, 58, 20, tone(IRON, 0.32));
+      p.rect(x + 4, 60, 8, 3, CLOTH);
+      p.hline(x + 4, 60, 8, tone(PAL.bone, -0.06));
+      p.hline(x + 3, 64, 20, PAL.ink);
+      leg(p, x + 4, 65, 8, IRON);
+      leg(p, x + 20, 65, 8, IRON);
+      p.rect(x + 24, 72, 3, 5, tone(STEEL, -0.4));
+      p.hline(x + 24, 72, 3, tone(STEEL, -0.1));
+      // Bars, and the two cross rails they are welded to.
+      for (let i = x + 1; i < x + w - 1; i += 5) {
+        p.vline(i, 25, 53, tone(STEEL, 0.16));
+        p.vline(i + 1, 25, 53, tone(STEEL, -0.46));
       }
-      p.hline(x, 30, w, tone(STEEL, 0.08));
-      p.hline(x, 31, w, PAL.ink);
-      p.hline(x, 64, w, tone(STEEL, 0.08));
-      p.hline(x, 65, w, PAL.ink);
-      solid(p, x + 15, 38, 9, 11, STEEL_LIT, { lit: 0.24, dark: -0.3 });
-      p.set(x + 19, 44, PAL.ink);
-      if (k) p.vline(x - 1, 19, 58, PAL.ink);
-      p.speckle(x + 2, 70, w - 5, 7, RUST_DK, 0.1, `${s}:c${k}`);
+      p.hline(x, 34, w, tone(STEEL, 0.1));
+      p.hline(x, 35, w, tone(STEEL, -0.52));
+      p.hline(x, 68, w, tone(STEEL, 0.1));
+      p.hline(x, 69, w, tone(STEEL, -0.52));
+      solid(p, x + 11, 42, 9, 12, STEEL_LIT, { lit: 0.24, dark: -0.3 });
+      p.rect(x + 14, 46, 3, 4, tone(PAL.deeper, 0.04));
+      p.set(x + 15, 51, tone(STEEL, -0.3));
+      p.speckle(x + 2, 71, w - 4, 6, RUST_DK, 0.1, `${s}:c${k}`);
+      if (k) p.vline(x - 1, 24, 54, PAL.ink);
     }
+    p.frame(bx, 24, 88, 54, PAL.ink);
+    // The warder's post: the key board, the day book, the lamp and the stool.
+    solid(p, 98, 26, 26, 20, WOOD, { lit: 0.22, dark: -0.28 });
+    for (let j = 0; j < 3; j++) {
+      p.hline(100, 29 + j * 6, 22, tone(WOOD, -0.4));
+      for (let i = 0; i < 5; i++) {
+        p.set(101 + i * 5, 30 + j * 6, tone(PAL.bone, -0.16));
+        p.set(101 + i * 5, 31 + j * 6, tone(PAL.sodium, -0.3));
+      }
+    }
+    solid(p, 106, 48, 12, 7, tone(PAL.rust, -0.2), { lit: 0.2, dark: -0.26 });
+    p.hline(108, 54, 8, AMBER);
+    spill(p, 103, 55, 18, 6, tone(AMBER, -0.5), 0.55);
+    ledge(p, 94, 62, 30, 5, WOOD_LIT, { caps: false });
+    leg(p, 97, 68, 10, WOOD);
+    leg(p, 120, 68, 10, WOOD);
+    p.rect(100, 58, 12, 4, tone(PAL.bone, -0.16));
+    p.hline(100, 58, 12, tone(PAL.bone, -0.02));
+    p.hline(100, 61, 12, tone(PAL.rust, -0.6));
+    solid(p, 114, 70, 9, 8, IRON, { lit: 0.22, dark: -0.28 });
+    contact(p, 93, 79, 32);
   },
 
   laboratory(p, s) {
     vaultShell(p, s);
     wallPipes(p, 15, 10, 108, STEEL, 2, 32);
     const c = tube(p, 6, 38, 36, 40, STEEL_LIT);
-    p.hline(c.x - 3, 47, c.w + 6, tone(PAL.steelLit, -0.44));
-    p.hline(c.x - 3, 48, c.w + 6, tone(PAL.steelLit, 0.2));
+    seam(p, c.x - 3, 47, c.w + 6, PAL.steelLit, -0.44);
     inner(p, c.x, 54, c.w, 14, tone(PAL.steelLit, -0.28));
     gauge(p, 16, 58, 9);
     pipev(p, 20, 22, 16, 3, STEEL);
@@ -2434,6 +2758,22 @@ const CUTAWAY_ART = {
 
 // =============================================================================
 // EXPORTS
+//
+// WHAT STILL HAS TO BE WIRED UP, because none of it belongs in this file:
+//
+//   1. tools/gen-atlas.mjs does not import this module — it still draws its own
+//      rect-only room blocks — so none of this art reaches the game yet. It
+//      needs to allocate FIXTURE_SIZE per id under FIXTURE_PREFIX and call
+//      ROOM_FIXTURES[id](painter). src/render/floors.js already looks the
+//      frames up under exactly those names, so that is a drop-in.
+//   2. src/render/floors.js must stop insetting the fixture box, or the 64x36
+//      art is fractionally resampled — see FIXTURE_DEST and the header.
+//   3. The cutaways have NO consumer. src/ui/roomView.js reaches for art
+//      through the DOM path (src/data/artwork.js + assets/art/index.json,
+//      currently `{}`), not through the atlas, so serving them needs either a
+//      draw call there or a PNG export with index.json entries. They are also
+//      316 KB of pixels and should not sit in the boot-critical sheet: a second
+//      atlas is the right home.
 // =============================================================================
 
 /**
@@ -2498,18 +2838,24 @@ export default {
 //
 //   - all 28 ids covered, nothing empty, nothing accidentally opaque;
 //   - PALETTE. Every painted pixel is exactly shade(PAL_entry, t) for some
-//     entry and some t. The previous version of this test printed "palette law
-//     upheld" while checking only a hand-tuned green-channel inequality, which
-//     is how 5401 off-ray pixels and 135 off-palette colours shipped;
-//   - INK BUDGET. See THE KEYLINE BUDGET in the header. This is the check that
-//     stops the art drifting back into black lace one detail at a time;
+//     entry and some t, decided by interval arithmetic rather than by sampling
+//     t on a grid. The first version of this test printed "palette law upheld"
+//     while checking only a hand-tuned green-channel inequality, which is how
+//     5401 off-ray pixels and 135 off-palette colours shipped; the second
+//     sampled the ray at 1/1000 and failed the build on shade(PAL.bone, -0.3755)
+//     — a legal colour that simply falls between two grid steps;
+//   - LACE and INK. Two numbers, not one. See THE KEYLINE BUDGET in the header.
+//     Lace is the check that stops the art drifting back into black lace one
+//     detail at a time; total ink is a backstop against the 51% failure;
 //   - TOXIN. On PAL.toxin's ray and nowhere but the reactor and the airlock.
 //     Membership is by ray, not by channel inequality — the old test's guard
 //     had a hole at t <= -0.52, which is a shade a room could plausibly use;
 //   - TILING. A room wider than one slot is drawn once per bay from the same
 //     frame, so it needs rows where column 0 and column 63 match;
-//   - RESERVED REGIONS. The renderer paints status glyphs into the top-right
-//     corner and level pips into the bottom-left strip;
+//   - RESERVED REGIONS. The renderer paints status glyphs over the top-right
+//     corner and level pips over the bottom-left strip, both at partial alpha
+//     and both exactly when the player is looking, so both are checked for
+//     enough contrast against whatever the fixture put underneath;
 //   - DISTINCTNESS, by mean colour per cell rather than by a mean-thresholded
 //     luminance bit — the old signature was blind to hue, so two rooms with
 //     the same layout in different palettes scored as maximally different, and
@@ -2518,34 +2864,109 @@ export default {
 //     is maintained by eye rather than by a constant nobody revisits.
 // =============================================================================
 
-const INK_BUDGET = { fixture: 0.24, cutaway: 0.17 };
-const DISTINCT_MIN = { fixture: 14, cutaway: 12 };
+/**
+ * THE TWO INK NUMBERS, AND WHY THERE ARE TWO.
+ *
+ * The obvious measure — pure-black pixels over painted pixels — is the one the
+ * audit used to catch the first draft at 29-51%, and it was right to. But it
+ * cannot be pushed much below 24% on a transparent sprite without abolishing
+ * the keyline, and the keyline is the style. The arithmetic: a convex outlined
+ * solid costs (2(w+h)-4)/(w*h) in ink, which is 15% for a 24x20 machine, 25%
+ * for a 12x20 hanging suit and 30% for a 12x12 crate. A 64x36 fixture holding
+ * three or four objects that size, standing on nothing but the shaft behind
+ * them, is 25% ink before a single detail is drawn. So a flat 15-18% target
+ * cannot be met by outlined art at this size; anything reporting that it had
+ * been met would be reporting that the outlines were gone.
+ *
+ * What actually went wrong in the first draft was not outlines, it was outlines
+ * around things that were already inside an outline. That has a signature the
+ * eye agrees with and the machine can see: ink that touches no empty pixel.
+ * A silhouette keyline always has the room behind it on one side; lace never
+ * does. So LACE is budgeted hard, and total ink keeps a loose ceiling as a
+ * backstop against the 51% failure.
+ *
+ * Cutaways are fully opaque, so every one of their ink pixels is "lace" by that
+ * test and only the total is meaningful there. They sit at 9-15%, which is what
+ * the same drawing discipline costs when the room behind the object is painted.
+ */
+const INK_BUDGET = { fixture: 0.30, cutaway: 0.16 };
+const LACE_BUDGET = { fixture: 0.12, cutaway: 1 };
+/**
+ * The distinctness floor, set just under the observed minimum so that it can
+ * actually fire. The previous constant was 6 against a distribution whose
+ * minimum was 8: it had never rejected anything and never could, which is the
+ * failure mode of any threshold picked before the numbers were looked at. The
+ * five closest pairs print on every run so this is maintained by eye.
+ */
+const DISTINCT_MIN = { fixture: 26, cutaway: 17 };
+/**
+ * The two regions the renderer paints ITS OWN marks into, on top of whatever
+ * the fixture drew there (src/render/floors.js drawRoom): up to three 8px
+ * status glyphs stepping left from the top-right corner, and the level pips —
+ * five 2x2 blocks of 60%-alpha bone — along the bottom-left strip.
+ *
+ * Both are checked rather than left to a comment, because both are painted
+ * exactly when the player is looking: a room is unpowered, unstaffed, damaged
+ * or contaminated, or has just been upgraded.
+ */
 const GLYPH_BOX = { x: FX_W - 27, y: 0, w: 27, h: 9 };
-const PIP_BOX = { x: 3, y: FX_H - 5, w: 18, h: 2 };
+const PIP_BOX = { x: 3, y: FX_H - 7, w: 18, h: 3 };
+const BONE_LUMA = PAL.bone[0] * 0.3 + PAL.bone[1] * 0.59 + PAL.bone[2] * 0.11;
+const PIP_ALPHA = 0.6;
+const PIP_MIN_CONTRAST = 48;
 
-/** Every colour reachable as shade(entry, t), and which entries reach it. */
-function legalColours() {
-  const map = new Map();
-  for (const [name, c] of Object.entries(PAL)) {
-    for (let i = -1000; i <= 1000; i++) {
-      const t = i / 1000;
-      const k = shade(c, t).join(',');
-      let e = map.get(k);
-      if (!e) map.set(k, (e = { names: new Set(), tmax: 0 }));
-      e.names.add(name);
-      e.tmax = Math.max(e.tmax, Math.abs(t) < e.tmax ? e.tmax : Math.abs(t));
-      if (!e.tmin || Math.abs(t) < e.tmin) e.tmin = Math.abs(t);
+/**
+ * Is `c` exactly shade(base, ±k) for some k in [0,1]?
+ *
+ * shade rounds each channel independently, so each channel admits an interval
+ * of k and the colour is on the ray only if the three intervals intersect.
+ * Testing by SAMPLING t — which is what the first version of this test did, on
+ * a 1/1000 grid — misses every colour that exists only between two grid steps:
+ * shade(PAL.bone, -0.3755) is (136,131,122), is perfectly legal art, and no
+ * grid t produces it, so the build failed on a colour it had itself declared
+ * legal. Interval arithmetic is exact and needs no tolerance.
+ */
+function onRay(base, to, c) {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 3; i++) {
+    const d = to[i] - base[i];
+    if (d === 0) {
+      if (c[i] !== base[i]) return false;
+      continue;
     }
+    const a = (c[i] - 0.5 - base[i]) / d;
+    const b = (c[i] + 0.5 - base[i]) / d;
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
   }
-  return map;
+  if (lo > hi) return false;
+  const k = (lo + hi) / 2;
+  for (let i = 0; i < 3; i++) if (Math.round(base[i] + (to[i] - base[i]) * k) !== c[i]) return false;
+  return true;
 }
 
-const LEGAL = legalColours();
+const RAY_CACHE = new Map();
+
+/** Which PAL entries can reach this colour. Empty means off-palette. */
+function rayNames(key) {
+  let names = RAY_CACHE.get(key);
+  if (names) return names;
+  const c = key.split(',').map(Number);
+  names = [];
+  for (const [name, base] of Object.entries(PAL)) {
+    if (onRay(base, [0, 0, 0], c) || onRay(base, PAL.bone, c)) names.push(name);
+  }
+  RAY_CACHE.set(key, names);
+  return names;
+}
+
+const isLegal = (key) => rayNames(key).length > 0;
 
 /** A pixel is toxin if the only palette entry that reaches it is toxin. */
-function isToxin(k) {
-  const e = LEGAL.get(k);
-  return !!e && e.names.size === 1 && e.names.has('toxin');
+function isToxin(key) {
+  const names = rayNames(key);
+  return names.length === 1 && names[0] === 'toxin';
 }
 
 function px(sheet, at, x, y) {
@@ -2556,8 +2977,9 @@ function px(sheet, at, x, y) {
 const luma = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
 
 function measure(sheet, at) {
-  const out = { painted: 0, opaque: 0, ink: 0, toxin: 0, bad: new Map() };
+  const out = { painted: 0, opaque: 0, ink: 0, lace: 0, toxin: 0, bad: new Map() };
   const inkKey = PAL.ink.join(',');
+  const clear = (x, y) => x < 0 || y < 0 || x >= at.w || y >= at.h || px(sheet, at, x, y)[3] === 0;
   for (let y = 0; y < at.h; y++) {
     for (let x = 0; x < at.w; x++) {
       const c = px(sheet, at, x, y);
@@ -2565,9 +2987,15 @@ function measure(sheet, at) {
       out.painted++;
       if (c[3] === 255) out.opaque++;
       const k = `${c[0]},${c[1]},${c[2]}`;
-      if (k === inkKey) out.ink++;
+      if (k === inkKey) {
+        out.ink++;
+        // Lace is ink that touches no empty pixel: a keyline drawn around
+        // something that was already inside another outlined shape.
+        if (!clear(x - 1, y) && !clear(x + 1, y) && !clear(x, y - 1) && !clear(x, y + 1)
+          && !clear(x - 1, y - 1) && !clear(x + 1, y - 1) && !clear(x - 1, y + 1) && !clear(x + 1, y + 1)) out.lace++;
+      }
       if (c[3] !== 255) out.bad.set(`alpha ${c[3]}`, (out.bad.get(`alpha ${c[3]}`) || 0) + 1);
-      else if (!LEGAL.has(k)) out.bad.set(k, (out.bad.get(k) || 0) + 1);
+      else if (!isLegal(k)) out.bad.set(k, (out.bad.get(k) || 0) + 1);
       else if (isToxin(k)) out.toxin++;
     }
   }
@@ -2610,6 +3038,34 @@ function sigDist(a, b) {
   return Math.sqrt(sum / a.length);
 }
 
+/**
+ * What a sprite is MADE OF: the share of its painted pixels reaching each
+ * palette entry. This is how a fixture is compared with its own cutaway, since
+ * the per-cell colour signature cannot do it — one is a 64x36 mostly-empty
+ * frame and the other a 128x88 opaque room, so their layouts have nothing in
+ * common and the comparison is swamped by how much of each is background. What
+ * the two families genuinely must agree on is the room's vocabulary: the
+ * reactor is green, the foundry amber and rust, the archive wood.
+ */
+function palProfile(sheet, at) {
+  const names = Object.keys(PAL);
+  const out = new Array(names.length).fill(0);
+  let n = 0;
+  for (let y = 0; y < at.h; y++) {
+    for (let x = 0; x < at.w; x++) {
+      const c = px(sheet, at, x, y);
+      if (c[3] === 0) continue;
+      const hit = rayNames(`${c[0]},${c[1]},${c[2]}`);
+      if (!hit.length) continue;
+      n++;
+      for (const h of hit) out[names.indexOf(h)] += 1 / hit.length;
+    }
+  }
+  return out.map((v) => v / Math.max(1, n));
+}
+
+const profDist = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0);
+
 /** Rows where the frame's first and last columns match, so bays join up. */
 function tileRows(sheet, at) {
   const rows = [];
@@ -2638,7 +3094,6 @@ function runSelfTest() {
   const sheet = atlas(2048);
   const rows = [];
   const sigs = { fixture: [], cutaway: [] };
-  const offPalette = new Map();
 
   for (const kind of ['fixture', 'cutaway']) {
     const art = kind === 'fixture' ? FIXTURE_ART : CUTAWAY_ART;
@@ -2658,16 +3113,17 @@ function runSelfTest() {
       const st = measure(sheet, at);
       const cover = st.painted / (size.w * size.h);
       const inkPct = st.ink / Math.max(1, st.painted);
+      const lacePct = st.lace / Math.max(1, st.painted);
 
       if (st.painted === 0) problems.push(`${name}: nothing drawn`);
       if (kind === 'fixture' && cover > 0.94) problems.push(`${name}: fixture is effectively opaque (${(cover * 100) | 0}%) — the category tint cannot read through`);
       if (kind === 'fixture' && cover < 0.24) problems.push(`${name}: fixture is nearly empty (${(cover * 100) | 0}%)`);
       if (kind === 'cutaway' && st.opaque !== size.w * size.h) problems.push(`${name}: cutaway has ${size.w * size.h - st.opaque} non-opaque px`);
-      if (inkPct > INK_BUDGET[kind]) problems.push(`${name}: ${(inkPct * 100).toFixed(1)}% keyline, over the ${(INK_BUDGET[kind] * 100) | 0}% budget — fewer and bigger shapes`);
+      if (inkPct > INK_BUDGET[kind]) problems.push(`${name}: ${(inkPct * 100).toFixed(1)}% keyline, over the ${(INK_BUDGET[kind] * 100) | 0}% ceiling — fewer and bigger shapes`);
+      if (lacePct > LACE_BUDGET[kind]) problems.push(`${name}: ${(lacePct * 100).toFixed(1)}% lace, over the ${(LACE_BUDGET[kind] * 100) | 0}% budget — ${st.lace}px of keyline drawn around something already inside an outline`);
       if (st.toxin > 0 && !TOXIN_OK.has(id)) problems.push(`${name}: ${st.toxin}px on PAL.toxin's ray outside reactor/airlock`);
       for (const [k, n] of st.bad) {
         problems.push(`${name}: ${n}px off-palette (${k})`);
-        offPalette.set(k, (offPalette.get(k) || 0) + n);
         break; // one line per sprite is enough to find it
       }
 
@@ -2682,10 +3138,15 @@ function runSelfTest() {
         }
         const gl = boxLuma(sheet, at, GLYPH_BOX);
         if (gl > 118) problems.push(`${name}: status-glyph corner averages luma ${gl.toFixed(0)} — glyphs will not read on it`);
+        // A pip is 60% bone over the art, so its contrast against what is
+        // underneath is 0.6 * (bone luma - background luma). Anything pale in
+        // the strip — a pillow, a lit screen — swallows it.
+        const pipContrast = PIP_ALPHA * (BONE_LUMA - boxLuma(sheet, at, PIP_BOX));
+        if (pipContrast < PIP_MIN_CONTRAST) problems.push(`${name}: level pips would land at ${pipContrast.toFixed(0)} luma contrast (need ${PIP_MIN_CONTRAST}) — the bottom-left strip is too pale`);
       }
 
-      sigs[kind].push({ id, sig: signature(sheet, at) });
-      rows.push({ kind, name, w: size.w, h: size.h, cover, inkPct, toxin: st.toxin, tiles });
+      sigs[kind].push({ id, sig: signature(sheet, at), prof: palProfile(sheet, at) });
+      rows.push({ kind, name, w: size.w, h: size.h, cover, inkPct, lacePct, toxin: st.toxin, tiles });
     }
 
     const pairs = [];
@@ -2703,15 +3164,27 @@ function runSelfTest() {
     });
   }
 
-  // Does each room's fixture look more like its own cutaway than anyone else's?
-  let mismatched = 0;
+  // Is each room's fixture made of the same palette as its own cutaway?
+  //
+  // Compared as deviations from each family's own mean, because a cutaway is a
+  // walled room and a fixture is machinery hanging in the dark: every cutaway
+  // carries a big shared component of concrete coursing that no fixture has,
+  // and without centring, the comparison ranks rooms by how much of their wall
+  // is covered rather than by what colour they are.
+  const centre = (list) => {
+    const mean = list[0].prof.map((_, i) => list.reduce((s, e) => s + e.prof[i], 0) / list.length);
+    for (const e of list) e.dev = e.prof.map((v, i) => v - mean[i]);
+  };
+  centre(sigs.fixture);
+  centre(sigs.cutaway);
+  const strayed = [];
   for (const f of sigs.fixture) {
     let best = null;
     for (const c of sigs.cutaway) {
-      const d = sigDist(f.sig, c.sig);
+      const d = profDist(f.dev, c.dev);
       if (!best || d < best.d) best = { d, id: c.id };
     }
-    if (best.id !== f.id) mismatched++;
+    if (best.id !== f.id) strayed.push(`${f.id}->${best.id}`);
   }
 
   const pad = (s, n) => String(s).padEnd(n);
@@ -2721,16 +3194,19 @@ function runSelfTest() {
     console.log(
       `  ${pad(r.name, 26)} ${pad(`${r.w}x${r.h}`, 8)} cover ${pad(`${Math.round(r.cover * 100)}%`, 5)}` +
       ` ink ${pad(`${(r.inkPct * 100).toFixed(1)}%`, 6)}` +
+      ` lace ${pad(`${(r.lacePct * 100).toFixed(1)}%`, 6)}` +
       (r.tiles ? ` seam ${pad(r.tiles, 6)}` : '        ') +
       (r.toxin ? `  toxin ${r.toxin}px` : '')
     );
   }
   const fx = rows.filter((r) => r.kind === 'fixture');
   const cu = rows.filter((r) => r.kind === 'cutaway');
-  const worstInk = (list) => Math.max(...list.map((r) => r.inkPct));
+  const worst = (list, key) => Math.max(...list.map((r) => r[key]));
   console.log(`  atlas used ${sheet.usedHeight}/${sheet.size} rows`);
-  console.log(`  worst keyline: fixtures ${(worstInk(fx) * 100).toFixed(1)}%, cutaways ${(worstInk(cu) * 100).toFixed(1)}%`);
-  console.log(`  ${28 - mismatched}/28 rooms whose fixture resembles its own cutaway more than any other`);
+  console.log(`  worst keyline: fixtures ${(worst(fx, 'inkPct') * 100).toFixed(1)}%, cutaways ${(worst(cu, 'inkPct') * 100).toFixed(1)}%`);
+  console.log(`  worst lace: fixtures ${(worst(fx, 'lacePct') * 100).toFixed(1)}% (budget ${(LACE_BUDGET.fixture * 100) | 0}%)`);
+  console.log(`  ${28 - strayed.length}/28 rooms whose fixture and cutaway are made of the same palette`
+    + (strayed.length ? `; strayed: ${strayed.slice(0, 6).join(', ')}` : ''));
 
   if (problems.length) {
     console.log(`\n  ${problems.length} PROBLEM(S):`);

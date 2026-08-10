@@ -354,15 +354,51 @@ export class Shell {
 
   /** Transient banner in the top-right of the stage. */
   pushAlert({ kind = 'alert', glyph = '!', text, floor }) {
+    // One rail entry per distinct message. A condition that flickers — the
+    // brownout does, as generation crosses demand and crosses back — fires on
+    // every transition, and each one used to stack another identical card
+    // until four copies of "Brownout — check power priority" covered the top
+    // floor of the silo. Repeating a warning does not make it more true; it
+    // just hides the thing the player is being warned about. A repeat restarts
+    // the timer instead, so it stays up while the condition lasts and leaves
+    // when it stops.
+    const existing = this._alertNodes?.get(text);
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.dropAlert(text), 7000);
+      // Move it back to the bottom so the newest thing is where the eye is.
+      this.alertRail.appendChild(existing.node);
+      if (floor != null) this.onAlertFloor?.(floor, kind);
+      return;
+    }
+
     const node = el(
       'div.alert' + (kind ? '.' + kind : ''),
       el('span.glyph', glyph),
       el('span', text)
     );
     this.alertRail.appendChild(node);
-    if (this.alertRail.children.length > 4) this.alertRail.firstChild.remove();
-    setTimeout(() => node.remove(), 7000);
+    this._alertNodes ??= new Map();
+    this._alertNodes.set(text, {
+      node,
+      timer: setTimeout(() => this.dropAlert(text), 7000),
+    });
+
+    while (this.alertRail.children.length > 3) {
+      const oldest = this.alertRail.firstChild;
+      const key = [...this._alertNodes].find(([, v]) => v.node === oldest)?.[0];
+      if (key) this.dropAlert(key);
+      else oldest.remove();
+    }
     if (floor != null) this.onAlertFloor?.(floor, kind);
+  }
+
+  dropAlert(text) {
+    const entry = this._alertNodes?.get(text);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    entry.node.remove();
+    this._alertNodes.delete(text);
   }
 
   onKey(e) {

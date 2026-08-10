@@ -31,14 +31,23 @@
  *     to every role but 'irradiated' — the spec reserves that green for
  *     radiation and contamination, and a citizen sick with radiation is the
  *     one thing in the silo it is actually for.
- *   - Every solid gets a 1px near-black keyline. Rather than hand-drawing it
- *     (impossible to keep right across 180 frames), the figure is composed in
- *     a grid and grid.keyline() grows ink into the empty pixels touching it.
- *     Parts that land ON another part call grid.stamp(), which lays the same
- *     keyline down against whatever it covers first. stamp() takes an allowInk
- *     predicate for the common case of a part that must not bite into the body
- *     it is worn on — a belt may not keyline down into the legs, and goggles
- *     may not keyline down into the eye.
+ *   - Every solid meets EMPTY SPACE across a 1px near-black keyline. Rather
+ *     than hand-drawing it (impossible to keep right across 200 frames), the
+ *     figure is composed in a grid and grid.keyline() grows ink into the empty
+ *     pixels touching it. That pass is not optional and nothing overrides it.
+ *
+ *     Where two parts of the same figure meet is a different question, and the
+ *     answer is not automatically "a line". Twelve pixels wide, every ink pixel
+ *     spent inside the body is a pixel of body that no longer exists: the far
+ *     arm outlined against the torso deleted the jumpsuit's only lit column,
+ *     and a belt outlined against the legs deleted half the leg. So an interior
+ *     boundary is drawn with grid.stamp() where the two materials are close in
+ *     value, and with the value step itself where they are not — which is why
+ *     c.sleeveBack is derived to sit below every tone on the body. stamp()
+ *     takes an allowInk(dx, dy, nx, ny) predicate; it is given the cell as well
+ *     as the direction, because "may I keyline downward" is usually the wrong
+ *     question — the arm must keyline down against the torso and must not
+ *     keyline down into the legs, and those are one direction on two rows.
  *   - Randomness is rng(seed) from lib.mjs and is derived from the citizen
  *     seed only, never from the frame index, so a citizen looks like the same
  *     person for the whole animation and the atlas regenerates byte-identical.
@@ -232,6 +241,11 @@ function grid(w, h) {
      * The outer keyline against empty space is left to keyline(); this only
      * handles the internal boundary, which is the one a swinging arm over a
      * torso needs and which no outline pass can infer.
+     *
+     * allowInk is called with the direction AND the cell about to be inked,
+     * because "may I keyline downward" is usually the wrong question: the arm
+     * needs to keyline down against the torso and must not keyline down into
+     * the legs, and those are the same direction on different rows.
      */
     stamp(list, allowInk = null) {
       const own = new Set(list.map(([x, y]) => y * w + x));
@@ -240,7 +254,7 @@ function grid(w, h) {
           const nx = x + dx;
           const ny = y + dy;
           if (own.has(ny * w + nx)) continue;
-          if (allowInk && !allowInk(dx, dy)) continue;
+          if (allowInk && !allowInk(dx, dy, nx, ny)) continue;
           if (g.at(nx, ny)) g.px(nx, ny, PAL.ink);
         }
       }
@@ -473,7 +487,10 @@ function config(role, seed, { age = null } = {}) {
       // shadow actually lands on.
       c.coat = true;
       c.sleeve = tone('bone', -0.16);
-      c.sleeveBack = tone('bone', -0.4);
+      // The far sleeve has to sit below the coat's own shade tone
+      // (bone@-0.34) or it disappears into the coat's front edge, which is
+      // exactly what the far arm swings past.
+      c.sleeveBack = tone('bone', -0.58);
       break;
 
     case 'deputy':
@@ -594,7 +611,14 @@ function config(role, seed, { age = null } = {}) {
   // -0.08 is inside the seed jitter's own range, and on those seeds the far
   // limb vanished into the body it was meant to stand clear of.
   c.suitBack = shadeOf(c.suitDark, -0.22);
-  if (!c.sleeveBack) c.sleeveBack = shadeOf(c.sleeve, -0.34);
+  // And the far SLEEVE below that again, not off c.sleeve. Derived from the
+  // sleeve it came out at denimDark@-0.34 = (68,81,102) against a front edge
+  // of denimDark = (63,81,110) — eight points apart — so on the walk frames
+  // where the far arm swings out past the front of the body it vanished into
+  // the body's own shading. Below the darkest tone on the figure it is
+  // legible against both the lit back edge and the shaded front one, which is
+  // what lets it go without an internal keyline (see drawFarArm).
+  if (!c.sleeveBack) c.sleeveBack = shadeOf(c.suitBack, -0.12);
 
   // Universal accessories: any role can be injured (rust), and any role can be
   // handed a tool by the work action (steelLit). Everything else is requested
@@ -873,28 +897,22 @@ function drawTorso(g, c, { dy = 0, squash = 0 }) {
     // so half the flap was painted over on every frame and the pouch was the
     // same suitDark as the shadow beside it and the front edge past it — three
     // identical dark pixels in a row, which is not a pocket, it is a dark half.
-    // Two columns of flap over one lit pixel of pouch is the smallest thing
-    // that still reads, and it lives where the arm never goes.
+    //
+    // A dark flap line over a pouch that stands PROUD of the front edge. The
+    // pouch used to be one lit pixel with the front-edge shade beside it, so
+    // the whole pocket was a line with a dot under it; giving it both columns
+    // and interrupting the edge shade for one row is what makes it read as a
+    // thing hanging off the chest rather than as a nick in the outline.
     g.hline(x + w - 2, y + 1, 2, PAL.ink);
     g.px(x + w - 2, y + 2, c.suitLit);
+    g.px(x + w - 1, y + 2, c.suit);
   }
 
-  if (c.sealed) {
-    // Neck seal, then the air tank on the BACK.
-    //
-    // The filter used to be a 2x2 on the chest at cols 5-6 — the arm's sleeve
-    // and shadow columns — and drawArm runs after drawTorso, so it survived as
-    // one pixel in two of six walk frames and nothing in the other four. Hung
-    // off the back instead, it is outside the torso entirely: no part of the
-    // figure can overwrite it, and it changes the silhouette, which is the
-    // only kind of cue that reads at this size.
-    g.hline(x, y, w, c.suitDark);
-    g.stamp(cells()
-      .rect(x - 2, y + 1, 2, h - 1, c.steel)
-      .vline(x - 2, y + 1, h - 1, c.steelLit)
-      .hline(x - 2, y + h - 1, 2, c.steelDark)
-      .list, (dx, dy) => dx > 0);
-  }
+  // The neck seal. The air tank that goes with it is a role cue and is drawn
+  // in drawRoleCue, because everything here runs BEFORE the far arm: hung off
+  // the back from inside drawTorso, the tank sat in exactly the column the far
+  // arm snaps to and was overpainted by it on every standing frame.
+  if (c.sealed) g.hline(x, y, w, c.suitDark);
 
   if (c.sick) {
     // Contamination at the collar, where a suit would be sealed and is not.
@@ -916,6 +934,16 @@ function drawArm(g, c, { dy = 0, squash = 0, sw = 0, drop = 0, clutch = false, t
   const len = Math.max(2, c.m.torsoH - squash - 1 + c.armExtra);
   const front = TORSO_X + c.torsoW - 1;
   const cl = cells();
+  // The arm keylines DOWNWARD against the torso and stops ABOVE the waist row.
+  // Asking stamp() for "dy > 0" alone was the wrong question twice over. The
+  // hand ends on the torso's last row, so its downward neighbour is legY and
+  // METRICS gives the leg two rows — on the child, whose hand reaches the hem
+  // on every frame, that inked the whole near thigh out and the boots hung
+  // under a black bar. And the waist row itself is where a garment puts its
+  // hem, so the injured clutch, which folds one row above it, took the
+  // farmer's apron hem with it on every squashed frame.
+  const waist = y + Math.max(2, c.m.torsoH - squash) - 1;
+  const onBody = (dx, dy2, nx, ny) => dy2 > 0 && ny < waist;
 
   // A shadow lands on whatever it is cast onto. Looking the surface up in
   // shadeMap rather than reaching for c.suitDark is what stops the medic's arm
@@ -944,7 +972,7 @@ function drawArm(g, c, { dy = 0, squash = 0, sw = 0, drop = 0, clutch = false, t
     cl.px(SHOULDER_X, y + 1, c.sleeve);
     cl.px(SHOULDER_X + 1, y + 2, c.sleeve);
     cl.rect(Math.min(SHOULDER_X + 2, front - 1), y + 2, 2, 1, c.hand);
-    g.stamp(cl.list, (dx, dy2) => dy2 > 0);
+    g.stamp(cl.list, onBody);
     castShadow([[SHOULDER_X + 1, y + 1]]);
     return;
   }
@@ -976,7 +1004,7 @@ function drawArm(g, c, { dy = 0, squash = 0, sw = 0, drop = 0, clutch = false, t
       shadow.push([cx + 1, row]);
     }
   }
-  g.stamp(cl.list, (dx, dy2) => dy2 > 0);
+  g.stamp(cl.list, onBody);
   castShadow(shadow);
 }
 
@@ -994,9 +1022,18 @@ function drawArm(g, c, { dy = 0, squash = 0, sw = 0, drop = 0, clutch = false, t
  * could come out a single channel apart and the limb simply vanished.
  *
  * Now the column is snapped clear of the torso instead of allowed to hide
- * under it, it is drawn after the torso so it can stamp its own keyline, and
- * c.suitBack is derived from c.suitDark so the two sides of one garment cannot
- * collide by construction.
+ * under it, and c.sleeveBack is derived from c.suitBack — below the darkest
+ * tone anywhere on the body — so the two sides of one garment cannot collide
+ * by construction.
+ *
+ * It is the one part of the figure that does NOT lay an internal keyline, and
+ * that is deliberate. Being snapped clear, its only solid neighbour is the
+ * torso: at the back that is the jumpsuit's lit edge, which is the single
+ * brightest column the body has, and inking it to draw a boundary that a 1.7
+ * luminance step already draws costs four pixels of form on every frame to buy
+ * nothing. The rule this file enforces is that no solid meets EMPTY space
+ * without a keyline; two adjacent parts of one figure may separate by value,
+ * and here they must.
  */
 function drawFarArm(g, c, { dy = 0, squash = 0, sw = 0 }) {
   const y = c.m.torsoY + dy;
@@ -1005,13 +1042,10 @@ function drawFarArm(g, c, { dy = 0, squash = 0, sw = 0 }) {
   const fwd = TORSO_X + c.torsoW;
   const raw = SHOULDER_X + 1 + sw;
   const col = raw <= back || raw >= fwd ? raw : (sw <= 0 ? back : fwd);
-  // stamp() only inks cells that are already solid, so against empty space
-  // this is a plain vline and the global keyline pass outlines it; against the
-  // torso it lays the internal boundary no outline pass could infer.
   g.stamp(cells()
     .vline(col, y + 1, len, c.sleeveBack)
     .px(col, y + len, c.suitBack)
-    .list);
+    .list, () => false);
 }
 
 /**
@@ -1046,7 +1080,12 @@ function drawLeg(g, c, { off = 0, lift = 0, near = true }) {
   }
   cl.rect(fx, bootY, lw + 1, 1, bootLit);
   cl.rect(fx, bootY + 1, lw + 1, 1, boot);
-  g.stamp(cl.list);
+  // Never keyline downward. Nothing is ever under a leg except the floor,
+  // which the global pass outlines, or the OTHER leg — and on the frame where
+  // the near foot lifts off the far one, a downward keyline is laid straight
+  // across the far boot's only visible row. That frame rendered as a single
+  // boot sitting on a solid black bar.
+  g.stamp(cl.list, (dx, dy) => dy <= 0);
 }
 
 /* ------------------------------------------------------------ role cues -- */
@@ -1058,11 +1097,25 @@ function drawRoleCue(g, c, { dy = 0, squash = 0 }) {
   const h = Math.max(2, c.m.torsoH - squash);
   const w = c.torsoW;
 
-  // Nothing here may keyline downward. The row under the torso is legY, and
-  // METRICS gives the leg two rows at most — a garment that spends one of them
-  // on its own hem severs the body from the boots. Every cue below therefore
-  // either stops short of the last torso row or stamps with dy <= 0.
+  // Two rules bound every cue below, and they are the two rows the figure can
+  // least afford to lose.
+  //
+  // DOWN is legY. METRICS gives the leg two rows at most, so a garment that
+  // spends one of them on its own hem severs the body from the boots.
+  //
+  // UP, for anything worn on the chest, is the torso's lit top row — the one
+  // bright row the body has and the thing that makes it read as a shoulder
+  // rather than a plank. A 2x2 fitting that keylines upward puts a black bar
+  // across it; the militia plate and the deputy badge both did, and between
+  // them and the arm the militia's chest was three ink pixels wide.
+  //
+  // A cue that covers the WHOLE torso has no internal boundary to draw at all
+  // and passes no-ink: its only solid neighbour is the far arm behind it, and
+  // inking that deletes the limb to outline a garment the global keyline pass
+  // is already going to outline.
   const notDown = (dx, dy) => dy <= 0;
+  const sideways = (dx, dy) => dy === 0;
+  const noInk = () => false;
 
   if (c.apron) {
     // Bib and skirt down the front.
@@ -1074,12 +1127,18 @@ function drawRoleCue(g, c, { dy = 0, squash = 0 }) {
     // overhanging row then keylined into the thigh and took the near leg with
     // it. Moved forward to cols 7-8 the highlight is outside the arm's
     // footprint, and the hem now lands on the waist.
+    //
+    // Lit left column, shaded HEM — not a shaded right column. Two pixels wide
+    // is not enough for a lit face, a body and a shaded face: lighting the
+    // left and shading the right left no canvas in between, so the apron had
+    // three tones and no material. Shading the bottom face instead keeps the
+    // light coming from the upper left and gives the strip a middle.
     const ax = x + w - 2;
     g.stamp(cells()
       .rect(ax, y, 2, h, c.canvas)
       .hline(ax, y, 2, c.canvasLit)
-      .vline(ax, y + 1, h - 1, c.canvasLit)
-      .vline(ax + 1, y + 1, h - 1, c.canvasDark)
+      .vline(ax, y + 1, h - 2, c.canvasLit)
+      .hline(ax, y + h - 1, 2, c.canvasDark)
       .list, notDown);
     c.shade(c.canvas, c.canvasDark);
     c.shade(c.canvasLit, c.canvas);
@@ -1105,7 +1164,7 @@ function drawRoleCue(g, c, { dy = 0, squash = 0 }) {
       .hline(x, y + h - 1, w, coatEdge)
       .hline(x + w - 3, y, 2, c.suitDark)
       .px(x + w - 2, y + 1, c.suitDark)
-      .list, notDown);
+      .list, noInk);
     c.shade(coat, coatEdge);
     c.shade(coatLit, coatEdge);
   }
@@ -1118,7 +1177,7 @@ function drawRoleCue(g, c, { dy = 0, squash = 0 }) {
     g.stamp(cells()
       .hline(x, y + h - 2, w, tone('rust', -0.15))
       .px(x + w - 1, y + h - 2, c.amber)
-      .list, notDown);
+      .list, (dx, dy) => dy < 0);
   }
 
   if (c.badge) {
@@ -1126,29 +1185,58 @@ function drawRoleCue(g, c, { dy = 0, squash = 0 }) {
     // self-defeating: stamp() inks all four of its neighbours, so a 1px badge
     // digs its own black hole and then sits in it, and at the 0.98x draw scale
     // the game actually uses it is gone entirely.
+    //
+    // No keyline of its own: saturated amber on a uniform four steps off black
+    // is the largest value jump anywhere on this citizen, and an ink outline
+    // around it would be invisible against the uniform and would cost the lit
+    // shoulder row above.
     g.stamp(cells()
       .rect(x + w - 2, y + 1, 2, 2, c.amber)
       .px(x + w - 2, y + 1, tone('sodium', 0.35))
       .px(x + w - 1, y + 2, tone('sodium', -0.35))
-      .list, notDown);
+      .list, noInk);
   }
 
   if (c.plates) {
     // The pauldron hangs off the BACK shoulder, outside the torso, where no
-    // arm can reach it — that is a silhouette change and it survives. The
-    // chest plate is inset to the two front columns for the same reason the
-    // pocket is: the arm owns the two behind them, and a plate drawn across
-    // them lost half its pixels every frame and left a lone saturated rust
-    // dot that read as a stuck pixel. It carries its own rust as a 2px edge
-    // instead of a 1px accent.
+    // arm can reach it — that is a silhouette change and it survives. Steel on
+    // denim is only a 1.03 luminance step, so this one does need its keyline
+    // against the body; sideways only, so it takes the boundary and not the
+    // shoulder.
     g.stamp(cells()
       .rect(x - 2, y, 2, 3, c.steel)
       .hline(x - 2, y, 2, c.steelLit)
       .px(x - 2, y + 2, c.steelDark)
+      .list, sideways);
+    // The chest plate is inset to the two front columns for the same reason
+    // the pocket is: the arm owns the two behind them, and a plate drawn
+    // across them lost half its pixels every frame and left a lone saturated
+    // rust dot that read as a stuck pixel. It carries its own rust as a 2px
+    // edge instead of a 1px accent.
+    g.stamp(cells()
       .rect(x + w - 2, y + 1, 2, 2, c.steel)
       .hline(x + w - 2, y + 1, 2, c.steelLit)
       .hline(x + w - 2, y + 2, 2, c.rust)
-      .list, notDown);
+      .list, sideways);
+    c.shade(c.steel, c.steelDark);
+    c.shade(c.steelLit, c.steel);
+  }
+
+  if (c.sealed) {
+    // The air tank, off the BACK of the suit and outside the torso, where
+    // nothing on the figure can overwrite it and it changes the silhouette —
+    // the only kind of cue that reads at this size. It used to be a 2x2 filter
+    // on the chest at cols 5-6, the arm's sleeve and shadow columns, and
+    // survived as one pixel in two of six walk frames.
+    //
+    // No keyline into the body: steel against the hood-white suit is a two-to-
+    // one value step and the tank's outer edge is silhouette, which the global
+    // pass outlines.
+    g.stamp(cells()
+      .rect(x - 2, y + 1, 2, h - 1, c.steel)
+      .vline(x - 2, y + 1, h - 1, c.steelLit)
+      .hline(x - 2, y + h - 1, 2, c.steelDark)
+      .list, noInk);
     c.shade(c.steel, c.steelDark);
     c.shade(c.steelLit, c.steel);
   }
@@ -1163,11 +1251,14 @@ function drawWound(g, c, { dy = 0, squash = 0 }) {
   // lands. Drawn before the arm so the hand covers the top of it and the blood
   // shows past the fingers, rather than the arm and the wound being on
   // opposite sides of the body as they used to be.
-  g.stamp(cells()
-    .px(fx, y + 1, c.rust)
-    .px(fx, y + 2, c.rustLo)
-    .px(fx - 1, Math.min(y + 3, y + h - 1), c.rustLo)
-    .list, (dx, dy2) => dy2 <= 0);
+  //
+  // over(), not stamp(): a stain is not an object and has no outline. Stamped,
+  // its keyline reached sideways and upward into whatever it was bleeding
+  // through — on the farmer that was the apron, and three of the apron's eight
+  // visible pixels went black to draw a border around two pixels of blood.
+  g.over(fx, y + 1, c.rust);
+  g.over(fx, y + 2, c.rustLo);
+  g.over(fx - 1, Math.min(y + 3, y + h - 1), c.rustLo);
 }
 
 /* ------------------------------------------------------------ assembly -- */
@@ -1181,13 +1272,27 @@ function drawBody(g, c, pose, action) {
   const lean = pose.lean | 0;
   const bandage = action === 'injured';
 
-  drawLeg(g, c, { off: strideOf(c, pose.fl), lift: pose.fLift | 0, near: false });
-  drawLeg(g, c, { off: strideOf(c, pose.nl), lift: pose.nLift | 0, near: true });
+  // Feet. Halfway through a stride the swing foot passes the stance foot, and
+  // in a side view the far one goes BEHIND: it should be occluded, cleanly.
+  // The two hips are a column apart, so at the passing pose the boots landed
+  // one column apart — and the near boot, drawn second, covered all of the far
+  // one except a single pixel, which at 1:1 is a speck of dirt beside a foot.
+  // Snapped flush, the far leg hides behind the near one and the pose reads as
+  // a pass. Only the column is snapped, never the lift: with both matched the
+  // two passing frames of the walk would be identical.
+  const nearOff = strideOf(c, pose.nl);
+  let farOff = strideOf(c, pose.fl);
+  if (Math.abs((c.nearHip + nearOff) - (c.farHip + farOff)) < c.legW + 1) {
+    farOff = c.nearHip + nearOff - c.farHip;
+  }
+
+  drawLeg(g, c, { off: farOff, lift: pose.fLift | 0, near: false });
+  drawLeg(g, c, { off: nearOff, lift: pose.nLift | 0, near: true });
   drawTorso(g, c, { dy: bob, squash: bob });
-  // The far arm goes on AFTER the torso, not before it. It is snapped clear of
-  // the body rather than allowed to hide under it, so there is nothing to
-  // occlude — and drawn second it can stamp its own keyline against the torso,
-  // which is the only way that boundary can exist.
+  // The far arm goes on AFTER the torso, not before it: snapped clear of the
+  // body rather than allowed to hide under it, there is nothing left for the
+  // torso to occlude, and it was being overpainted in twenty of the twenty-two
+  // standing frames when it went first.
   drawFarArm(g, c, { dy: bob, squash: bob, sw: pose.far | 0 });
   // The role cue is worn on the torso, so it goes on before the arm: a coat
   // drawn last would swallow the arm swing and the idle frames would collapse
@@ -1233,9 +1338,24 @@ function strideOf(c, off) {
  *
  * The body still bottoms out on the same row as a standing citizen, so a
  * sleeper drawn at the normal anchor lies on the floor rather than in it.
+ *
+ * THE LESSON THIS SPRITE WAS REBUILT AROUND. Lying down, everything is
+ * horizontal and everything is adjacent: the head touches the shoulder, the
+ * arm lies along the chest, the knee folds over the hip. The first version
+ * stamped all of them at full width with no allowInk, and stamp() inks every
+ * solid neighbour — so the arm alone put an ink bar across the whole row above
+ * it AND the whole row below it, and in a body four rows deep that left two.
+ * Every sleeping citizen rendered as a black slab with a boot.
+ *
+ * So the geometry changed before the code did, and nothing here draws an
+ * interior keyline at all. The head no longer overlaps the shoulder, it butts
+ * against it, and the global pass outlines that boundary for free. The arm
+ * lies in a row the torso has already shaded, so a value step tells it apart.
+ * The folded leg is painted in the far side's tones, which is what it is. Four
+ * rows of body cannot afford a single line drawn inside them, so none is.
  */
 function drawSleeper(g, c, f) {
-  // A child sleeps like a child: shorter along the floor and one row thinner.
+  // A child sleeps like a child: shorter along the floor, same size head.
   // drawSleeper used to hard-code adult geometry and never call drawRoleCue,
   // so every role collapsed into two silhouettes the moment a citizen lay
   // down — a sleeping child was pixel-for-pixel a sleeping adult apart from
@@ -1244,113 +1364,165 @@ function drawSleeper(g, c, f) {
   const small = c.m === METRICS.child;
   const breath = f === 1 ? 1 : 0;
 
-  const headX = small ? 3 : 1;   // back of the skull
-  const bodyX = headX + 3;       // shoulder
-  const bodyR = 9;               // hip — the folded knees start here
+  // Head 1..4, torso 5..bodyR, folded legs off the end of it. The child keeps
+  // the adult's head at full size and loses length off the body, so lying down
+  // its head is a bigger share of the figure exactly as it is standing. Depth
+  // is NOT what shrinks: four rows is already the minimum that carries lit /
+  // shadowed / body / floor, and at three the child's torso would hold no
+  // jumpsuit colour at all — the same bodyless-torso failure METRICS.child
+  // exists to avoid.
+  const headX = 1;
+  const bodyX = 5;
+  const bodyR = small ? 8 : 9;
   const bodyW = bodyR - bodyX + 1;
-  const top = (small ? 12 : 11) - breath;
+  const rest = 11;
+  // The chest rises a row on frame 1 and the arm rides up with it. The floor
+  // row never moves, and neither does the head: a sleeper who bobbed would be
+  // levitating, and a head that breathed would be nodding.
+  const top = rest - breath;
+  const headY = rest - 3;
+  const armY = top + 1;
 
-  // Torso, lying on its side, shoulder to hip.
-  g.rect(bodyX, top, bodyW, 15 - top, c.suit);
-  g.hline(bodyX, top, bodyW, c.suitLit);
-  g.hline(bodyX, 14, bodyW, c.suitDark);
-
-  // Folded legs, tucked in front of the hip, and the boot ending at col 10 so
-  // its keyline has col 11 to grow into. It used to run to col 11, which put
-  // two unkeylined solids flush against the sprite border and bled them into
-  // the atlas gutter — the one place in the file that broke the outline rule.
+  // ---- torso, lying on its side, shoulder to hip -------------------------
   //
-  // Stamped, and a tone step away from the torso: same material at the same
-  // depth with no boundary between them is exactly why this used to render as
-  // one featureless denim slab.
-  g.stamp(cells()
-    .rect(7, 12, 4, 3, c.suit)
-    .hline(7, 12, 4, c.suitLit)
-    .hline(7, 14, 4, c.suitDark)
-    .list);
-  g.stamp(cells()
-    .rect(9, 13, 2, 2, c.boot)
-    .hline(9, 13, 2, c.bootLit)
-    .list);
+  // Four values top to bottom — lit, shadowed, body, floor — because the whole
+  // sprite is horizontal bands and the bands are the only modelling there is.
+  // The row the arm lies in is shaded across its full width, so the arm reads
+  // as a lighter thing lying IN the chest's under-curve rather than needing a
+  // keyline to be told apart from it.
+  g.rect(bodyX, top, bodyW, 15 - top, c.suit);
+  g.hline(bodyX, top, bodyW, c.suitLit);      // the up-facing side takes light
+  g.hline(bodyX, armY, bodyW, c.suitDark);
+  g.hline(bodyX, 14, bodyW, c.suitDark);      // the floor-facing side
 
-  // Arm laid across the body, hand resting on the knee. Stamped for the same
-  // reason: a sleeve thirteen points off the suit under it, with no keyline
-  // and no cast shadow, is not visible at any size.
+  // ---- knees drawn up, on the FAR side of the body -----------------------
+  //
+  // Far-side tones rather than an ink crease. The fold lies along the torso
+  // for its whole length, and a keyline between two parts of one body four
+  // rows deep spends more than it buys — worse, it lands in the columns the
+  // arm needs. c.suitBack is two steps below c.suit by construction, so the
+  // leg reads as depth instead of as a seam, and the boot follows it onto the
+  // far-side boot tones for the same reason.
+  //
+  // The fold ends at kneeX+2, which is col 10 on an adult, leaving col 11 free
+  // for its outline. These used to run to col 11 itself, which put unkeylined
+  // solids flush against the frame and bled them into the atlas gutter.
+  const kneeX = bodyR - 1;
   g.stamp(cells()
-    .hline(bodyX + 1, 12, 2, c.sleeve)
-    .rect(bodyX + 3, 12, 2, 1, c.hand)
-    .list);
+    .rect(kneeX, 12, 3, 3, c.suitBack)
+    .hline(kneeX, 12, 3, c.suitDark)
+    .list, () => false);
+  g.stamp(cells()
+    .rect(kneeX + 1, 13, 2, 1, c.bootBackLit)
+    .rect(kneeX + 1, 14, 2, 1, c.bootBack)
+    .list, () => false);
 
-  drawSleeperCue(g, c, { bodyX, bodyR, top });
+  // ---- the arm laid along the chest --------------------------------------
+  //
+  // No keyline anywhere: it lies in the shaded row drawn above, and sleeve on
+  // suitDark is a value step the whole length of it. Outlining a three-pixel
+  // arm inside a four-row body spends the body to draw the arm. Stamped after
+  // the fold so the hand rests on the knee rather than under it.
+  const armLen = bodyR - bodyX - 2;
+  g.stamp(cells()
+    .hline(bodyX + 1, armY, armLen, c.sleeve)
+    .px(bodyX + 1 + armLen, armY, c.hand)
+    .list, () => false);
+
+  drawSleeperCue(g, c, { bodyX, bodyR, top, armY });
 
   if (c.sealed) {
-    const hx = headX;
+    // The hood, same footprint as the head, with the visor turned up. Its
+    // keyline goes on the inboard side only — below it is the hood's own dark
+    // bottom row and to the right is the silhouette, and inking either spends
+    // a quarter of a four-by-four hood to draw a two-by-two window.
+    g.rect(headX, headY, 4, 4, c.suit);
+    g.hline(headX, headY, 4, c.suitLit);
+    g.vline(headX, headY, 4, c.suitLit);
+    g.hline(headX, headY + 3, 4, c.suitDark);
     g.stamp(cells()
-      .rect(hx, top - 2, 5, 4, c.suit)
-      .hline(hx, top - 2, 4, c.suitLit)
-      .hline(hx + 1, top + 1, 4, c.suitDark)
-      .rect(hx + 2, top - 1, 2, 2, c.visor)
-      .px(hx + 2, top - 1, c.visorLit)
-      .list);
+      .rect(headX + 2, headY + 1, 2, 2, c.visor)
+      .px(headX + 2, headY + 1, c.visorLit)
+      .list, (dx) => dx < 0);
     return;
   }
 
-  // Head on the pillow: the hair mass takes the weight, the face turns up,
-  // the eye is a single closed line. Nothing else fits and nothing else is
-  // needed — a horizontal figure with black hair at one end reads as asleep.
-  // Stamped rather than plain-drawn, because its last columns lie ON the
-  // shoulder and without a boundary the head merged into the torso.
-  const hy = top - 3;
-  g.stamp(cells()
-    .px(headX + 1, hy, c.hair)
-    .px(headX + 2, hy, c.hair)
-    .rect(headX, hy + 1, 4, 2, c.hair)
-    .rect(headX, hy + 3, 2, 2, c.hair)
-    .hline(headX, hy + 1, 3, c.hairLit)
-    .rect(headX + 3, hy + 2, 2, 1, c.skin)
-    .px(headX + 2, hy + 3, c.skin)
-    .hline(headX + 3, hy + 3, 2, c.lid)
-    .hline(headX + 2, hy + 4, 3, c.skinLo)
-    .list);
+  // ---- head on the pillow -------------------------------------------------
+  //
+  // The hair mass takes the weight at the back, the face turns up and forward,
+  // the eye is one closed lid line. Nothing else fits and nothing else is
+  // needed: a horizontal figure with a black mass at one end reads as asleep.
+  // Plain-drawn, because the head no longer overlaps anything — it sits in its
+  // own four columns and the global keyline pass outlines it.
+  g.rect(headX, headY, 4, 4, c.hair);
+  g.hline(headX + 1, headY, 2, c.hairLit);
+  g.px(headX, headY + 1, c.hairLit);
+  g.px(headX + 3, headY + 1, c.skin);        // brow
+  g.hline(headX + 2, headY + 2, 2, c.skin);  // cheek and nose
+  g.px(headX + 2, headY + 2, c.lid);         // the closed eye
+  g.px(headX + 3, headY + 3, c.skinLo);      // jaw, in shadow
+  g.px(headX + 2, headY + 3, c.skin);        // chin catching the light
 }
 
 /**
  * The role cue, laid along a horizontal body. Short, because a sleeper is
  * mostly torso and the cue only has to say which of nine people this is.
+ *
+ * All of these are stampOn(), which clips to what is already solid — a cue may
+ * recolour the sleeper but may never change his outline, or two roles asleep
+ * would have different bodies. And none of them keylines: the body is four
+ * rows deep, so a cue that outlines itself top and bottom IS the body. They
+ * separate from the jumpsuit by material instead, which is what they are.
  */
-function drawSleeperCue(g, c, { bodyX, bodyR, top }) {
-  const w = bodyR - bodyX + 1;
+function drawSleeperCue(g, c, { bodyX, bodyR, top, armY }) {
+  // The chest, which is everything from the shoulder up to the leg fold. The
+  // fold owns bodyR-1 onward, so a garment that reaches the hip covers the
+  // boots — the sleeping farmer's apron did exactly that, and he had no feet.
+  const chest = bodyR - 2 - bodyX + 1;
 
   if (c.coat) {
+    // The coat runs one column further than the rest, over the top of the
+    // folded knee, because tails hanging over drawn-up legs is what a coat
+    // looks like on someone curled up.
     const coat = tone('bone', -0.1);
     g.stampOn(cells()
-      .rect(bodyX, top, w, 15 - top, coat)
-      .hline(bodyX, top, w, tone('bone', 0))
-      .hline(bodyX, 14, w, tone('bone', -0.34))
-      .list);
+      .rect(bodyX, top, chest + 1, 15 - top, coat)
+      .hline(bodyX, top, chest + 1, tone('bone', 0))
+      .hline(bodyX, 14, chest + 1, tone('bone', -0.34))
+      .hline(bodyX + 1, armY, chest - 1, tone('bone', -0.16))
+      .list, () => false);
   }
   if (c.apron) {
     g.stampOn(cells()
-      .rect(bodyX + 2, top, 3, 15 - top, c.canvas)
-      .hline(bodyX + 2, top, 3, c.canvasLit)
-      .hline(bodyX + 2, 14, 3, c.canvasDark)
-      .list);
+      .rect(bodyX + 1, top, chest - 1, 15 - top, c.canvas)
+      .hline(bodyX + 1, top, chest - 1, c.canvasLit)
+      .hline(bodyX + 1, 14, chest - 1, c.canvasDark)
+      .list, () => false);
   }
   if (c.plates) {
+    // Chest plate still on, because the militia sleep in their kit.
     g.stampOn(cells()
-      .rect(bodyX, top, 2, 15 - top, c.steel)
+      .rect(bodyX, top, 2, 14 - top, c.steel)
       .hline(bodyX, top, 2, c.steelLit)
-      .px(bodyX + 1, 14, c.rust)
-      .list);
+      .px(bodyX + 1, armY, c.rust)
+      .list, () => false);
   }
   if (c.belt) {
-    g.stampOn(cells().hline(bodyR - 1, top, 2, tone('rust', -0.15)).list);
+    g.stampOn(cells()
+      .hline(bodyX + 1, 13, chest - 1, tone('rust', -0.15))
+      .px(bodyX + 1, 13, c.amber)
+      .list, () => false);
   }
   if (c.badge) {
+    // Two amber pixels over one shaded one, on the shoulder. Three tones,
+    // because the deputy's other cue — a near-black uniform — is a recolour,
+    // and a recolour is not a cue: asleep every role is a horizontal bar, so
+    // the badge is the only thing saying which bar this is.
     g.stampOn(cells()
-      .rect(bodyX + 2, top, 2, 2, c.amber)
-      .px(bodyX + 2, top, tone('sodium', 0.35))
-      .list);
+      .rect(bodyX, top, 2, 2, c.amber)
+      .px(bodyX, top, tone('sodium', 0.35))
+      .px(bodyX + 1, top + 1, tone('sodium', -0.35))
+      .list, () => false);
   }
   if (c.sick) {
     g.over(bodyX, top, c.bloom);
@@ -1468,7 +1640,15 @@ function paintPortrait(p, { role = 'base', seed = '', age = null, gender = null 
   const old = isOld(role, age);
 
   const g = grid(PORTRAIT, PORTRAIT);
-  const skinLit = tone('skin', 0.16);
+  // The face is modelled in SHADOW, never in highlight, and that is a fact
+  // about the palette rather than a preference. shade(c, +t) mixes toward
+  // PAL.bone, and PAL.skin (227,190,154) is already brighter than PAL.bone in
+  // the red channel — so tone('skin', 0.16) came out at (225,193,161), a
+  // luminance ratio of 1.011 against the skin beside it. The head's lit edge,
+  // the cheekbone and the bridge of the nose were all painted in it, which is
+  // to say none of them existed. There is no lighter skin available; skinShade
+  // is a 1.21 step the other way, so every face plane here is stated by where
+  // the light ISN'T.
   const skin = c.skin;
   const skinLo = c.skinLo;
 
@@ -1513,13 +1693,16 @@ function paintPortrait(p, { role = 'base', seed = '', age = null, gender = null 
     const [x0, x1] = span(i);
     const y = headTop + i;
     g.hline(x0, y, x1 - x0 + 1, skin);
-    g.px(x0, y, skinLit);
+    // Shaded on the right, plain on the left. The left edge used to be painted
+    // skinLit, which is the same value as the skin: the "highlight" was the
+    // absence of shadow all along, so now it says so.
     g.px(x1, y, skinLo);
     g.px(x1 - 1, y, skinLo);
   }
-  // Cheekbone light and jaw shadow.
-  g.rect(10, headTop + 8, 2, 4, skinLit);
-  g.hline(12, headTop + 15, 6, skinLo);
+  // Jaw shadow, on the RIGHT of the chin. It used to run from col 12, which is
+  // the lit side — the light is upper-left in both renderers, and the mouth
+  // then covered everything except the four pixels that were on the wrong one.
+  g.hline(16, headTop + 15, 4, skinLo);
 
   // ---- hair ---------------------------------------------------------------
   if (!c.sealed) {
@@ -1613,10 +1796,14 @@ function paintPortrait(p, { role = 'base', seed = '', age = null, gender = null 
       g.px(ex, eyeY + 1, c.eye);
     }
 
-    // Nose: a lit bridge and a shadow under the tip. No nostrils at 32px.
-    g.vline(15, eyeY + 2, 4, skinLit);
-    g.hline(15, eyeY + 5, 2, skinLo);
-    g.px(17, eyeY + 5, skinLo);
+    // Nose. Light comes from the upper left, so the bridge is left in plain
+    // skin and the nose is drawn entirely as the shadow on its right: two
+    // pixels down the side and three under the tip. Five, and not one more —
+    // at six it grew a cast shadow onto the cheek, and a shadow that reaches
+    // from under the eye to the mouth on a face this size does not read as a
+    // nose, it reads as a beard.
+    g.vline(16, eyeY + 3, 2, skinLo);
+    g.hline(15, eyeY + 5, 3, skinLo);
 
     // Mouth.
     g.hline(14, eyeY + 7, 4, tone('skinShade', -0.4));
@@ -1696,6 +1883,12 @@ function drawPortraitRoleCue(g, c, { shoulderTop, headTop }) {
     // the character's defining feature — was left as a nine-pixel band, a
     // four-pixel sliver flanked by ink, and then nothing. A prop may not cost
     // more than the face it sits on.
+    //
+    // No keyline either. The downward one it used to take made a twelve-pixel
+    // solid ink row across the brow — a black bar wider than both eyebrows put
+    // together, one row above the eyes. Steel on black hair is a 1.6 value
+    // step and amber on it is four times that; a band that already carries its
+    // own dark lower half does not need an outline drawn on the face below it.
     const gy = headTop + 5;
     g.stampOn(cells()
       .rect(10, gy, 12, 2, c.steelDark)
@@ -1704,7 +1897,7 @@ function drawPortraitRoleCue(g, c, { shoulderTop, headTop }) {
       .rect(18, gy, 3, 2, c.amber)
       .hline(11, gy, 3, tone('sodium', 0.4))
       .hline(18, gy, 3, tone('sodium', 0.4))
-      .list, (dx, dy) => dy > 0);
+      .list, () => false);
   }
 
   if (c.coat) {
@@ -1741,33 +1934,47 @@ function drawPortraitRoleCue(g, c, { shoulderTop, headTop }) {
   }
 
   if (c.plates) {
-    // The chest plate is an outlined box drawn with a deliberate border, not a
-    // stamped fill. A stamped 12x2 rect gets a keyline above AND below, so it
-    // rendered as two solid twelve-pixel ink bars with a stripe of steel
-    // between them; stacked under the pauldron's own keyline that made three
-    // black bars across the chest, which reads as damage rather than armour.
-    // Drawing the border explicitly costs one row instead of two.
-    const py = shoulderTop + 1;
+    // Both plates draw their own border INSIDE their own footprint, and neither
+    // asks stamp() for a keyline. That is the whole fix for what this used to
+    // be. A stamped fill gets an ink row above AND below, so an eleven-wide
+    // chest plate cost two solid eleven-pixel bars; the pauldron, stamped on
+    // all four sides, added a third across the shoulder. Three black bars over
+    // the chest at 3x read as damage, not as armour. Drawn as boxes they cost
+    // one row each, they are the same rows the plate already occupies, and the
+    // border is where a border belongs — on the object.
+    //
+    // The two plates also end on different rows. Sharing one — which they did
+    // when both simply ran to the bottom of the shoulder — put their two
+    // bottom borders on the same line and made a single black bar right across
+    // the chest, which is the artifact this was supposed to remove. The
+    // pauldron stops two rows short; the chest plate runs off the bottom edge
+    // of the card instead of closing, exactly as the shoulders do.
+    const py = shoulderTop;
     g.stampOn(cells()
-      .rect(4, py, 7, 6, c.steel)
-      .hline(4, py, 7, c.steelLit)
+      .rect(3, py, 9, 7, PAL.ink)
+      .rect(4, py + 1, 7, 5, c.steel)
+      .hline(4, py + 1, 7, c.steelLit)
       .hline(4, py + 5, 7, c.steelDark)
       .rect(5, py + 2, 5, 2, c.rust)
       .hline(5, py + 2, 5, tone('rust', 0.22))
-      .list);
-    const bx = 14;
+      .list, () => false);
+    const bx = 13;
     const by = shoulderTop + 3;
     g.stampOn(cells()
-      .rect(bx, by, 11, 4, c.steel)
-      .hline(bx, by, 11, c.steelLit)
-      .hline(bx, by + 3, 11, c.steelDark)
-      .vline(bx + 10, by + 1, 2, c.steelDark)
-      .rect(bx + 3, by + 1, 5, 2, tone('steel', -0.16))
-      .list, (dx, dy) => dy < 0);
+      .rect(bx, by, 13, PORTRAIT - by, PAL.ink)
+      .rect(bx + 1, by + 1, 11, PORTRAIT - by - 1, c.steel)
+      .hline(bx + 1, by + 1, 11, c.steelLit)
+      .rect(bx + 3, by + 3, 7, 2, tone('steel', -0.16))
+      .hline(bx + 3, by + 3, 7, c.rust)
+      .list, () => false);
   }
 }
 
-export default { drawCitizen, drawPortrait, ACTIONS, ROLES, W, H, PORTRAIT };
+export default {
+  drawCitizen, drawPortrait, frameIndex,
+  ACTIONS, ROLES, CONSUMER_ROLES, CONSUMER_ACTIONS,
+  W, H, PORTRAIT,
+};
 
 /* ------------------------------------------------------------ self-test -- */
 
@@ -1904,18 +2111,33 @@ async function selfTest() {
             `${role}/${action}${f}: PAL.toxin on a citizen that is not irradiated`);
         }
 
-        // Two boots with nothing between them is one dark mass, not a stride.
+        // Two boots side by side with nothing between them is one dark mass,
+        // not a stride — the failure a legW of 3 used to give the child, whose
+        // feet then spanned eight of the twelve columns as a single block.
+        //
+        // The measure is the WIDTH of a run, not the number of runs. Demanding
+        // two runs on the sole row is a rule a walk cannot keep and should not
+        // be asked to: halfway through a stride the swing foot passes the
+        // stance foot and is hidden behind it, and while a boot is off the
+        // floor there is only one foot on that row at all. What must never
+        // happen is a horizontal mass wider than a single boot, which is
+        // legW + 1 = 3 for every role, plus a column of slack.
+        //
+        // Rows 13 and 14 are the whole boot band. A planted boot sits on both;
+        // a lifted one sits on 12 and 13. So two boots can only ever share a
+        // row on 13 or 14, and looking higher would start measuring thighs and
+        // the hands that reach past them, which is a different question.
         if (action !== 'sleep') {
-          const bootRow = H - 2;
-          let runs = 0;
-          let inRun = false;
-          for (let x = 0; x < W; x++) {
-            const c = cap.px[bootRow * W + x];
-            const solid = c && c.join(',') !== inkKey;
-            if (solid && !inRun) runs++;
-            inRun = solid;
+          for (let y = H - 3; y <= H - 2; y++) {
+            let run = 0;
+            let worst = 0;
+            for (let x = 0; x < W; x++) {
+              const c = cap.px[y * W + x];
+              run = c && c.join(',') !== inkKey ? run + 1 : 0;
+              worst = Math.max(worst, run);
+            }
+            check(worst <= 4, `${role}/${action}${f}: ${worst}px of fused foot on row ${y}`);
           }
-          check(runs >= 2, `${role}/${action}${f}: boots fused into one mass on the sole row`);
         }
       }
 
@@ -2024,7 +2246,8 @@ async function selfTest() {
   const total = frames + ROLES.length;
   if (fails.length) {
     console.error(`citizens: ${fails.length} failure(s) across ${total} renders`);
-    for (const f of fails.slice(0, 300)) console.error(`  - ${f}`);
+    for (const f of fails.slice(0, 40)) console.error(`  - ${f}`);
+    if (fails.length > 40) console.error(`  ... and ${fails.length - 40} more`);
     process.exitCode = 1;
   } else {
     console.log(`citizens: ok — ${frames} sprite frames + ${ROLES.length} portraits, `
@@ -2049,13 +2272,19 @@ async function writeSheet(out, args) {
   const pad = 2;
   const cellW = W * zoom + pad;
   const cellH = H * zoom + pad;
+  const portH = PORTRAIT * zoom + pad;
   const portW = args.action ? 0 : PORTRAIT * zoom + pad * 2;
-  const rowH = args.portraits ? PORTRAIT * zoom + pad : cellH;
+  // The row has to clear the TALLER of the two things in it. A portrait is
+  // twice the height of a sprite, so a row pitched at the sprite's height drew
+  // each portrait over the top of the one above and only the last role's
+  // survived — the sheet this file exists to be judged from could not show
+  // nine of its ten faces.
+  const rowH = args.portraits || portW ? portH : cellH;
   const pCols = args.portraits ? Math.ceil(Math.sqrt(roles.length)) : 1;
   const sheetW = args.portraits ? pCols * (PORTRAIT * zoom + pad) + pad : cols * cellW + pad + portW;
   const sheetH = args.portraits
     ? Math.ceil(roles.length / pCols) * rowH + pad
-    : Math.max(roles.length * rowH + pad, PORTRAIT * zoom + pad * 2);
+    : roles.length * rowH + pad;
 
   const buf = new Uint8Array(sheetW * sheetH * 4);
   for (let i = 0; i < sheetW * sheetH; i++) {
@@ -2083,9 +2312,12 @@ async function writeSheet(out, args) {
 
   roles.forEach((role, ri) => {
     let cx = pad;
+    // Sprites sit on the baseline of their row rather than the top of it, so
+    // that with a taller row the whole cast still stands on one line.
+    const cy = pad + ri * rowH + (rowH - cellH);
     for (const [action, n] of acts) {
       for (let f = 0; f < n; f++) {
-        drawCitizen(view(cx, pad + ri * cellH), { frame: f, action, role, seed: `${role}-7` });
+        drawCitizen(view(cx, cy), { frame: f, action, role, seed: `${role}-7` });
         cx += cellW;
       }
     }
