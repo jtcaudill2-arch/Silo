@@ -420,6 +420,55 @@ export const ROOMS = {
     desc: 'Ore and fuel out of the rock below the silo. Cave-ins are not rare.',
   }),
 
+  /**
+   * The room that makes the Reactor possible, and the room that gives the
+   * Deep Mine a point.
+   *
+   * Two halves of the same hole in the economy. Coolant was made by nothing —
+   * not one room in the game produced it — and the Reactor eats 0.9 a shift.
+   * Ore was eaten by nothing: the Deep Mine dug 2.6 a shift into a store that
+   * ended a 900-day campaign with 4,150 sitting in it, untouched. So the
+   * silo's best power plant ran on a resource it could not make, out of a mine
+   * whose output nothing wanted.
+   *
+   * It was meant to come off the surface — directives.js said so in as many
+   * words, that a coolant shortfall is "a research and surface problem, and
+   * the honest answer there is to hold". Measured, holding is all there was:
+   * a deep expedition brings back 10 to 45 coolant and one crewed Reactor
+   * burns about 27 a day, so the whole surface programme kept a Reactor lit
+   * for a fortnight a year. The campaign researched Reactor Containment for
+   * 1,500 points and two artifacts, paid 900 scrap for the room, crewed it to
+   * capability 3.7 — and it ran at nothing for 830 of 900 days.
+   *
+   * So the Deeps become a chain rather than three unrelated rooms: the mine
+   * takes ore out of the rock, this turns it into coolant, and the Reactor
+   * burns the coolant for four times what a Generator Hall makes. All three
+   * are behind the same tier and the mine's own research, which is what makes
+   * arriving in the Deeps mean something beyond a deeper number.
+   *
+   * Deliberately a new room rather than a second output bolted onto the Chem
+   * Lab: economy.js scales every one of a room's outputs by its worst-supplied
+   * input, so giving the Chem Lab an ore requirement would have stopped it
+   * making filters in any silo without a mine — and filters are what the air
+   * plant runs on.
+   */
+  heat_exchange: R({
+    id: 'heat_exchange',
+    name: 'Heat Exchange',
+    category: 'production',
+    width: 2,
+    produces: { coolant: 1.2 },
+    consumes: { power: 8, ore: 1.6 },
+    staff: { skill: 'engineering', slotsPerLevel: [2, 3, 4, 5, 6] },
+    buildCost: { scrap: 380, parts: 42, alloy: 20 },
+    tierGate: 'deeps',
+    // Arrives with the thing it exists to serve. Nothing else in the game
+    // wants coolant, so there is no reason to be able to build this before
+    // there is a Reactor to cool.
+    unlock: 'reactor_tech',
+    desc: 'Turns ore into reactor coolant. A Reactor without one is an expensive dark room.',
+  }),
+
   maintenance_bay: R({
     id: 'maintenance_bay',
     name: 'Maintenance Bay',

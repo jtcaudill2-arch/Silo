@@ -168,6 +168,14 @@ export function autopilot(state) {
   const wants = [];
   if (scrapIncome <= 0 && count('recycling') === 0) wants.push('recycling');
   if (partsIncome <= 0 && count('workshop') === 0) wants.push('workshop');
+  // A Reactor with no coolant is a dark room the silo paid 1,500 research
+  // points for: its output is scaled by its worst-supplied input, and nothing
+  // else in the game makes coolant. A competent player who has just built one
+  // notices this in a day; this is that day.
+  if (count('reactor') > 0 && (count('heat_exchange') === 0 || flow('coolant') < 0)) {
+    wants.push('heat_exchange');
+  }
+  if (count('heat_exchange') > 0 && count('deep_mine') === 0) wants.push('deep_mine');
   // The Laboratory is the third mandatory building and for the same kind of
   // reason: nothing else in the silo produces research points, and every
   // tier, every suit, every treaty and the chem lab that keeps the clinic

@@ -183,13 +183,21 @@ function scarcest(state, type) {
  * one impossible instruction for another is the same failure wearing a
  * different hat.
  *
- * Only scrap and parts, because only scrap and parts are made by a room the
- * silo can decide to build more of. A shortfall of alloy or coolant is a
- * research and surface problem, and the honest answer there is to hold.
+ * Scrap, parts and coolant, because those are the shortfalls a room can
+ * answer. Alloy is still a research problem — the Foundry is behind a node —
+ * and the honest answer there is to hold.
+ *
+ * Coolant is here because it stopped being a surface problem. This comment
+ * used to say it was one, and it was wrong: a deep expedition brings back ten
+ * to forty-five and a crewed Reactor burns about twenty-seven a day, so no
+ * amount of walking outside ever kept one lit. The Heat Exchange makes it out
+ * of mined ore, so a silo staring at an idle Reactor now gets told the room
+ * that fixes it instead of being told to wait.
  */
 const RELIEF = {
   scrap: { id: 'scrap_income', room: 'recycling', noun: 'salvage' },
   parts: { id: 'parts_income', room: 'workshop', noun: 'parts work' },
+  coolant: { id: 'coolant_income', room: 'heat_exchange', noun: 'coolant' },
 };
 
 function incomeRelief(state, key) {
@@ -398,6 +406,29 @@ export function directives(state) {
       why: 'Demand is at the limit of generation. Past it, rooms shut down from the bottom of the priority list — including the ones people drink from.',
       panel: 'build',
       weight: 92,
+    });
+  }
+
+  // ---- a Reactor with nothing to cool it ---------------------------------
+  //
+  // Said loudly, because the loss is enormous and completely silent. A Reactor
+  // is 1,500 research points, two artifacts and 900 scrap, and it makes four
+  // Generator Halls' worth of power — but economy.js scales a room's output by
+  // its worst-supplied input, so a Reactor with no coolant is a fully crewed,
+  // fully powered, dark room. Nothing else in the game wants coolant and,
+  // until the Heat Exchange, nothing made any: measured, a campaign ran its
+  // Reactor at capability 3.7 and near-zero output for 830 of 900 days and was
+  // never once told why.
+  if (has(state, 'reactor') && count(state, 'heat_exchange') === 0) {
+    add({
+      id: 'coolant_plant',
+      text: 'Build a Heat Exchange',
+      room: 'heat_exchange',
+      why:
+        'The Reactor burns coolant and nothing in the silo makes any. Until something does, it runs at ' +
+        'almost nothing however well it is crewed.',
+      panel: 'build',
+      weight: 91,
     });
   }
 

@@ -399,6 +399,12 @@ export const BAL = {
       'hydroponics',
       'generator_hall',
       'reactor',
+      // Part of the plant, not a customer of it. The Heat Exchange is the only
+      // source of the coolant the Reactor burns, so shedding it to keep the
+      // Reactor lit starves the Reactor a shift later — the same shape as
+      // cutting the salvage plants to survive a brownout and then never being
+      // able to afford the Generator Hall that would end it.
+      'heat_exchange',
       'recycling',
       'workshop',
       // Eighth, and it was nowhere at all: `maintenance_bay` was the one room
@@ -666,6 +672,10 @@ export const BAL = {
       // and 9,309 smelted; it was starved in the middle and drowning at the
       // end, because the bench only got people once everything else had them.
       'foundry',
+      // Immediately below it, and for the same reason one step further on:
+      // nothing else makes coolant, and an uncrewed Heat Exchange is a dark
+      // Reactor, which is four generator halls' worth of power standing still.
+      'heat_exchange',
       'chem_lab',
       'clinic',
       'maintenance_bay',
