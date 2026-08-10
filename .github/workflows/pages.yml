@@ -37,32 +37,25 @@ jobs:
       - name: Assemble dist/
         run: node tools/build-site.mjs
 
+      # No `enablement: true`. Creating a Pages site is an admin operation and
+      # GITHUB_TOKEN is not an admin token, so that flag fails with
+      # `Resource not accessible by integration` however the repository is
+      # configured — it needs a PAT. Pages is enabled once, by hand; after
+      # that this step finds the site and every later run is automatic.
       - id: pages
         uses: actions/configure-pages@v5
-        with:
-          # Turns Pages on for the repo if it isn't already, so this works
-          # without a trip to the settings page — where permitted. The
-          # workflow token cannot create a Pages site for a private repo on a
-          # plan without Pages for private repositories; see below.
-          enablement: true
 
-      # `Resource not accessible by integration` from the step above is a
-      # permission answer, not a bug in this workflow. Say so plainly rather
-      # than leaving a red X and an API doc link.
       - if: failure() && steps.pages.outcome == 'failure'
         run: |
-          echo "::error title=GitHub Pages is not enabled for this repository::"
+          echo "::error title=GitHub Pages has not been enabled yet::"
           echo "The site built fine — only publishing failed."
           echo
-          echo "Fix it with one of:"
-          echo "  1. Settings -> Pages -> Build and deployment -> Source: GitHub Actions."
-          echo "  2. If that option is absent, this is a private repository on a plan"
-          echo "     without Pages for private repos. Make the repository public"
-          echo "     (Settings -> General -> Danger Zone) or upgrade the account."
+          echo "Enable it once, by hand:"
+          echo "  Settings -> Pages -> Build and deployment -> Source: GitHub Actions"
           echo
-          echo "Then re-run this workflow. Until then the game is still playable over"
-          echo "Wi-Fi from your own machine: npm run serve, and open the LAN address"
-          echo "it prints on your phone."
+          echo "Then re-run this workflow. It is a one-time step; nothing after it"
+          echo "needs a human. Until then the game is still playable over Wi-Fi:"
+          echo "npm run serve, then open the LAN address it prints on your phone."
 
       - uses: actions/upload-pages-artifact@v3
         with:
