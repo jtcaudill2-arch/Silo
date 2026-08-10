@@ -19,6 +19,7 @@ import { el, fmt, fmtDelta, row, sectionLabel, meter, emptyState, makeReorderabl
 import { getRoom } from '../../data/rooms.js';
 import { RES_KEYS, orderedRoomIds, roomCapability, roomDraw } from '../../sim/economy.js';
 import { effects as researchEffects } from '../../sim/research.js';
+import { liveResourceKeys } from '../../sim/unlocks.js';
 
 const LABELS = {
   power: 'Power', water: 'Water', food: 'Food', meds: 'Meds', scrap: 'Scrap',
@@ -32,6 +33,8 @@ const YIELD_KEY = { food: 'foodYield', water: 'waterYield', alloy: 'alloyYield' 
 let tab = 'ledger';
 /** Which stockpile is currently opened onto its own causes. */
 let opened = null;
+/** Are the stockpiles the strip is still hiding folded away? They start so. */
+let restOpen = false;
 
 export const resourcesPanel = {
   id: 'resources',
@@ -80,21 +83,76 @@ function tabBtn(id, label, shell) {
 // ---------------------------------------------------------------- ledger ---
 
 function renderLedger(state, body, shell) {
-  body.appendChild(sectionLabel('Stockpiles — tap one for what moves it'));
+  // The same set the top strip is showing, plus whichever row the player has
+  // opened. The strip spends the whole early game hiding eight of eleven
+  // counters on the grounds that a figure you cannot act on teaches you to
+  // stop reading the strip — and then tapping any counter opened this list
+  // with all eleven on it, which undid the lot in one tap. A resource the
+  // silo has no way to spend or replace is not more interesting one panel
+  // deeper; the rest fold in behind a line, the same way the catalogue's
+  // locked rooms do.
+  const live = liveResourceKeys(state);
+  const shown = [];
+  const hidden = [];
   for (const key of RES_KEYS) {
     const amount = state.resources[key] || 0;
-    const cap = state.caps?.[key] ?? Infinity;
     const flow = state.flows?.[key];
-    const net = flow ? flow.in - flow.out : 0;
     // Skip resources the silo has never seen and isn't producing — the
     // ledger shouldn't teach the player about coolant on day one.
     if (amount === 0 && !flow?.in && !flow?.out && key !== 'power' && key !== opened) continue;
+    (live.has(key) || key === opened ? shown : hidden).push(key);
+  }
 
-    const perDay = net * BAL.time.CYCLES_PER_DAY;
-    const runway = net < 0 && amount > 0 ? amount / -perDay : null;
-    const isOpen = opened === key;
+  body.appendChild(sectionLabel('Stockpiles — tap one for what moves it'));
+  for (const key of shown) body.appendChild(ledgerRow(state, key, shell));
+  if (hidden.length) {
+    body.appendChild(
+      el(
+        'button.row.tappable',
+        {
+          type: 'button',
+          'aria-expanded': restOpen ? 'true' : 'false',
+          onclick: () => {
+            restOpen = !restOpen;
+            shell.renderPanel(true);
+          },
+        },
+        el(
+          'div.row-main',
+          el('div.row-title', `${hidden.length} more the silo is holding`),
+          el(
+            'div.row-sub',
+            'Nothing produces or spends these yet. They appear on the strip when something does.'
+          )
+        ),
+        el('div.row-chevron', restOpen ? '⌄' : '›')
+      )
+    );
+    if (restOpen) for (const key of hidden) body.appendChild(ledgerRow(state, key, shell));
+  }
 
-    const node = el(
+  body.appendChild(sectionLabel('Capacity'));
+  body.appendChild(
+    row({
+      title: 'Storage depots',
+      sub: 'Each depot raises every stockpile cap. Cheap, and always the right call.',
+      value: String(Object.values(state.silo.rooms).filter((r) => r.type === 'storage_depot').length),
+    })
+  );
+}
+
+/** One stockpile: the figure, the flow, the runway, and what moves it. */
+function ledgerRow(state, key, shell) {
+  const amount = state.resources[key] || 0;
+  const cap = state.caps?.[key] ?? Infinity;
+  const flow = state.flows?.[key];
+  const net = flow ? flow.in - flow.out : 0;
+
+  const perDay = net * BAL.time.CYCLES_PER_DAY;
+  const runway = net < 0 && amount > 0 ? amount / -perDay : null;
+  const isOpen = opened === key;
+
+  const node = el(
       'button.row.tappable',
       {
         type: 'button',
@@ -125,21 +183,13 @@ function renderLedger(state, body, shell) {
           fmtDelta(net) + '/c'
         )
       ),
-      el('div.row-chevron', isOpen ? '⌄' : '›')
-    );
-    if (runway != null && runway < 2) node.classList.add('critical');
-    body.appendChild(node);
-    if (isOpen) body.appendChild(explainResource(state, key, shell));
-  }
-
-  body.appendChild(sectionLabel('Capacity'));
-  body.appendChild(
-    row({
-      title: 'Storage depots',
-      sub: 'Each depot raises every stockpile cap. Cheap, and always the right call.',
-      value: String(Object.values(state.silo.rooms).filter((r) => r.type === 'storage_depot').length),
-    })
+    el('div.row-chevron', isOpen ? '⌄' : '›')
   );
+  if (runway != null && runway < 2) node.classList.add('critical');
+  if (!isOpen) return node;
+  // The breakdown is a sibling rather than a child: the row is a <button> and
+  // the breakdown is full of buttons of its own.
+  return el('div', { style: { display: 'contents' } }, node, explainResource(state, key, shell));
 }
 
 // ------------------------------------------------------ why a figure moves ---

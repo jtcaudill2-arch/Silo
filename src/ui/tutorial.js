@@ -7,7 +7,7 @@
  * it, and waits — and nothing advances until the player actually does the
  * thing. Steps live in `data/tutorial.js`; this file is only the machinery.
  *
- * Four rules it is built around:
+ * Five rules it is built around:
  *
  *   1. It never intercepts a tap. The whole overlay is `pointer-events: none`
  *      except the Skip button, so every step is completed on the real control,
@@ -26,10 +26,18 @@
  *   4. It follows the player back. Cancelling a placement or closing a panel
  *      undoes the step before it, so the guide steps back too rather than
  *      pointing at a control that is no longer there.
+ *   5. It never covers what it is talking about. The chrome in `KEEP_CLEAR` —
+ *      the clock, the counters, the standing order and the shift report — is a
+ *      floor the card sits under, not space it may borrow. Half the guide
+ *      points at a target that is most of the screen, and "outside" a target
+ *      that tall is the chrome.
  *
  * The current step index is persisted in `flags.tutorialStep`, so a reload in
  * the middle resumes in the middle; -1 means finished or skipped, and is never
- * shown again. Sodium amber throughout — toxin green means radiation in this
+ * shown again — except from Settings ⚙, which sets it back to 0. A run started
+ * with `persist: false` writes no flag at all: that is the one-card alert
+ * coach, which is offered in memory and only to somebody who has just finished
+ * the guide. Sodium amber throughout — toxin green means radiation in this
  * game and nothing else, least of all "look here".
  */
 
@@ -57,6 +65,28 @@ const GAP = 10; // between the spotlight and the card
 const EDGE = 8; // between the card and the edge of the screen
 const BOTTOM_SAFE = 62; // the navbar, plus air — the card never sits on it
 
+/**
+ * Chrome the card is never allowed to sit on.
+ *
+ * This is not politeness. The first step of the guide targets `#stage`, which
+ * is 634px of a 844px screen: there is no room outside it on either side, and
+ * the card used to resolve that by going "above" — which on a full-height
+ * target is not empty space, it is the clock, the counters and the standing
+ * order. Measured on the first frame of a new game, the card covered 79% of
+ * `#directive`, one screen after the cold open said "there is a standing order
+ * across the top of the screen".
+ *
+ * The target of the current step is exempt — a card pointing at the standing
+ * order is allowed to be near the standing order, and the geometry below puts
+ * it under rather than over it anyway. That is also why `#resource-strip` is
+ * named as well as the `#topbar` it sits in: a step that points at one counter
+ * exempts the topbar, and the strip still has to be readable.
+ */
+const KEEP_CLEAR = ['#topbar', '#resource-strip', '#directive', '#change-line'];
+
+/** How long a step whose `when` is still false waits before being skipped. */
+const WHEN_GRACE_MS = 12000;
+
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 /**
@@ -74,6 +104,12 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
  *        the ordinary autosave; ending is the one transition that cannot wait
  *        for it, because a player who skips and closes the tab inside the
  *        twenty-second interval would be shown the whole thing again.
+ * @param {boolean} [opts.persist]  false for a run that is not *the* first
+ *        session — the one-card alert coach, which is armed in memory for the
+ *        session the guide was finished in and writes no flag of its own.
+ * @param {function} [opts.onEnd]  called with true when the last step was
+ *        completed, false when the player skipped out of it.
+ * @param {string} [opts.label]  the eyebrow on every card.
  * @returns {{stop: function}|null}
  */
 export function startTutorial({
@@ -82,20 +118,26 @@ export function startTutorial({
   steps = TUTORIAL,
   alreadySeen = false,
   onPersist,
+  persist = true,
+  onEnd,
+  label = 'First shift',
 } = {}) {
   const root = document.getElementById('tutorial-root');
   if (!root || !store || !shell || !steps.length) return null;
 
-  const saved = store.state.flags?.tutorialStep;
-  if (saved === TUTORIAL_DONE) return null;
-  // Nothing at all for a save that has already had its tutorial. The step
-  // index is normally stamped by the migration; this is the belt for it.
-  if (saved == null && alreadySeen) return null;
+  const saved = persist ? store.state.flags?.tutorialStep : null;
+  if (persist) {
+    if (saved === TUTORIAL_DONE) return null;
+    // Nothing at all for a save that has already had its tutorial. The step
+    // index is normally stamped by the migration; this is the belt for it.
+    if (saved == null && alreadySeen) return null;
+  }
 
   let index = Number.isInteger(saved) ? clamp(saved, 0, steps.length - 1) : 0;
   let alive = true;
   let raf = 0;
   let lastEval = 0;
+  let lastTick = 0;
   let enteredAt = 0;
   let mark = null;
   let current = null; // the resolved target element
@@ -117,7 +159,8 @@ export function startTutorial({
   );
   const skip = el(
     'button.tut-skip',
-    { type: 'button', onclick: () => finish() },
+    // Pressing "Done" on the last step is finishing, not walking out of it.
+    { type: 'button', onclick: () => finish(index === steps.length - 1) },
     'Skip'
   );
   const card = el(
@@ -165,13 +208,30 @@ export function startTutorial({
   enter(index, true);
   raf = requestAnimationFrame(tick);
 
-  return { stop: finish, get index() { return index; } };
+  return { stop: () => finish(false), get index() { return index; } };
 
   // ---- the loop ----------------------------------------------------------
 
   function tick(t) {
     if (!alive) return;
     raf = requestAnimationFrame(tick);
+    const dt = lastTick ? t - lastTick : 0;
+    lastTick = t;
+
+    // A report, a dialog or the ending owns the screen while it is up. Nothing
+    // that happens behind one is an answer to the step in front of the player,
+    // and one of them is actively misread: the returning-player report stops
+    // the clock, which is precisely what the clock step watches for. That step
+    // would complete unseen, and then hand the silo back at 1× from behind a
+    // modal that had deliberately paused it. So the guide stops thinking, and
+    // the time does not count against any step's grace period either.
+    if (document.querySelector('.modal-scrim')) {
+      enteredAt += dt;
+      lastEval = t;
+      anchor();
+      return;
+    }
+
     if (t - lastEval >= EVAL_MS) {
       lastEval = t;
       // A step change resolves a different target, so re-run once it has moved
@@ -219,18 +279,32 @@ export function startTutorial({
     current = resolve(step.target, ctx);
     ctx.el = current;
 
+    // A step can be about something that is not on screen yet — the shift
+    // report only exists once a shift has produced one. Such a step waits, and
+    // if what it is about has not turned up by the time the player would have
+    // given up on it, it stands aside rather than pointing at nothing.
+    if (step.when && !step.when(ctx)) {
+      if (now - enteredAt > WHEN_GRACE_MS) return advance();
+      tapped = false;
+      return paint(step, ctx);
+    }
+
     if (tapped) {
       tapped = false;
-      return advance();
+      return complete(ctx);
     }
     // `done` before `back`, always: finishing a step and undoing the one before
     // it can look identical for an instant — placement ends both ways.
-    if (step.done?.(ctx)) return advance();
+    if (step.done?.(ctx)) return complete(ctx);
     if (index > 0 && now - enteredAt > BACK_GRACE_MS && step.back?.(ctx)) {
       enter(index - 1);
       return true;
     }
+    return paint(step, ctx);
+  }
 
+  /** Write the step's sentence, if it has changed. */
+  function paint(step, ctx) {
     const text = typeof step.copy === 'function' ? step.copy(ctx) : step.copy;
     if (text !== lastCopy) {
       lastCopy = text;
@@ -254,6 +328,11 @@ export function startTutorial({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const rect = visibleRect(current);
+    // The top of the screen the card is allowed to use. Everything above it is
+    // the chrome the guide is talking about, and one line of it is the standing
+    // order the whole game hangs on.
+    const ceiling = cardCeiling(current);
+    const floorY = Math.max(ceiling, vh - BOTTOM_SAFE - measured.h);
 
     if (!rect) {
       // The control is gone or something is over it. Keep the instruction and
@@ -261,7 +340,7 @@ export function startTutorial({
       // is buried is a guide that has trapped you.
       spot.classList.add('off');
       caret.className = 'tut-caret off';
-      place((vw - measured.w) / 2, vh - BOTTOM_SAFE - measured.h);
+      place((vw - measured.w) / 2, floorY);
       return;
     }
 
@@ -269,7 +348,7 @@ export function startTutorial({
     setBox(spot, rect.left - 3, rect.top - 3, rect.width + 6, rect.height + 6);
 
     const prefer = steps[index]?.prefer === 'above' ? 'above' : 'below';
-    const roomAbove = rect.top - EDGE - GAP;
+    const roomAbove = rect.top - ceiling - GAP;
     const roomBelow = vh - BOTTOM_SAFE - rect.bottom - GAP;
     let top;
     let side;
@@ -284,10 +363,13 @@ export function startTutorial({
     else if (side === 'below') top = rect.bottom + GAP;
     // Nothing fits beside a target that is most of the screen — the silo, the
     // cross-section — so the card sits on the edge of it the step asked for,
-    // which is the edge with nothing to point at on it.
+    // which is the edge with nothing to point at on it. `ceiling` is what
+    // stops that landing on the chrome instead: on a 390×844 phone the stage
+    // starts directly under the standing order, so "above the stage" and "on
+    // top of the order" are the same pixels.
     else top = prefer === 'above' ? rect.top + GAP : rect.bottom - GAP - measured.h;
 
-    top = clamp(top, EDGE, Math.max(EDGE, vh - BOTTOM_SAFE - measured.h));
+    top = clamp(top, ceiling, floorY);
     const left = clamp(
       rect.left + rect.width / 2 - measured.w / 2,
       EDGE,
@@ -316,7 +398,11 @@ export function startTutorial({
     measured = null;
     const step = steps[index];
     mark = step?.mark ? step.mark({ state: store.state, shell }) : null;
-    eyebrow.textContent = `First shift · ${index + 1} of ${steps.length}`;
+    // "1 of 1" is not a position, it is an apology. A single-card run — the
+    // alert coach — says what it is and shows no dots.
+    eyebrow.textContent =
+      steps.length > 1 ? `${label} · ${index + 1} of ${steps.length}` : label;
+    dots.hidden = steps.length < 2;
     [...dots.children].forEach((d, i) => d.classList.toggle('on', i === index));
     skip.textContent = index === steps.length - 1 ? 'Done' : 'Skip';
     // Written to state on every step, so a reload in the middle resumes in the
@@ -325,21 +411,35 @@ export function startTutorial({
     // autosave a few seconds later is what a mid-tutorial reload actually
     // wants — the last state the player was in, not the last one the guide
     // happened to notice.
-    if (!initial || store.state.flags.tutorialStep !== index) {
+    if (persist && (!initial || store.state.flags.tutorialStep !== index)) {
       store.dispatch({ type: 'FLAG_SET', flags: { tutorialStep: index } });
     }
   }
 
+  /**
+   * The step is done. `after` runs here and nowhere else — not on `back`, not
+   * on skip — so a step that changed something on the player's behalf only
+   * puts it back when the player actually finished the step.
+   */
+  function complete(ctx) {
+    try {
+      steps[index]?.after?.(ctx);
+    } catch (err) {
+      console.warn('[tutorial] step "%s" could not tidy up:', steps[index]?.id, err);
+    }
+    return advance();
+  }
+
   function advance() {
     if (index + 1 >= steps.length) {
-      finish();
+      finish(true);
       return false;
     }
     enter(index + 1);
     return true;
   }
 
-  function finish() {
+  function finish(completed = false) {
     if (!alive) return;
     alive = false;
     cancelAnimationFrame(raf);
@@ -350,14 +450,41 @@ export function startTutorial({
     window.removeEventListener('orientationchange', onResize);
     root.replaceChildren();
     root.hidden = true;
-    store.dispatch({ type: 'FLAG_SET', flags: { tutorialStep: TUTORIAL_DONE } });
-    onPersist?.();
+    if (persist) {
+      store.dispatch({ type: 'FLAG_SET', flags: { tutorialStep: TUTORIAL_DONE } });
+      onPersist?.();
+    }
+    onEnd?.(completed);
   }
 
   // ---- geometry ----------------------------------------------------------
 
   function place(left, top) {
     setBox(card, left, top, null, null);
+  }
+
+  /**
+   * The highest the card may sit: under everything in `KEEP_CLEAR` that is
+   * currently on screen.
+   *
+   * Measured live rather than assumed, because all three of those elements
+   * come and go — the standing order hides when there is nothing to order, the
+   * shift report only exists once something has changed — and a constant would
+   * be wrong on the frame either of them appeared.
+   *
+   * A step is allowed under its own target: the target is what the player is
+   * being sent to, and the geometry above always puts the card on the far side
+   * of it in any case.
+   */
+  function cardCeiling(target) {
+    let top = EDGE;
+    for (const sel of KEEP_CLEAR) {
+      const node = document.querySelector(sel);
+      if (!node || node.hidden || !node.getClientRects().length) continue;
+      if (target && (node === target || node.contains(target) || target.contains(node))) continue;
+      top = Math.max(top, node.getBoundingClientRect().bottom + GAP);
+    }
+    return top;
   }
 
   /**

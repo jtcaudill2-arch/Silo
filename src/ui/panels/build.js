@@ -30,6 +30,8 @@ import { tierForFloor } from '../../sim/research.js';
 import { el, button, sectionLabel, toast, fmtDuration, humanise, chip } from '../dom.js';
 
 let category = 'all';
+/** Are the rooms the silo cannot build yet folded away? They start folded. */
+let lockedOpen = false;
 
 export const buildPanel = {
   id: 'build',
@@ -71,8 +73,21 @@ export const buildPanel = {
     // Buildable first, then locked — a wall of greyed-out rooms is not a menu.
     shown.sort((a, b) => Number(b.ok) - Number(a.ok) || a.def.name.localeCompare(b.def.name));
 
+    const open = shown.filter((o) => o.ok);
+    const shut = shown.filter((o) => !o.ok);
+
     body.appendChild(sectionLabel('Pick a building, then a bay'));
-    for (const opt of shown) body.appendChild(catalogueRow(shell, opt));
+    if (!open.length) body.appendChild(el('div.note', 'Nothing in this category can be built yet.'));
+    for (const opt of open) body.appendChild(catalogueRow(shell, opt));
+
+    // ---- the ones that are still shut ------------------------------------
+    // Twenty-eight rows with twelve greyed out is three thousand pixels of
+    // scrolling on a phone to reach the four things that can actually be
+    // built, and the twelve are not a menu — they are the shape of the game
+    // ahead. Worth knowing about, not worth scrolling past. So they fold
+    // behind one line that says how many there are and what they are waiting
+    // on, and the fold is remembered while the panel is open.
+    if (shut.length) body.appendChild(lockedSection(shell, shut));
 
     // ---- where there is room ---------------------------------------------
     // Secondary now, and deliberately below the catalogue: it is orientation,
@@ -145,6 +160,55 @@ function excavationSection(state, shell) {
 }
 
 /**
+ * Everything the silo cannot build yet, behind one line.
+ *
+ * The summary names what is actually in the way rather than just counting —
+ * "eight need research, four need scrap" is a different instruction from
+ * "twelve locked", and the two of them point at different panels.
+ */
+function lockedSection(shell, shut) {
+  if (!BAL.wayfinding.lockedRowsCollapsed) {
+    const wrap = el('div', sectionLabel('Not yet'));
+    for (const opt of shut) wrap.appendChild(catalogueRow(shell, opt));
+    return wrap;
+  }
+
+  const needsResearch = shut.filter((o) => /needs research|needs the/i.test(o.reason)).length;
+  const cantAfford = shut.filter((o) => /not enough/i.test(o.reason)).length;
+  const noRoom = shut.length - needsResearch - cantAfford;
+  const parts = [];
+  if (needsResearch) parts.push(`${needsResearch} waiting on research`);
+  if (cantAfford) parts.push(`${cantAfford} the silo cannot pay for`);
+  if (noRoom) parts.push(`${noRoom} with nowhere to go`);
+
+  const wrap = el('div');
+  wrap.appendChild(
+    el(
+      'button.build-row.folded',
+      {
+        type: 'button',
+        'aria-expanded': lockedOpen ? 'true' : 'false',
+        onclick: () => {
+          lockedOpen = !lockedOpen;
+          shell.renderPanel(true);
+        },
+      },
+      el(
+        'div.build-main',
+        el('div.build-name', `${shut.length} more room${shut.length === 1 ? '' : 's'} the silo knows about`),
+        el('div.build-desc', 'Nothing here can be built yet. Tap to read what they are waiting on.'),
+        // Same sentence a locked row carries, aggregated: a fold that does not
+        // say what is behind it is just a thing to tap twice.
+        el('div.build-why', parts.join(', ') + '.')
+      ),
+      el('div.row-chevron', lockedOpen ? '⌃' : '⌄')
+    )
+  );
+  if (lockedOpen) for (const opt of shut) wrap.appendChild(catalogueRow(shell, opt));
+  return wrap;
+}
+
+/**
  * One row per room type. Cost, what it makes, what it costs to run, how long
  * it takes — and, when it can't be built anywhere at all, the one sentence
  * saying why. Tapping it enters placement mode.
@@ -176,14 +240,16 @@ function catalogueRow(shell, opt) {
         output ? chip(`+${output}/cycle`, 'good') : null,
         upkeep ? chip(`−${upkeep}/cycle`, 'bad') : null,
         chip(fmtDuration(buildCycles(def))),
-        // How many bays are about to light up. Amber only once there is less
-        // than a floor's worth left anywhere — at seventy-four it is a fact,
-        // at three it is a warning that the silo needs digging.
-        ok
-          ? chip(
-              `${bays} bay${bays === 1 ? '' : 's'} free`,
-              bays <= BAL.silo.slotsPerFloor ? 'warn' : ''
-            )
+        // Room left, but only when running out of it is news.
+        //
+        // This used to print on every row, and on the first morning every row
+        // printed the same number — "74 bays free", twenty-eight times, on a
+        // silo with fourteen empty floors. A figure identical across every
+        // option cannot inform a choice between them; it is furniture. Below a
+        // couple of floors' worth it becomes a real warning that the silo needs
+        // digging, and that is the only time it is worth the width.
+        ok && bays <= BAL.wayfinding.baysChipBelow
+          ? chip(`${bays} bay${bays === 1 ? '' : 's'} left`, bays <= BAL.silo.slotsPerFloor ? 'warn' : '')
           : null
       ),
       !ok ? el('div.build-why', reason) : null

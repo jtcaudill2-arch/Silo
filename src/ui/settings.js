@@ -8,6 +8,7 @@
  */
 
 import { BAL } from '../config/balance.js';
+import { TUTORIAL } from '../data/tutorial.js';
 import * as audio from '../audio/audio.js';
 import { exportSave, importSave, listSlots, saveGame, deleteSlot } from '../core/save.js';
 import { el, button, row, sectionLabel, modal, toast, humanise, fmtDuration } from './dom.js';
@@ -112,6 +113,10 @@ export function openSettings(store, game, shell) {
     );
 
     // ---- the handover ------------------------------------------------------
+    // Both halves of the teaching are reopenable, because both of them are
+    // shown once, at the worst possible moment, to somebody who has not yet
+    // seen a silo. The note was already here; the guide was not, and it is the
+    // half that points at real controls.
     body.appendChild(sectionLabel('The handover'));
     body.appendChild(
       el(
@@ -126,6 +131,15 @@ export function openSettings(store, game, shell) {
             await showBriefing();
             shell.setSpeed(resume || 1);
           },
+        }),
+        button('Run the guided first session again', {
+          class: 'wide',
+          onclick: () => {
+            // Closed first: the guide hides itself behind any modal scrim, and
+            // this sheet is one.
+            handle?.close();
+            shell.onReplayGuide?.();
+          },
         })
       )
     );
@@ -133,7 +147,9 @@ export function openSettings(store, game, shell) {
       el(
         'div.note',
         'Halvard Sten ran Silo 12 for fourteen years and left a note on the desk. ' +
-          'It is the closest thing to instructions you are going to get.'
+          'It is the closest thing to instructions you are going to get. The guide is the ' +
+          `other half: ${TUTORIAL.length} steps on the real controls, from the start, on the ` +
+          'silo you are running now.'
       )
     );
 

@@ -19,6 +19,7 @@ import { showReturnReport } from './ui/returnReport.js';
 import { showEnding } from './ui/ending.js';
 import { showBriefing } from './ui/briefing.js';
 import { COLD_OPEN } from './data/briefing.js';
+import { ALERT_COACH } from './data/tutorial.js';
 import { startTutorial } from './ui/tutorial.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
@@ -254,17 +255,53 @@ async function main() {
   // The guided first session. It spotlights the real control, waits for the
   // player to use it, and does not advance on a timer. Skippable at any step,
   // resumes where it was left after a reload, and never returns once it has
-  // been finished or skipped.
-  const tutorial = startTutorial({
-    store,
-    shell,
-    alreadySeen: hadHandover,
-    // Flush once, when the guide ends. The autosave interval is twenty
-    // seconds, and a player who skips it and closes the tab inside that window
-    // would be shown the whole thing again on the way back in.
-    onPersist: () => autosave.saveNow('tutorial'),
-  });
-  window.DEEPWATER.tutorial = tutorial;
+  // been finished or skipped — except on request, from Settings ⚙.
+  let tutorial = null;
+  const runGuide = () => {
+    tutorial?.stop?.();
+    tutorial = startTutorial({
+      store,
+      shell,
+      alreadySeen: hadHandover,
+      // Flush once, when the guide ends. The autosave interval is twenty
+      // seconds, and a player who skips it and closes the tab inside that
+      // window would be shown the whole thing again on the way back in.
+      onPersist: () => autosave.saveNow('tutorial'),
+      onEnd: (completed) => {
+        if (completed) armAlertCoach();
+      },
+    });
+    window.DEEPWATER.tutorial = tutorial;
+    return tutorial;
+  };
+
+  /**
+   * The one lesson the guide cannot give in advance.
+   *
+   * There is nothing to point at until the silo has something to interrupt the
+   * player about, so this waits for the first alert of the session and then
+   * says one sentence about the card that just landed. Armed in memory only:
+   * it is offered to somebody who has just finished the guide, in the session
+   * they finished it in, which needs no flag of its own and so no migration.
+   */
+  function armAlertCoach() {
+    const disarm = on('alert', () => {
+      disarm();
+      // One frame, so the card the coach is about is in the document.
+      requestAnimationFrame(() =>
+        startTutorial({ store, shell, steps: ALERT_COACH, persist: false, label: 'The silo' })
+      );
+    });
+  }
+
+  // Settings ⚙ can run it again. The guide is eight minutes of the game's
+  // best explanation of itself and used to be unreachable the moment it ended.
+  shell.onReplayGuide = () => {
+    store.dispatch({ type: 'FLAG_SET', flags: { tutorialStep: 0 } });
+    runGuide();
+  };
+
+  runGuide();
 
   // The report is the reward for coming back, so it gets the screen to
   // itself and the silo stays paused until it's been read.

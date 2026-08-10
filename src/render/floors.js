@@ -193,17 +193,34 @@ function drawPlaceholderContents(ctx, room, def, x, y, w, h, tint) {
 }
 
 /**
- * Placement mode: every bay the chosen building could occupy, lit.
+ * Placement mode: where the chosen building could go, ranked.
  *
- * Two things carry it at 390px wide, where a bay is about 57×36 real pixels:
- * the rest of the silo is washed back so the targets are the only bright
- * things on screen, and each target gets corner ticks plus a mark in the
- * middle — a plus for a new unit, a bar against the wall it would merge
- * through. Colour alone would not be enough, and the colour is sodium amber
- * because toxin green means radiation in this game and nothing else.
+ * This used to light every legal bay identically. On the first morning that is
+ * seventy-four amber boxes across fourteen floors, of which exactly one — the
+ * bay that would merge into the room beside it — is a different decision from
+ * the other seventy-three. Seventy-four equal targets is not a choice, and the
+ * one that mattered was drawn as a 2px bar between 2px corner ticks in the same
+ * colour, so it was not even visible.
+ *
+ * So the bays are ranked, and only the ranked ones are drawn as targets:
+ *
+ *   merge      the bay that joins an identical neighbour into a wider unit.
+ *              Wider units make more per slot and draw less power per slot, so
+ *              this is the only bay that is genuinely better than its
+ *              neighbours. Drawn as a bracket around *both* bays with an arrow
+ *              into the neighbour: two things becoming one, not a bar.
+ *   suggested  one plain bay per floor near the camera, so every floor with
+ *              room on it offers somewhere to tap without offering six.
+ *   free       everything else. Still legal, still tappable, drawn as an empty
+ *              bay with a hairline instead of as a target competing for the eye.
+ *
+ * The rest of the silo is washed back so the targets are the brightest things
+ * on the screen. Sodium amber throughout: toxin green means radiation in this
+ * game and nothing else.
  */
 export function drawPlacement(ctx, mode, range, cam, pulse) {
   const P = BAL.render.placement;
+  const W = BAL.wayfinding.placement;
 
   // Wash. Drawn wider and taller than the viewport so a mid-drag camera never
   // shows an un-dimmed strip at the edge.
@@ -212,19 +229,34 @@ export function drawPlacement(ctx, mode, range, cam, pulse) {
   ctx.fillStyle = withAlpha(PALETTE.concreteDeeper, P.washAlpha);
   ctx.fillRect(-WORLD_W, top, WORLD_W * 3, height);
 
+  const state = cam.state;
+  const focus = cameraFloor(cam);
   const fill = P.fillAlpha + P.fillPulse * pulse;
+
   for (let n = range.from; n <= range.to; n++) {
     const slots = mode.bays.get(n);
     if (!slots) continue;
     const y = (n - 1) * FLOOR_H + GAP;
     const h = FLOOR_H - 3 - GAP * 2;
+    const suggested = suggestedSlots(state, n, slots, focus, W);
+
     for (const [slot, mergeSide] of slots) {
       const x = slot * SLOT_W + GAP;
       const w = SLOT_W - GAP * 2;
 
-      ctx.fillStyle = withAlpha(PALETTE.sodium, fill);
+      // ---- a free bay nobody is pointing at ------------------------------
+      if (!mergeSide && !suggested.has(slot)) {
+        ctx.fillStyle = withAlpha(PALETTE.sodium, W.quietFill);
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = withAlpha(PALETTE.sodium, W.quietEdge);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        continue;
+      }
+
+      ctx.fillStyle = withAlpha(PALETTE.sodium, mergeSide ? fill + W.mergeFill : fill);
       ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = withAlpha(PALETTE.sodium, P.edgeAlpha);
+      ctx.strokeStyle = withAlpha(PALETTE.sodium, mergeSide ? W.mergeEdge : P.edgeAlpha);
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
@@ -241,16 +273,94 @@ export function drawPlacement(ctx, mode, range, cam, pulse) {
         ctx.fillRect(sx > 0 ? cx : cx - 2, sy > 0 ? cy : cy - b, 2, b);
       }
 
-      if (mergeSide) {
-        // It would join the room next door: mark the wall it goes through.
-        ctx.fillRect(mergeSide < 0 ? x : x + w - 2, y + 3, 2, h - 6);
+      if (mergeSide) drawMerge(ctx, state, n, slot, mergeSide, y, h);
+      else {
+        // A plus in the middle: "something goes here".
+        const mx = x + w / 2;
+        const my = y + h / 2;
+        ctx.fillRect(mx - 5, my - 1, 10, 2);
+        ctx.fillRect(mx - 1, my - 5, 2, 10);
       }
-      // A plus in the middle: "something goes here".
-      const mx = x + w / 2;
-      const my = y + h / 2;
-      ctx.fillRect(mx - 5, my - 1, 10, 2);
-      ctx.fillRect(mx - 1, my - 5, 2, 10);
     }
+  }
+}
+
+/** Whichever floor is in the middle of the viewport right now. */
+function cameraFloor(cam) {
+  return Math.round((cam.camY + cam.viewWorldH() / 2) / FLOOR_H) + 1;
+}
+
+/**
+ * The one plain bay per floor worth pointing at — or none, on a floor the
+ * camera is nowhere near.
+ *
+ * A bay beside something already built is preferred over one out on its own:
+ * it keeps a floor contiguous, which is what leaves a clean run of empty bays
+ * for the next thing and what makes a future merge possible at all. Floors
+ * that already carry a merge target are left alone — the merge is the answer
+ * on that floor and a second bright box beside it is just noise.
+ */
+function suggestedSlots(state, n, slots, focus, W) {
+  const out = new Set();
+  // A floor with a merge on it has its answer already, and a second bright box
+  // beside the merge only competes with it.
+  for (const side of slots.values()) if (side) return out;
+
+  const floor = state.silo.floors[n - 1];
+  const adjacent = [...slots.keys()].filter(
+    (s) => floor?.slots?.[s - 1] != null || floor?.slots?.[s + 1] != null
+  );
+  // Beside something already standing, on any floor that has something
+  // standing; otherwise the first bay of a floor the player is actually
+  // looking at. Bare rock eleven floors away offers nothing, which is correct:
+  // one empty bay down there is exactly as good as the next thirty.
+  const pool = adjacent.length
+    ? adjacent
+    : Math.abs(n - focus) <= W.suggestFloorRadius
+      ? [...slots.keys()]
+      : [];
+  for (const slot of [...pool].sort((a, b) => a - b).slice(0, W.suggestedPerFloor)) out.add(slot);
+  return out;
+}
+
+/**
+ * What a merge actually does, drawn: a bracket around the bay *and* the room
+ * it would join, and an arrow pointing through the wall between them.
+ *
+ * The old drawing was a two-pixel bar against one edge, between two-pixel
+ * corner ticks in the same colour, on a bay the same size and brightness as
+ * seventy-three others. Nothing about it said "these two become one unit".
+ */
+function drawMerge(ctx, state, n, slot, side, y, h) {
+  const floor = state.silo.floors[n - 1];
+  const neighbour = state.silo.rooms[floor?.slots?.[slot + side]];
+  const from = neighbour ? Math.min(slot, neighbour.slot) : Math.min(slot, slot + side);
+  const to = neighbour
+    ? Math.max(slot + 1, neighbour.slot + neighbour.width)
+    : Math.max(slot + 1, slot + side + 1);
+
+  const bx = from * SLOT_W + GAP;
+  const bw = (to - from) * SLOT_W - GAP * 2;
+  const my = y + h / 2;
+
+  // The unit the merge would produce, bracketed top and bottom.
+  ctx.fillStyle = PALETTE.sodium;
+  ctx.fillRect(bx - 2, y - 3, bw + 4, 2);
+  ctx.fillRect(bx - 2, y + h + 1, bw + 4, 2);
+  ctx.fillRect(bx - 2, y - 3, 2, 5);
+  ctx.fillRect(bx + bw, y - 3, 2, 5);
+  ctx.fillRect(bx - 2, y + h - 1, 2, 5);
+  ctx.fillRect(bx + bw, y + h - 1, 2, 5);
+
+  // An arrow through the wall it joins through, pointing at the neighbour.
+  const x = slot * SLOT_W + GAP;
+  const w = SLOT_W - GAP * 2;
+  const tip = side < 0 ? x - 1 : x + w + 1;
+  const tail = side < 0 ? x + w - 5 : x + 5;
+  ctx.fillRect(Math.min(tip, tail), my - 1, Math.abs(tip - tail), 2);
+  for (let i = 0; i < 5; i++) {
+    // A triangle: one pixel tall at the tip, widening back along the shaft.
+    ctx.fillRect(tip + (side < 0 ? i : -i), my - i, 1, 1 + i * 2);
   }
 }
 

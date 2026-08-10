@@ -241,6 +241,55 @@ try {
   else if (disclosure.nav > 5) fail(`${disclosure.nav} panels rendered on the first morning`);
   else ok(`first morning renders ${disclosure.res} counters and ${disclosure.nav} panels`);
 
+  // …and they have to be *legible*, not merely present. Counting what renders
+  // was the last fix here and it was only half the question: the four counters
+  // the silo shows on the first morning need 248px and the strip is 230px
+  // wide, so SCRAP — the unit every standing order is priced in — was cut off
+  // down its right edge before the player had done anything at all. §3 above
+  // cannot see this: it exempts scrollers, and the strip is a legitimate
+  // scroller later on. The first morning is the frame that must not scroll.
+  const firstStrip = await page.evaluate(() => {
+    const strip = document.getElementById('resource-strip');
+    const box = strip.getBoundingClientRect();
+    const shown = [...strip.querySelectorAll('.res')].filter((n) => n.offsetParent !== null);
+    return {
+      clientW: strip.clientWidth,
+      scrollW: strip.scrollWidth,
+      clipped: shown
+        .filter((n) => n.getBoundingClientRect().right > box.right + 1)
+        .map((n) => n.dataset.res),
+      // A stock that starts empty and fills on the first cycle is not a
+      // crisis, and the first thing a new mayor should not see is a red zero
+      // they did nothing to cause.
+      falseAlarms: shown
+        .filter((n) => n.classList.contains('critical'))
+        .filter(() => {
+          const f = window.DEEPWATER.store.state.flows || {};
+          return !Object.keys(f).length;
+        })
+        .map((n) => n.dataset.res),
+    };
+  });
+  if (firstStrip.clipped.length) {
+    fail(
+      `the resource strip clips ${firstStrip.clipped.join(', ')} on the first morning ` +
+        `(${firstStrip.scrollW}px of counters in a ${firstStrip.clientW}px window). ` +
+        'Everything the silo chooses to show before the player has acted has to fit. ' +
+        'styles.css: .res { min-width: 56px; padding: 0 6px } and .clock { min-width: 66px } ' +
+        'measures 238/238 with all four counters whole.'
+    );
+  } else {
+    ok(`the first morning's counters all fit the strip (${firstStrip.scrollW}/${firstStrip.clientW}px)`);
+  }
+  if (firstStrip.falseAlarms.length) {
+    fail(
+      `${firstStrip.falseAlarms.join(', ')} styled critical on the first frame, before the ` +
+        'economy has run a cycle — a red zero nobody caused. shell.js renderStrip(): the ' +
+        '`critical` test needs a `!!flow &&` in front of it, so an empty stock is only a ' +
+        'crisis once there is a flow to judge it against.'
+    );
+  } else ok('nothing is crying wolf on the first frame');
+
   // ---- 5. every control is thumb-sized -------------------------------------
   const small = await page.evaluate(() => {
     const out = [];
@@ -263,6 +312,78 @@ try {
   });
   if (nav.bottom > nav.vh + 1) fail(`navbar hangs ${nav.bottom - nav.vh}px below the viewport`);
   else ok(`navbar sits inside the viewport (${nav.h}px tall, bottom at ${nav.bottom}/${nav.vh})`);
+
+  // ---- 6b. every panel is still reachable once they have all arrived -------
+  //
+  // The navbar is the one scroller in the game that must never scroll. It is
+  // the only way to reach a panel, it carries no affordance saying there is
+  // more of it — no fade, no chevron, nothing past the last visible button —
+  // and its buttons are the same size and colour as the ones that fit, so a
+  // navbar that overflows does not look like a navbar that overflows. It looks
+  // like a game with six panels in it.
+  //
+  // This was worth catching and was not caught, because §3 above exempts
+  // anything inside a deliberate scroller and this test only ever measured the
+  // first morning's four buttons. Nine panels is the real end state: unlock
+  // every gate and count what is left on screen.
+  const fullNav = await page.evaluate(() => {
+    const D = window.DEEPWATER;
+    const s = D.store.state;
+    // Earn every gate the honest way, so this measures what a real campaign
+    // ends up with rather than a debug flag.
+    s.world.radioTier = 1;
+    for (const id of ['radio_range_1', 'env_suit_1']) {
+      if (!s.research.completed.includes(id)) s.research.completed.push(id);
+    }
+    s.order.crimes.push({ id: 'theft', day: 1, text: 'stores do not balance' });
+    s.order.crimes.push({ id: 'hoarding', day: 2, text: 'a false panel and three months of rations' });
+    const place = (type, floor, slot) => {
+      const f = s.silo.floors[floor - 1];
+      if (!f || f.slots[slot] != null) return;
+      const id = String(s.silo.nextRoomId++);
+      s.silo.rooms[id] = {
+        id, type, floor, slot, width: 1, level: 1, condition: 100,
+        staff: [], powered: true, buildingUntilCycle: 0, upgradingUntilCycle: 0,
+      };
+      f.slots[slot] = id;
+      s.silo.powerPriority.push(id);
+    };
+    place('laboratory', 1, 0);
+    place('airlock', 1, 1);
+    place('armory', 1, 2);
+    D.shell.syncNav();
+
+    const bar = document.getElementById('navbar');
+    const shown = [...bar.querySelectorAll('.nav-btn')].filter((n) => n.offsetParent !== null);
+    const barRect = bar.getBoundingClientRect();
+    return {
+      clientW: bar.clientWidth,
+      scrollW: bar.scrollWidth,
+      count: shown.length,
+      offscreen: shown
+        .filter((n) => {
+          const r = n.getBoundingClientRect();
+          return r.right > barRect.right + 1 || r.left < barRect.left - 1;
+        })
+        .map((n) => n.querySelector('.nav-label')?.textContent || n.dataset.panel),
+      widths: shown.map((n) => Math.round(n.getBoundingClientRect().width)),
+    };
+  });
+  if (fullNav.offscreen.length) {
+    fail(
+      `with all ${fullNav.count} panels unlocked the navbar needs ${fullNav.scrollW}px in ` +
+        `${fullNav.clientW}px and ${fullNav.offscreen.length} of them are off the edge of the ` +
+        `phone: ${fullNav.offscreen.join(', ')}. A panel you cannot see is a panel you do not ` +
+        'have. styles.css: .nav-btn { flex: 1 1 0; min-width: 0; padding: 4px 2px } with ' +
+        '.nav-btn .nav-label { max-width: 100%; overflow: hidden; white-space: nowrap } gives ' +
+        'nine 43px buttons in 390px, every label whole and every target over 30px.'
+    );
+  } else {
+    ok(`all ${fullNav.count} panels fit the navbar at 390px (${fullNav.scrollW}/${fullNav.clientW}px)`);
+  }
+  // …and they must still be thumb-sized once they all fit.
+  const tiny = fullNav.widths.filter((w) => w < 30);
+  if (tiny.length) fail(`${tiny.length} nav buttons are under 30px wide with every panel unlocked`);
 
   // Position was the only thing asserted here, and position is not the whole
   // question. A grid mistake once gave the navbar the 1fr track and the stage

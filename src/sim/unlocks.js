@@ -13,6 +13,34 @@
  * sentence the silo says while it is still shut. The panels ask this module
  * now; they no longer decide.
  *
+ * ---------------------------------------------------------------------------
+ * THE ONE RULE: A GATE MAY NOT CLOSE.
+ *
+ * Every `earnedBy` below reads only state that never travels backwards — a
+ * room that is standing, a research node that is finished, a counter that only
+ * counts up. That is what makes a panel that has arrived stay arrived, and it
+ * is enforced rather than asserted: `test/unlocks.mjs` drives the silo through
+ * eight hundred days of a campaign that goes badly and fails if any gate ever
+ * reads true and then false.
+ *
+ * It is enforced because it was broken. `policy` used to read
+ * `order.value < unlocks.orderTroubleBelow` — 45 — and order is pulled toward
+ * `order.driftToward`, 50, at a quarter of the gap a day. The gate sat *below*
+ * the attractor, so every silo that crossed it was hauled back over the line
+ * within two or three days and the Order panel vanished again:
+ *
+ *     order 41.0  unlocked=true
+ *     day 1: 43.7 unlocked=true
+ *     day 2: 45.7 unlocked=FALSE     <- the panel is gone, and stays gone
+ *
+ * Through the shell that is worse than it looks: the nav button disappears
+ * while the panel is open, and `shell.js` only ever announces an unlock once,
+ * so a later dip returns the panel with no announcement at all. A latch held in
+ * state would have needed a save migration; none of this needs one, because
+ * "has this silo had politics" has monotonic answers already sitting in the
+ * save — see the `policy` entry.
+ * ---------------------------------------------------------------------------
+ *
  * The order, and why it is this order:
  *
  *   0. Build, Residents, Resources, Log — always on. Feeding, watering and
@@ -23,25 +51,23 @@
  *   1. Research — a Laboratory. Nothing else in the silo makes research
  *      points, it is the standing order the moment income is nominal
  *      (directives.js ranks it 76, above salvage), and every gate below this
- *      one is behind a node it pays for.
+ *      one is behind a node it pays for. Lands on day one to three.
  *   2. World — Radio Range I. Seventy-five points and no prerequisites: the
- *      cheapest root in the tree and normally the first thing a first
- *      Laboratory buys. It needs nothing from outside, which is what puts it
+ *      cheapest root in the tree, and therefore the fastest thing the panel
+ *      above it can buy. It needs nothing from outside, which is what puts it
  *      ahead of the surface.
- *   3. Surface — an Airlock. Ninety points of research for the suit, then 260
- *      scrap, 30 parts and 14 alloy for the door. The whole research tree
- *      turns artifact-gated shortly after this, so this is the hinge of the
- *      early game rather than a branch off it.
+ *   3. Surface — the suit, or the door. Ninety points of research for
+ *      Env-Suit I, then 260 scrap, 30 parts and 14 alloy for the Airlock. The
+ *      panel is a ladder of bands with the dose and the suit tier each one
+ *      costs, and the whole research tree turns artifact-gated shortly after
+ *      this, so it is the hinge of the early game rather than a branch off it.
  *   4. Squads — an Armory or Barracks, or a squad already standing. It lands
  *      after the surface because that is where the silo is told to go: the
  *      standing order asks for an Armory only once the Airlock and the Suit
  *      Bay are up (directives.js, weight 53).
- *   5. Order — order in genuine trouble, an investigation open, a policy in
- *      force, or a Sheriff's Office built. This one was arriving second, on
- *      day five of every game, because its old line sat above the level
- *      order settles at on its own; see the entry below for the measurement.
- *      On a badly run silo it is now still exactly as early as it needs to
- *      be, and on a well run one it waits.
+ *   5. Order — politics, once the silo has some: a Sheriff's Office, a policy
+ *      in force, an investigation open, a pattern of crime on the books, or
+ *      enough funerals to be a subject. See the entry for the measurement.
  *
  * They arrive one at a time because each one is paid for out of the one
  * before it, not because this list forces a sequence. Nothing here is gated
@@ -49,7 +75,11 @@
  * first morning — it needs no research and the starting stores cover it —
  * gets the Squads panel on the first morning, and should. Hiding a panel
  * from somebody who has already bought the room it belongs to is the same
- * failure this module exists to fix, pointing the other way.
+ * failure this module exists to fix, pointing the other way. The list is the
+ * order the silo *expects* to reach them in, and the arrivals below are what
+ * a competent player actually gets; a player who spends their first research
+ * on Radio Range I rather than on Antibiotics has the World panel three weeks
+ * earlier, and that is their decision to make, not this file's.
  *
  * Cross-checked against directives.js, which is the thing that actually tells
  * the player to do any of this. The invariant is that no standing order ever
@@ -62,21 +92,34 @@
  *     unaffordable, or a promoted salvage order at best+1. All three outrank
  *     32, so `dig_research` cannot reach the top slot before the panel opens.
  *   - `squad` (52) is guarded on an Armory, which is the Squads gate itself.
+ *   - `airlock` (55) and `suit_bay` (54) open the *build* panel, and both are
+ *     inside the Surface gate below rather than behind it.
  *   - `radio` (20) asks for the Radio Room and opens the *build* panel; by
  *     then the World panel has been open since the research landed, which is
  *     the right way round — the panel is where you find out there are
  *     nineteen other silos worth building a room to talk to.
  *   - Everything else points at build, population or log, none of which lock.
  *
- * Checked as well as argued: an obedient player — the test/obedient.mjs
- * driver, doing exactly what the standing order says and nothing else — was
- * run for 400 days on three seeds while every order was compared against the
- * panel it points at. No order ever pointed at a shut panel. That run also
- * says what the opening now looks like from the desk: four counters and four
- * panels on the first morning, the Research panel and the parts and fuel
- * counters on day one behind the Workshop and the Recycling plant the silo
- * itself asks for, filters around day sixty, and Order only when a silo
- * that is losing people has earned it.
+ * Measured, not argued. `test/unlocks.mjs` drives the project's own autopilot
+ * for a hundred and sixty days on three seeds and prints the day each panel
+ * arrives; it fails if any gate ever closes, if Order is not last, or if the
+ * Surface panel is still hostage to a finished Airlock. What it currently
+ * reports:
+ *
+ *     seed 0x1234   d3 Research  d31 Surface  d34 World    d41 Squads  d58 Order
+ *     seed 0xbeef   d3 Research  d32 Order    d35 World    d38 Squads  d42 Surface
+ *     seed 0xd00d   d3 Research  d41 World    d49 Surface  d62 Order   d65 Squads
+ *
+ * Order arriving second on 0xbeef is not the calendar coming back: a murder
+ * was committed on day 32 of that silo and there is a verdict waiting. A panel
+ * the player is *required* to use has to be there, and the test asserts the
+ * thing that actually went wrong before — that no value of `order.value`, on a
+ * silo with no crime, no case, no policy and no sheriff, opens the panel.
+ *
+ * (The claim that used to sit here — that test/obedient.mjs had verified this
+ * ordering over 400 days on three seeds — was not true of that file. It drives
+ * a player who only follows standing orders and asserts that they survive; it
+ * never looks at a panel. The ordering coverage is test/unlocks.mjs, above.)
  *
  * Pure: (state) -> data. No DOM, no dispatch, no mutation.
  */
@@ -87,6 +130,9 @@ import { getRoom } from '../data/rooms.js';
 /** Is there a room of any of these types in the silo, finished or going up? */
 const hasRoom = (state, ...types) =>
   Object.values(state.silo.rooms).some((r) => types.includes(r.type));
+
+/** Has this node been finished? `research.completed` is append-only. */
+const researched = (state, id) => (state.research.completed || []).includes(id);
 
 /**
  * @typedef {object} Unlock
@@ -116,14 +162,14 @@ export const UNLOCKS = [
      * moment it comes online. Six shifts of construction is a long time to
      * hold a panel back from somebody who has just spent 220 scrap on the
      * only building that produces the thing the panel is about, and the tree
-     * is worth reading while the bay goes up. The two trailing clauses cover
-     * a silo that has research to show and no bench standing — a lab lost to
-     * a collapse should not take the record of what it discovered with it.
+     * is worth reading while the bay goes up. The trailing clause covers a
+     * silo that has research to show and no bench standing — a lab lost to a
+     * collapse should not take the record of what it discovered with it, and
+     * `research.completed` is append-only, so once it is the reason the panel
+     * is open it stays the reason.
      */
     earnedBy: (state) =>
-      hasRoom(state, 'laboratory') ||
-      state.research.points > 0 ||
-      state.research.completed.length > 0,
+      hasRoom(state, 'laboratory') || (state.research.completed || []).length > 0,
     why: 'Build a Laboratory first — nothing else in the silo produces research points.',
   },
   {
@@ -136,23 +182,41 @@ export const UNLOCKS = [
      * need an answer all read `world.radioTier`, which follows research and
      * nothing else. Gating the panel on the room would mean a silo that can
      * already hear a call to arms and has nowhere to answer it.
+     *
+     * `radioTier` is only ever raised, and the node behind it is named as a
+     * second clause so the gate does not depend on that staying true.
      */
-    earnedBy: (state) => (state.world.radioTier || 0) > 0,
-    why: 'Build a Radio Room. Silo 12 has been listening for two generations; now you can transmit.',
+    earnedBy: (state) => (state.world.radioTier || 0) > 0 || researched(state, 'radio_range_1'),
+    why: 'Research Radio Range I. Silo 12 has been listening for two generations; now you can transmit.',
   },
   {
     id: 'airlock',
     label: 'Surface',
     panel: 'airlock',
     /**
-     * The door itself, and only the door. The panel is a ladder of bands with
-     * the dose and the suit tier each one costs, so it is worth reading from
-     * the first day it exists even though the near ruins need tier-1 suits
-     * and nothing goes out without a squad — that ladder is how a player
-     * finds out what the surface will take.
+     * The suit or the door, whichever the silo reaches first.
+     *
+     * This used to be the door and only the door, and it made the hinge of the
+     * early game the *last* thing to arrive: measured across three seeds of the
+     * project's own autopilot, the Airlock went up on days 31, 70 and 62, and
+     * on two of the three the Surface panel was the fifth and final unlock.
+     * Fifteen to eighteen hours of real play before the screen that explains
+     * why any of the rest of it matters.
+     *
+     * Env-Suit I is the honest earlier line. It is the first half of going
+     * outside — the door is useless without it and directives.js asks for both
+     * in the same breath (airlock 55, suit_bay 54) — and the panel is a ladder
+     * of bands with the dose and the suit tier each one costs, so it is worth
+     * reading from the day the silo starts paying for the chain rather than the
+     * day it finishes. Same seeds, same runs: days 31, 42 and 49.
+     *
+     * Both clauses are monotonic: a finished research node is never unfinished,
+     * and the Suit Bay is named alongside the Airlock so losing the door to a
+     * collapse does not shut the ladder.
      */
-    earnedBy: (state) => hasRoom(state, 'airlock'),
-    why: 'Build an Airlock first. Nothing leaves the silo without one.',
+    earnedBy: (state) =>
+      hasRoom(state, 'airlock', 'suit_bay') || researched(state, 'env_suit_1'),
+    why: 'Research Env-Suit I, then build an Airlock. Nothing leaves the silo without both.',
   },
   {
     id: 'military',
@@ -162,10 +226,14 @@ export const UNLOCKS = [
      * Either bench that makes a standing army possible, or an army that
      * already exists. The squad clause is not redundant: squads survive the
      * armoury that raised them, and a silo with people outside must be able
-     * to see them.
+     * to see them. `stats.expeditionsLaunched` is the third: it only counts
+     * up, and a silo that has sent people to the surface has had a squad
+     * whatever is left standing now.
      */
     earnedBy: (state) =>
-      hasRoom(state, 'armory', 'barracks') || state.military.squadIds.length > 0,
+      hasRoom(state, 'armory', 'barracks') ||
+      state.military.squadIds.length > 0 ||
+      (state.stats?.expeditionsLaunched || 0) > 0,
     why: 'Build an Armory or Barracks first.',
   },
   {
@@ -178,25 +246,45 @@ export const UNLOCKS = [
      * panel with nothing in it is one more thing to work out before you can
      * start playing.
      *
-     * The old line was `order.contentThreshold`, 55, and it did not mean
-     * that. Order starts at 64 and decays toward 50, so it crossed 55 on day
-     * five of every silo regardless of how it was run — measured at day 5 on
-     * three separate seeds — and the Order panel arrived second, ahead of
-     * Research, having been earned by nothing. `unlocks.orderTroubleBelow`
-     * sits under the drift attractor instead, so crossing it takes deaths,
-     * crowding or idle hands rather than a calendar. On the same seeds it
-     * first trips on days 61, 75 and 83.
+     * Two lines have been wrong here, in opposite directions, and it is worth
+     * having both written down.
      *
-     * The other three clauses are the doors the player opens deliberately.
-     * A Sheriff's Office is 120 scrap and needs no research, so anyone who
-     * wants the politics early can simply have it.
+     * `order.contentThreshold` — 55 — was a calendar. Order starts at 64 and
+     * drifts toward 50, so it crossed 55 on day four or five of every silo
+     * ever played and the Order panel arrived second, ahead of Research,
+     * having been earned by nothing.
+     *
+     * `unlocks.orderTroubleBelow` — 45 — replaced it and was worse, because it
+     * could close. It sits *under* the drift attractor, so a silo that crossed
+     * it was pulled back above within two or three days and the panel it had
+     * just been given disappeared, permanently and silently. That key is no
+     * longer read by anything; see the note at the top of this file.
+     *
+     * What replaced it is the wreckage low order leaves behind, all of which
+     * is already in the save and none of which is ever cleared:
+     *
+     *   - a Sheriff's Office (120 scrap, no research — anyone who wants the
+     *     politics on the first morning can simply have it);
+     *   - a policy in force;
+     *   - an investigation, which reducers only ever unshift;
+     *   - `order.crimes`, likewise: a pattern rather than a single incident,
+     *     and crime scales with disorder (order.crime.orderScaling), so a
+     *     badly run silo reaches it sooner;
+     *   - `stats.deaths`, which is a counter, for the silo that is failing
+     *     quietly rather than criminally.
+     *
+     * Measured on three autopilot seeds it first trips on days 58, 32 and 62 —
+     * and the day-32 one is a murder with a verdict waiting, not a drift. It
+     * never closes again on any of them, nor on a silo driven to order 18 and
+     * left to recover, which is the run the old line could not survive.
      */
     earnedBy: (state) =>
-      state.order.value < BAL.unlocks.orderTroubleBelow ||
-      (state.order.investigations || []).length > 0 ||
+      hasRoom(state, 'sheriffs_office') ||
       (state.order.policies || []).length > 0 ||
-      hasRoom(state, 'sheriffs_office'),
-    why: 'Nothing to govern yet. This opens when order slips, or when you build a Sheriff’s Office.',
+      (state.order.investigations || []).length > 0 ||
+      (state.order.crimes || []).length >= BAL.wayfinding.orderCrimesBefore ||
+      (state.stats?.deaths || 0) >= BAL.wayfinding.orderDeathsBefore,
+    why: 'Nothing to govern yet. This opens when the silo starts having politics, or when you build a Sheriff’s Office.',
   },
 ];
 
@@ -260,6 +348,11 @@ export function newlyUnlocked(prev, next) {
  * zero. Everything else has to earn its place below.
  */
 const CORE_RESOURCES = ['power', 'food', 'water', 'scrap'];
+
+/** The four the strip carries before the silo has done anything. */
+export function coreResourceKeys() {
+  return [...CORE_RESOURCES];
+}
 
 /**
  * Which counters the strip should carry.
@@ -347,4 +440,12 @@ export function liveResourceKeys(state) {
   return live;
 }
 
-export default { UNLOCKS, unlocked, lockReason, unlockedIds, newlyUnlocked, liveResourceKeys };
+export default {
+  UNLOCKS,
+  unlocked,
+  lockReason,
+  unlockedIds,
+  newlyUnlocked,
+  liveResourceKeys,
+  coreResourceKeys,
+};

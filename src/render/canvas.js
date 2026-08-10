@@ -30,12 +30,26 @@ export const WORLD_W = SLOT_W * SLOTS;
  * and neither holds a reference to the other — and because it is transient UI,
  * so it deliberately never reaches the store or a save file.
  *
- * Shape: { typeId, bays: Map<floorN, Map<slot, mergeSide>>, onPick, onCancel }
+ * Shape: { typeId, bays: Map<floorN, Map<slot, mergeSide>>, onPick, onCancel,
+ *          onCameraFloor? }
+ *
+ * `onCameraFloor` is optional and is called with the floor in the middle of
+ * the viewport whenever that changes while placing. It exists because the
+ * placing bar lists shortcuts to "the bays nearest what the player is already
+ * looking at", and what the player is looking at is decided here — by a drag,
+ * a wheel, or the depth gauge — not by the shell. Without it the bar is built
+ * once at the start of the gesture and then lies: start on floor 2, drag to
+ * floor 13, and it still offers Floor 2 Bay 1-6.
  */
 let placing = null;
 
 export function setPlacement(mode) {
   placing = mode || null;
+}
+
+/** The placement in progress, for other renderers that need to mark it. */
+export function getPlacement() {
+  return placing;
 }
 
 export class SiloRenderer {
@@ -165,6 +179,20 @@ export class SiloRenderer {
     if (placing) drawPlacement(ctx, placing, range, this, this.placementPulse(state));
 
     ctx.restore();
+
+    // Tell the placing bar where the player has got to. Done here rather than
+    // in the drag handler so it fires for every way the camera moves — finger,
+    // wheel, depth gauge, or a jump made from a line of text — and only when
+    // the answer has actually changed.
+    if (placing) {
+      const floor = Math.round((this.camY + this.viewWorldH() / 2) / FLOOR_H) + 1;
+      if (floor !== this._placeFocus) {
+        this._placeFocus = floor;
+        placing.onCameraFloor?.(floor);
+      }
+    } else if (this._placeFocus != null) {
+      this._placeFocus = null;
+    }
   }
 
   /** 0 → 1 → 0 breath for the placement highlight. Flat under reduced motion. */

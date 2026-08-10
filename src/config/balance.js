@@ -182,7 +182,15 @@ export const BAL = {
     massCasualtyBelow: 30,
     massCasualtyChancePerDay: 0.05,
     massCasualtyFraction: 0.04,
-    filterConsumptionPerBayPerCycle: 0.05,
+    // A filtration bay's filter draw is *not* here. It is
+    // `air_filtration.consumes.filters` in src/data/rooms.js, alongside the
+    // power the same bay draws, because the economy charges every room's
+    // upkeep from its own definition and never asks this file about it. There
+    // was a `filterConsumptionPerBayPerCycle: 0.05` sitting in this block that
+    // nothing had ever read; two comments elsewhere then cited it as the knob,
+    // which is how a dead number becomes a wrong one. Deleted rather than
+    // wired up: one room type consuming one resource is room data, and putting
+    // it here would mean the same figure in two places.
   },
 
   // --------------------------------------------------------------- power ---
@@ -234,6 +242,23 @@ export const BAL = {
       'reactor',
       'recycling',
       'workshop',
+      // Eighth, and it was nowhere at all: `maintenance_bay` was the one room
+      // type of twenty-eight missing from this list, and `defaultRank()` gives
+      // anything unlisted 999 against a list that sorts ascending — so the only
+      // room in the silo that restores condition was the *first* thing shed in
+      // every brownout ever run. That is the exact crisis it exists for: a
+      // brownout is the plant at its limit, the plant at its limit is the
+      // generator hall wearing out fastest, and a room that reaches zero
+      // condition stops. Shedding the repair crew to save three power — the
+      // smallest draw of anything below life support — buys one cycle and
+      // costs the hall.
+      //
+      // Here rather than higher because it is a rate, not a floor: the bay
+      // restores condition over shifts, so one dark shift is recoverable in a
+      // way that a dark reclaimer is not. Here rather than lower because
+      // everything under it is comfort, security or storage, and none of those
+      // keep the generation running.
+      'maintenance_bay',
       'residences',
       'clinic',
       'cafeteria',
@@ -518,10 +543,15 @@ export const BAL = {
     //
     // 1.5 was not enough, and the reason is that a *bench* is not a lab. A
     // laboratory only ever runs at the fraction of its two posts that are
-    // crewed, auto-assign fills posts in power-priority order, and the
-    // laboratory is twenty-second on that list — so the small silo runs its
-    // one lab at a capability of 0.25–0.5 for most of the first two hundred
-    // days, not 1. Measured at 1.5: nine nodes by day 300 and a whole hundred
+    // crewed, and at the time this was measured auto-assign filled posts in
+    // power-priority order, where the laboratory was twenty-second — so the
+    // small silo ran its one lab at a capability of 0.25–0.5 for most of the
+    // first two hundred days, not 1. (Crewing has its own list now,
+    // `jobs.staffingPriority`, and the laboratory is eighth on it, so the
+    // premise behind this figure is gone even though the figure is not: a lab
+    // still only runs at the fraction of its posts a small silo can spare, and
+    // 2.4 is what makes the tree move at that. It has not been re-swept
+    // against the new crewing order.) Measured at 1.5: nine nodes by day 300 and a whole hundred
     // days, day 175 to day 275, in which the tree did not move at all. At 2.4
     // the same run reaches fourteen by day 300 and thirty-eight by day 700,
     // which is a tree the player can see the shape of. It is deliberately not
@@ -553,10 +583,6 @@ export const BAL = {
     dissidentMultiplier: 1.35,
     satellitePenaltyPerDay: -1,
     uprisingThreshold: 25,
-    // Below this the silo has politics and the Order panel opens. Above it
-    // there is nothing there to decide, and an empty panel on the first
-    // morning is one more thing to work out before you can start playing.
-    contentThreshold: 55,
     uprisingConsecutiveDays: 3,
     uprisingChancePerDay: 0.34,
     maxPoliciesBase: 2,
@@ -576,6 +602,104 @@ export const BAL = {
       evidenceNoise: 0.38,
       evidencePerDeputy: 0.05,
     },
+  },
+
+  // -------------------------------------------------------- directives ---
+  // The standing order — one line, derived from state every shift, in
+  // `sim/directives.js`. That module ranks every applicable order by weight
+  // and shows the highest. The bands are:
+  //
+  //   95+   something runs out today
+  //   80-95 something is trending to zero, sooner is higher
+  //   76-79 no income of a resource every single room is built from
+  //   70-75 rooms standing empty, which is free output being thrown away
+  //   60-69 the first Laboratory, and idle labs after it
+  //   50-59 the surface chain
+  //   <40   growth
+  //
+  // Each individual order's rank is written where the order is, because the
+  // ranking *is* that module's design and reads better beside the sentence it
+  // decides. What lives here are the shared numbers — the ones that shape more
+  // than one order, or that decide whether an order is issued at all.
+  directives: {
+    // The top of the life-support band: a resource that runs out today.
+    lifeSupportTop: 95,
+    // How a falling resource's urgency decays with its runway.
+    //
+    // It used to be `95 - min(days, 15)`, which clamped: a silo 424 days from
+    // running out of food ranked exactly as urgent as one 15 days from it, at
+    // 80, and 80 outranks the Laboratory at 76 for ever. Measured directly —
+    // the return report read "Food +73" and the standing order simultaneously
+    // read "Build a Hydroponics Bay — Food is falling — it runs out in about
+    // 424 days at the current rate." A silo can carry a slow leak for a year
+    // and never once be told to build the one room that makes research points,
+    // which stalls the whole unlock spine (see sim/unlocks.js — Research is
+    // gated on a Laboratory existing).
+    //
+    // So the near end of the curve is left exactly as it was — 0 days is 95,
+    // 15 days is 80, the tuned part nothing was wrong with — and beyond the
+    // horizon it keeps falling, linearly, to a floor. At 120 days it is 50:
+    // still ahead of digging (30) and of a third Laboratory (15), behind the
+    // surface chain (53-55), and behind the first Laboratory (76) from about
+    // 29 days of runway on. Which is the crossover being asked for: under a
+    // month of food left, fix the food; a season of it, build the lab.
+    runwayHorizonDays: 15,
+    runwayTailDays: 120,
+    runwayFloor: 50,
+    // A life-support surplus thinner than this fraction of current draw is
+    // treated as a problem you can still build your way out of, rather than
+    // one you can't.
+    thinMargin: 0.35,
+    // The top of the margin band. Above "no income" (76-79) — running out of
+    // food outranks being poor — and below a line that is already falling.
+    marginTop: 79,
+    // How far an income order climbs above its own rank as income approaches
+    // nothing. The income orders sat flat at 75 and 74 whatever the figure was,
+    // which is fine at nine tenths of target and wrong at a sixteenth of it: a
+    // silo earning 0.4 scrap a shift against a target of 6.5 is not slightly
+    // poor, it is unable to act on any order it will ever be given, and every
+    // other order it takes instead makes that worse.
+    //
+    // Measured on the knife-edge it decides. Two obedient silos, same seed,
+    // differing only in how often the player acted: at three actions a day the
+    // treasury crossed 130 while "Build another Recycling plant" (75) sat one
+    // place above "Build another Hydroponics Bay" (76 at that margin), income
+    // went 0.5 -> 2.9 -> 4.0 -> 6.9 over the next twenty days and the silo was
+    // solvent for good. At eight actions a day the food margin was a hair
+    // tighter, the bay ranked 77, the silo bought the bay instead — and spent
+    // the following hundred and sixty days at 0.1 scrap a shift, never able to
+    // afford anything again, and suffocated on day 181. Scaling the income
+    // order by how far under target it is settles that the same way both times.
+    incomeUrgencyRange: 4,
+    // How far an order sinks when the silo cannot currently pay for it.
+    //
+    // A standing order you cannot carry out is worse than no order at all: it
+    // is the game asking for something it will not let you do, and a player who
+    // trusts it simply waits. Measured, that is fatal — the order read "Build a
+    // Hydroponics Bay" for twenty consecutive days at forty scrap short while
+    // eighty people died of thirst, because the water reclaimer never got a
+    // turn to be suggested. An unaffordable order still appears when nothing
+    // else is possible, and then its reason says what the silo is short of.
+    //
+    // Large enough to sink the most urgent blocked order below the cheapest
+    // affordable one.
+    unaffordablePenalty: 40,
+    // Saving up is only advice while it is a plan that finishes. Past this many
+    // days from affording the thing the silo most needs, at the income it
+    // actually has, the honest order is to go and fix the income instead —
+    // that is what the promoted salvage order is for.
+    //
+    // Ten days rather than five: the alternative to holding is spending, and
+    // spending is what the treadmill was made of. A silo four or five days from
+    // a Generator Hall that is told to buy a salvage plant instead is a silo
+    // that is never *not* four or five days from a Generator Hall.
+    holdHorizonDays: 10,
+    // What a savings plan is not allowed to defer. While the silo is saving
+    // for something it cannot yet afford, no *less* urgent building order may
+    // spend the reserve — that alternation was the treadmill. But an order in
+    // the life-support band that the silo can pay for today is never worth
+    // deferring for one it cannot, so this is the line the lockout stops at.
+    holdYieldsAbove: 80,
   },
 
   // ---------------------------------------------------------- military ---
@@ -798,7 +922,6 @@ export const BAL = {
     radioRangeTiers: [6, 12, 19], // how many silos each radio tier can reach
   },
 
-  // ------------------------------------------------------- conquest ---
   // ---------------------------------------------------------- alerts ---
   alerts: {
     // Things whose exhaustion kills people, watched by days-of-runway rather
@@ -837,6 +960,7 @@ export const BAL = {
     idleResearchDays: 4,
   },
 
+  // -------------------------------------------------------- conquest ---
   conquest: {
     scoutRunsRequired: 2,
     scoutFailAlertRep: -12,
@@ -903,13 +1027,14 @@ export const BAL = {
   // -------------------------------------------------------- pacing ---
   pacing: {
     flavourChancePerDay: 0.3,
-    crises: [
-      { key: 'first_blight', atMinutes: 120, once: true },
-      { key: 'raider_probe', atMinutes: 300, once: true },
-      { key: 'refugee_wave', atMinutes: 480, once: true },
-      { key: 'anvil_ultimatum', atMinutes: 840, once: true },
-      { key: 'uprising_window', atMinutes: 1200, once: true },
-    ],
+    // When each scripted crisis fires is *not* here. It is `atMinutes` on the
+    // crisis itself in src/data/events.js, which is what sim/events.js reads
+    // and what test/pacing.mjs checks against. There was a second copy of the
+    // schedule in this block — same five keys, same five times — that nothing
+    // had ever read, so moving a crisis meant editing one of two lists with no
+    // way to tell which. The times belong beside the prose and the resolution
+    // they schedule; a duplicate that cannot disagree loudly is worse than no
+    // duplicate at all.
   },
 
   // ------------------------------------------------------- endings ---
@@ -927,11 +1052,12 @@ export const BAL = {
     // A resource earns a counter on the strip when the rooms the player has
     // built draw at least this much of it per cycle, summed at base rate.
     // Set above the two trickles the opening silo already runs — a generator
-    // hall burning 0.3 fuel a shift and a filtration bay burning 0.05
-    // filters — because neither is a decision for the first fifty days, and
-    // there is nothing in the catalogue on the first morning that changes
-    // either figure. A number that cannot be acted on teaches the player to
-    // stop reading the strip it sits on.
+    // hall rated at 0.3 fuel a shift and a filtration bay at 0.05 filters,
+    // both from their room definitions in src/data/rooms.js — because neither
+    // is a decision for the first fifty days, and there is nothing in the
+    // catalogue on the first morning that changes either figure. A number that
+    // cannot be acted on teaches the player to stop reading the strip it sits
+    // on.
     resourceDrawPerCycle: 0.5,
     // ...and regardless of that, when the stock will be gone inside this many
     // days at the current rate. This is the safety net under the rule above:
@@ -1002,6 +1128,75 @@ export const BAL = {
     // How long the depth gauge marks a floor the player was just sent to, so
     // the eye can follow a jump made from a line of text.
     gaugeFocusMs: 2200,
+  },
+
+  // ---------------------------------------------------- wayfinding ---
+  // Appended as its own section by the navigation/placement pass, so nothing
+  // above it had to move. Everything here answers the same question from a
+  // different angle: on a 390px screen, which of the things the silo could
+  // show you right now is the one you are supposed to be looking at.
+  wayfinding: {
+    // ---- when the Order panel arrives ----
+    // The old line was a live reading of `order.value`, which is pulled back
+    // toward `order.driftToward` every day — so the gate could, and did,
+    // close again two days after it opened. These two replace it with the
+    // wreckage low order leaves behind, both of which are counters the
+    // reducers only ever increment. See src/sim/unlocks.js.
+    //
+    // Two crimes rather than one: a single theft on day twenty is an
+    // incident, and crime scales with disorder, so a badly run silo reaches
+    // the second one sooner. Measured on three autopilot seeds, it trips on
+    // days 58, 62 and 62 — last of the five panels every time.
+    orderCrimesBefore: 2,
+    // …and the silo that is failing quietly rather than criminally. Six
+    // funerals is well past what a stable silo of forty-four buries in the
+    // first two months, and `stats.deaths` never travels backwards.
+    orderDeathsBefore: 6,
+
+    // ---- placement: which bays are worth looking at ----
+    // Pick-then-place lit every legal bay equally: seventy-four identical
+    // amber boxes across fourteen floors on the first morning, of which
+    // exactly one — the merge — was a different decision from the other
+    // seventy-three. That is not a choice, it is a coin flip with extra
+    // steps. Bays are now ranked, and only the ranked few are drawn as
+    // targets; the rest stay legible as free space and stay tappable.
+    placement: {
+      // A bay that would join an identical neighbour into a wider unit.
+      // Wider units make more per slot and draw less power per slot, so this
+      // is the only bay on the floor that is genuinely better than its
+      // neighbours — and it used to be a 2px bar in the same colour as the
+      // corner ticks either side of it.
+      mergeEdge: 1, // stroke alpha for a merge target
+      mergeFill: 0.3, // and how hard the arrow into the neighbour is drawn
+      // How many plain bays get the full treatment. One per floor, nearest
+      // the middle of the screen, so every floor with room on it offers a
+      // target without offering six.
+      suggestedPerFloor: 1,
+      // Floors either side of the camera that get a suggestion on bare rock —
+      // a floor with nothing built on it has no bay that is better than any
+      // other, so the only reason to mark one at all is to give the player
+      // something to tap where they are already looking. The whole excavated
+      // silo fits on an 844px screen at fourteen floors, so this has to be
+      // small or "one per floor" is thirteen more amber boxes.
+      suggestFloorRadius: 1,
+      // Everything else: still legal, still tappable, drawn as an empty bay
+      // with a hairline rather than as a target competing for the eye.
+      quietEdge: 0.28,
+      quietFill: 0.04,
+    },
+
+    // ---- the catalogue ----
+    // Twenty-eight rows, twelve of them greyed, is three thousand pixels of
+    // scrolling on a phone to find the four things that can actually be
+    // built. The locked ones are still worth *knowing about* — they are the
+    // shape of the game ahead — so they are kept, collapsed behind one line
+    // that says how many there are and what they are waiting on.
+    lockedRowsCollapsed: true,
+    // A room that has more free bays than this is not interesting enough to
+    // print a number for; below it, the count is a warning that the silo
+    // needs digging. It used to print "74 bays free" on all twenty-eight
+    // rows, identically, which is the definition of a chip nobody reads.
+    baysChipBelow: 12,
   },
 };
 

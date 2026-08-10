@@ -23,10 +23,30 @@
  * doesn't is not made to page through it at three in the morning.
  */
 
+import { BAL } from '../config/balance.js';
+import { SHIFT_SECONDS } from './tutorial.js';
+
 export const PREDECESSOR = {
   name: 'Halvard Sten',
   title: 'Mayor of Silo 12',
   years: 'Y0–Y14',
+};
+
+/**
+ * The silo the note is being written about, read off the same numbers that
+ * build it.
+ *
+ * The note used to say "a hundred and eighty people" — the population the game
+ * opened on two rewrites ago — three screens after the cold open vouched for it
+ * with "all of it is true". It is forty-four. A handover note is a document
+ * about a specific morning, so these are the *starting* figures deliberately,
+ * and they stay right when the balance moves because they are not written down
+ * twice.
+ */
+const SILO = {
+  people: BAL.citizens.startPopulation,
+  floors: BAL.silo.totalFloors,
+  dug: BAL.silo.startExcavatedFloors,
 };
 
 /**
@@ -45,17 +65,17 @@ export const COLD_OPEN = [
       'You will have been told the office is mostly signatures. It is not. It is ' +
         'deciding which of two things gets the power, and then living in the silo ' +
         'where you decided it.',
-      'I ran Silo 12 for fourteen years. What I am leaving you is fourteen floors ' +
-        'dug out of ninety-two, about a season of margin on everything that matters, ' +
-        'and a desk that will tell you what it needs if you let it.',
+      `I ran Silo 12 for fourteen years. What I am leaving you is ${SILO.people} people, ` +
+        `${SILO.dug} floors dug out of ${SILO.floors}, about a season of margin on everything ` +
+        'that matters, and a desk that will tell you what it needs if you let it.',
     ],
   },
   {
     id: 'how',
     heading: 'How the desk works',
     body: [
-      'The clock does not stop. A shift is a minute, the silo keeps running while ' +
-        'the door is shut, and there is a report waiting whenever you come back.',
+      `The clock does not stop. A shift is ${SHIFT_SECONDS} seconds, the silo keeps running ` +
+        'while the door is shut, and there is a report waiting whenever you come back.',
       'There is a standing order across the top of the screen. It is worked out ' +
         'again every shift from what the silo actually has, so it is never out of ' +
         'date — on a bad week it is the only line worth reading. Do what it says, ' +
@@ -80,8 +100,8 @@ export const BRIEFING = [
       'You will have been told that the office is mostly signatures. It is not. ' +
         'The office is deciding which of two things gets the power, and then living ' +
         'in the silo where you decided it.',
-      'I ran this place for fourteen years. I am handing you a silo of a hundred and ' +
-        'eighty people, ninety-two floors of which fourteen are dug, and about a season ' +
+      `I ran this place for fourteen years. I am handing you a silo of ${SILO.people} ` +
+        `people, ${SILO.floors} floors of which ${SILO.dug} are dug, and about a season ` +
         'of margin on everything that matters. That margin is smaller than it sounds.',
       'What follows is what I would want to have been told. It is not encouraging. ' +
         'It is accurate, which is better.',

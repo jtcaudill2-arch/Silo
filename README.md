@@ -1,7 +1,7 @@
 # Deepwater
 
-Real-time colony management in **Silo 12** — ninety-two floors, a hundred and
-eighty named people, and a sky that kills in under an hour.
+Real-time colony management in **Silo 12** — ninety-two floors, forty-four
+named people, and a sky that kills in under an hour.
 
 An installable PWA. Vanilla ES modules, no framework, no build step, no server,
 no network. Canvas for the silo, DOM for everything you read.
@@ -67,15 +67,18 @@ URL. Settings ⚙ → *Export save* moves one across.
 
 ## Your first ten minutes
 
-The game opens on a handover note from the previous mayor. It is the tutorial
-and it is worth reading; you can reopen it any time from Settings ⚙. The short
-version:
+The game opens on two screens of handover note from the previous mayor — who
+is handing over, and that the clock does not stop — and then a guided first
+session that spotlights a real control, says one sentence about it, and waits
+for you to use it (the steps are `TUTORIAL` in `src/data/tutorial.js`). Both
+are reopenable from Settings ⚙, along with the full note, which is worth
+reading. The short version:
 
 1. **Build Recycling, then a Workshop, then a Laboratory.** Scrap and parts
    are what every other room is made of, and nothing but a Laboratory makes
    research points. The starting stores buy about five buildings.
 2. **Staff everything you build.** A new room has no crew and produces
-   nothing until it does — tap the room, or use *Auto-assign* on the Residents
+   nothing until it does — tap the room, or use *Auto-assign* on the **People**
    panel. The room view says "Unstaffed. This room is producing nothing."
 3. **Watch flows, not stockpiles.** The resource strip shows a per-cycle
    delta under each figure. A tank that reads full and is falling is a worse
@@ -90,7 +93,10 @@ version:
    Airlock → Suit Bay → Armory → Foundry → Chem Lab, and the near ruins drop
    nothing worth having, so keep climbing the suit tiers.
 
-Time runs at one shift per real minute. `1×/2×/4×` is top right, space bar
+Time runs at one shift per ninety real seconds — eight shifts to the day, so a
+game day is twelve minutes. That figure is `TICKS_PER_CYCLE × TICK_MS` in
+`src/config/balance.js`, and the two places the game states it out loud derive
+it from there rather than repeating it. `1×/2×/4×` is top right, space bar
 pauses, and closing the tab is fine — the silo keeps running and hands you a
 report on what you missed.
 
@@ -155,10 +161,12 @@ made all three endings unreachable forever, and eight hundred days of played
 simulation could not tell you that.
 
 The headless harness runs two silos: a *sufficient* one that must survive 100
-days without diverging, and the real six-room opening, which is supposed to
-start starving around day 15. Both assert the same invariants — no NaNs, caps
-hold, no citizen dies without a named cause in the log, no action dispatched
-without a reducer.
+days without diverging, and the real opening position — five rooms and
+forty-four people, per `STARTING_ROOMS` in `core/newgame.js` — left to run with
+nobody touching it. That one used to be six rooms in a food deficit that killed
+everybody by day twenty-five; it was cut down twice, and now it holds. Both
+assert the same invariants — no NaNs, caps hold, no citizen dies without a named
+cause in the log, no action dispatched without a reducer.
 
 ## Build tools
 

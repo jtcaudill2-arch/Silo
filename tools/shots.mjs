@@ -76,6 +76,16 @@ if (await page.$('.report.briefing')) {
   await page.waitForSelector('.report.briefing', { state: 'detached' }).catch(() => {});
 }
 
+// ...and the guided session opens behind it, which is a card over the chrome
+// and the whole screen dimmed 56%. Every shot below it was being taken through
+// step one of the tutorial, so nothing here showed what the game looks like.
+// The guide has no reason to be in a photograph of the game; skip it.
+await page.waitForSelector('.tut-skip', { timeout: 4000 }).catch(() => {});
+if (await page.$('.tut-skip')) {
+  await page.click('.tut-skip').catch(() => {});
+  await page.waitForSelector('.tut-card', { state: 'detached', timeout: 4000 }).catch(() => {});
+}
+
 await page.waitForTimeout(700);
 await shot('02-silo', 'the cross-section on day one');
 

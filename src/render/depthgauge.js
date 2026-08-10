@@ -12,7 +12,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
-import { PALETTE } from './canvas.js';
+import { PALETTE, getPlacement } from './canvas.js';
 import { withAlpha, mix } from './floors.js';
 
 const BAR_H = BAL.render.depthGaugeBarHeight;
@@ -112,6 +112,30 @@ export class DepthGauge {
         const lit = running / Math.max(1, filled);
         ctx.fillStyle = mix(PALETTE.concrete, PALETTE.sodium, 0.25 + lit * 0.75);
         ctx.fillRect(left, y, barW * (filled / BAL.silo.slotsPerFloor), barH);
+      }
+    }
+
+    // ---- where the thing being placed could go ----------------------------
+    //
+    // Ninety-two floors do not fit on a phone screen and fourteen barely do,
+    // so "which floors will take this" was a question you could only answer by
+    // dragging. The rail already knows the whole silo at once; while a
+    // building is being placed it says which floors have room, and marks the
+    // floors that offer a merge — the one placement that is better than the
+    // others rather than merely different.
+    const placing = getPlacement();
+    if (placing) {
+      for (const [n, slots] of placing.bays) {
+        const y = pad + (n - 1) * step;
+        let merges = false;
+        for (const side of slots.values()) if (side) merges = true;
+        ctx.fillStyle = withAlpha(PALETTE.sodium, merges ? 0.9 : 0.3);
+        ctx.fillRect(left, y, merges ? barW : Math.max(2, barW * 0.35), barH);
+        if (merges) {
+          ctx.fillStyle = PALETTE.sodium;
+          ctx.fillRect(0, y - 1, 2, barH + 2);
+          ctx.fillRect(this.w - 2, y - 1, 2, barH + 2);
+        }
       }
     }
 

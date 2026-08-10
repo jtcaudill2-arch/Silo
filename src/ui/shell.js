@@ -891,7 +891,7 @@ export class Shell {
         type: 'button',
         id: 'change-line',
         hidden: true,
-        'aria-label': 'What changed last shift',
+        'aria-label': 'The shift report — what changed, and the rest of it',
         onclick: () => this.openChanges(),
       },
       this.changeEyebrow,
@@ -1110,8 +1110,21 @@ export class Shell {
   }
 
   /**
-   * The loudest thing that has happened since the player last read this. Not
-   * the newest: a bay coming online must not push a death off the bar.
+   * The loudest thing that has happened *lately*.
+   *
+   * Two rules, and the second one exists because the first one on its own is a
+   * trap. Loudest, so a bay coming online cannot push a death off the bar —
+   * and only from the last few shifts, because "loudest" alone meant the first
+   * death a silo ever had sat here permanently. Death outweighs everything,
+   * the pool was every unread line, and unread only cleared when the bar was
+   * tapped — so a player who never tapped it read the same sentence every
+   * ninety seconds for an hour while twenty-seven newer changes queued up
+   * behind a label that said "Since you looked".
+   *
+   * The window is the same `changeLineShifts` the staleness rule always used;
+   * it just applies to everybody now instead of only to people who had already
+   * read the bar. Everything that ages out of it is still on the Changes tab,
+   * which is the document that keeps things.
    */
   renderChangeLine(state) {
     const L = BAL.legibility;
@@ -1119,25 +1132,44 @@ export class Shell {
       this.changeLine.hidden = true;
       return;
     }
+    const cutoff = state.clock.cycle - L.changeLineShifts;
     const unread = Math.min(this.unreadChanges, this.changes.length);
-    const pool = unread > 0 ? this.changes.slice(-unread) : this.changes.slice(-1);
-    let best = pool[0];
-    for (const c of pool) {
-      if (weightOfChange(c) >= weightOfChange(best)) best = c;
+    const firstUnread = this.changes.length - unread;
+
+    // One pass: the loudest unread line still inside the window, and the
+    // newest line inside it at all. Unread wins when there is one — and there
+    // always is one when anything is unread, because the newest change is by
+    // definition both the newest and unread.
+    let best = null;
+    let newest = null;
+    for (let i = 0; i < this.changes.length; i++) {
+      const c = this.changes[i];
+      if (c.cycle < cutoff) continue;
+      newest = c;
+      if (i < firstUnread) continue;
+      if (!best || weightOfChange(c) >= weightOfChange(best)) best = c;
     }
-    // A line nobody came back for stops being news after most of a day.
-    if (!unread && state.clock.cycle - best.cycle > L.changeLineShifts) {
+    const line = best || newest;
+    if (!line) {
+      // Nothing has happened for most of a day. The bar has nothing to say and
+      // says nothing, rather than repeating the last thing it said.
       this.changeLine.hidden = true;
       return;
     }
+
     this.changeLine.hidden = false;
-    const eyebrow = unread > 1 ? 'Since you looked' : 'Last shift';
+    const age = state.clock.cycle - line.cycle;
+    // The eyebrow is a claim about time, so it has to survive being read. Two
+    // or more unread is "since you looked"; one is either this shift or an
+    // honest count of how many ago.
+    const eyebrow =
+      unread > 1 ? 'Since you looked' : age <= 1 ? 'Last shift' : `${age} shifts ago`;
     const more = unread > 1 ? `+${unread - 1}` : '';
     if (this.changeEyebrow.textContent !== eyebrow) this.changeEyebrow.textContent = eyebrow;
-    if (this.changeText.textContent !== best.text) this.changeText.textContent = best.text;
+    if (this.changeText.textContent !== line.text) this.changeText.textContent = line.text;
     if (this.changeMore.textContent !== more) this.changeMore.textContent = more;
     this.changeMore.hidden = !more;
-    const tone = toneOfChange(best);
+    const tone = toneOfChange(line);
     this.changeLine.className = 'changeline' + (tone ? ' ' + tone : '');
   }
 
