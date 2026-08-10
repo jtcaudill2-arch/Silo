@@ -272,8 +272,9 @@ export const ROOMS = {
     // rooms up — and the comment there used to name this room as one the
     // Lowers could keep. That was wrong, and by the same measurement.
     //
-    // A squad carries two rounds per person per day, so a four-day trip is
-    // thirty-two, and only what is fired comes off the books. The other source
+    // A squad carries two rounds per person per day and the bands run 1, 3, 5,
+    // 6 and 10 days, so four people carry 8 to 80 rounds a trip. Only what is
+    // fired comes off the books. The other source
     // is the Armory's trickle of 0.35 a shift, from a bench that stands dark
     // most of the time — measured at 77 running days out of 265. It competed
     // for engineers when this was written and competes for soldiers now, with

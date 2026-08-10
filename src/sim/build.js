@@ -432,7 +432,8 @@ export function upgrade(state, roomId) {
  * width` is exactly `share` — 49.5% for a full restore, precisely what
  * `fractionOfBuildCost` advertises. Reading the denominator as 900 instead of
  * 2,700 made that look like 149%, and the "fix" cut wide-room repairs to a
- * sixth of what they should be. Caught by a reviewer mutating the helper and
+ * third of what they should be — `merge.maxWidth` is 3, so `width / steps`
+ * cannot exceed 3. Caught by a reviewer mutating the helper and
  * finding that test/levels.mjs could not tell: it compared `repairCost`, which
  * is defined in terms of this function, against this function.
  */
@@ -449,12 +450,20 @@ export function repairCost(room, points) {
   const def = getRoom(room.type);
   const share = (points / BAL.silo.condition.start) * BAL.silo.repair.fractionOfBuildCost;
   const out = {};
-  // Against what the room cost, not against how many slots it covers. Charging
-  // per slot made a full restore of a base-three room 149% of building a new
-  // one, so the cheapest way to fix a wrecked Reactor was to demolish it and
-  // start again — the exact opposite of what `fractionOfBuildCost` promises.
+  // A share of the room's real price, which is per slot — see `buildCostFor`.
+  // A full restore is `fractionOfBuildCost` of a rebuild; a partial one is that
+  // scaled by the damage.
+  //
+  // Demolish-and-rebuild is never cheaper, at any condition: repair costs
+  // F x BC x (1 - c/100) and stripping and replacing nets BC x (1 - 0.4 x
+  // c/100), and at F = 0.40 those never meet inside 0..100. An earlier note
+  // here claimed the opposite, on the same mistaken 900-instead-of-2,700
+  // denominator this file was corrected for.
   for (const [k, v] of Object.entries(buildCostFor(def, room.width))) {
-    const amount = Math.ceil(v * share);
+    // The epsilon is not decoration: `(100/100) * fraction` lands on
+    // 0.55000000000000004 for the old constant, so a full restore ceilinged one
+    // unit over on every resource whose share is an exact integer.
+    const amount = Math.ceil(v * share - 1e-9);
     if (amount > 0) out[k] = amount;
   }
   return out;

@@ -210,9 +210,25 @@ export const BAL = {
       maintenanceTargets: 6, // how many of the worst rooms a crew covers
     },
     repair: {
-      // Fraction of the room's build cost charged to restore it fully.
-      // Always cheaper than rebuilding, and scales with the room's value.
-      fractionOfBuildCost: 0.55,
+      // Fraction of the room's build cost charged to restore it fully. Always
+      // cheaper than rebuilding, and scales with the room's value.
+      //
+      // 0.55 until the pricing helper was corrected. That correction was right
+      // — repair is a share of `buildCost x width`, which is what building
+      // really costs — but it raised every merged room's bill by 1.5x to 3x,
+      // and the four tuning passes before it had all been measured on top of
+      // the broken cheap version. A reviewer isolated the change over eight
+      // seeds of 900 days: campaigns reaching an ending fell from seven in
+      // eight to five, banked scrap at day 900 fell 37%, dig-days blocked on
+      // resources roughly doubled, and days unable to afford a restore went
+      // from 171 to 707.
+      //
+      // So the ratio stays honest and the constant comes down to meet it. At
+      // 0.40 a full restore is 40% of a real rebuild — still the clearly better
+      // deal it is meant to be, with the bills about a quarter under where the
+      // correction put them. It also restores the margin the suite lost: the
+      // deepest found level was sitting at 49.52% against a 50% ceiling.
+      fractionOfBuildCost: 0.40,
     },
     upgrade: {
       maxLevel: 5,

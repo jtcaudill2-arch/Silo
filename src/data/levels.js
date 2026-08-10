@@ -156,10 +156,12 @@ export const NAMED_LEVELS = {
   // The three levels that carry the endgame, and why they carry it.
   //
   // Every one of the three endings is behind The Origin Record, and that node
-  // wants two origin shards and a compact seal. Both are rollable — deep
-  // expeditions and the sealed caches a dig turns up can each produce either —
-  // but rollable is the whole problem: whether a campaign could be finished at
-  // all came down to those tables being kind. Measured on two seeds of the
+  // wants two origin shards and a compact seal, and no single source produces
+  // both: seals come off the tier-3 table (the deep band, and caches in the
+  // Deeps) and shards off tier 4 (the scar band, and caches in the Foundations
+  // and below). Either way they are rolled for, and that is the whole problem —
+  // whether a campaign could be finished at all came down to two tables being
+  // kind across three separate draws. Measured on two seeds of the
   // project's own autopilot: one drew the seal and won on day 713; the other
   // dug all 144 floors, finished 45 of 48 research nodes, kept 2,000 people
   // alive for 900 days, and could not finish the game, because it never turned

@@ -784,8 +784,8 @@ export function directives(state) {
   }
   // The last link in the chain, and the one nothing ever mentioned.
   //
-  // The surface programme runs on rounds — two per person per day, so a
-  // four-day trip is thirty-two carried. Unfired rounds come home, but a squad
+  // The surface programme runs on rounds — two per person per day, and the
+  // bands run 1, 3, 5, 6 and 10 days, so four people carry between 8 and 80. Unfired rounds come home, but a squad
   // that meets something spends them. The only other source is the Armory's
   // hand-loading bench at 0.35 a shift, from a room that stands dark most of
   // the time: measured at 77 running days out of 265.

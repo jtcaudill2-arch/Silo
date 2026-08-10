@@ -10,9 +10,13 @@
  * with test/deep.mjs still printing "PASS — the deep is somewhere you hold".
  * It passes because it calls `simulateDay` itself.
  *
- * So this file is deliberately written the other way round. It drives `Game`
- * and nothing else, and asserts on what a player would see. Every section here
- * is one that a reviewer's mutation walked through untouched:
+ * So this file is deliberately written the other way round: it asserts on
+ * outcomes a player would see rather than on a function's return value, and
+ * where a system is reachable from the day loop it goes through `Game` (§1).
+ * The rest drive the real entry points — the excavation reducer, a resolved
+ * expedition, `autoAssign`, the migration chain — because that is where those
+ * features are invoked from. Every section here is one that a reviewer's
+ * mutation walked through untouched:
  *
  *   - strain reaches the player through the day loop      (game.js wiring)
  *   - a found room is dark, restorable, and then ordinary (the Phase C loop)
