@@ -15,7 +15,10 @@
  *   - shoring is a real lever and not a toll: it must buy back more time than
  *     it costs to earn
  *   - a floor that goes takes what is on it, and the loss is recoverable
- *   - the Uppers never strain, whatever is built there
+ *   - an unshored floor below the line is a countdown
+ *   - the silo names the floor, and names it in time
+ *   - nothing above the shoring line strains, however much is built on it
+ *   - two silos on different seeds strain on the same day
  *
  * Run: node test/deep.mjs
  */

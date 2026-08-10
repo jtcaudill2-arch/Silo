@@ -21,9 +21,11 @@
  *
  * The first is an assertion. The second is mostly a *report* — the arrival
  * order is emergent from what the player chooses to build and this file is
- * not going to pretend otherwise — with three claims held to account: Research
- * is first, Order is last, and the Surface panel is not hostage to a finished
- * Airlock.
+ * not going to pretend otherwise — with three claims held to account:
+ * Research is first, the Surface panel lands inside the first third, and it is
+ * not hostage to a finished Airlock. Order is deliberately *not* one of them:
+ * it arrives when the silo has politics, which on one of the three seeds is a
+ * murder on day 32.
  *
  * Run: node test/unlocks.mjs [--days=160]
  */

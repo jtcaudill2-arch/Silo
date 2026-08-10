@@ -84,7 +84,7 @@ function tabBtn(id, label, shell) {
 
 function renderLedger(state, body, shell) {
   // The same set the top strip is showing, plus whichever row the player has
-  // opened. The strip spends the whole early game hiding eight of eleven
+  // opened. The strip spends the whole early game hiding seven of its eleven
   // counters on the grounds that a figure you cannot act on teaches you to
   // stop reading the strip — and then tapping any counter opened this list
   // with all eleven on it, which undid the lot in one tap. A resource the

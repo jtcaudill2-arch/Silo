@@ -1,7 +1,7 @@
 /**
  * depthgauge.js — the signature element (spec §14).
  *
- * The whole 92-floor silo rendered as one column of 3px bars pinned to the
+ * The whole 144-floor silo rendered as one column of 3px bars pinned to the
  * left edge: excavated floors lit, unexcavated dark, the current viewport a
  * bright sodium bracket you can drag. Alerts pulse as coloured ticks at their
  * floor.

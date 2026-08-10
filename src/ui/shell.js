@@ -409,9 +409,9 @@ export class Shell {
           el(
             'div.placing-meta',
             chip(describeCost(def.buildCost)),
-            // "74 bays lit" was true of the old drawing, which lit every empty
-            // bay in the silo and made the choice a coin flip across 74
-            // identical boxes. The renderer now ranks them — merges, then one
+            // "24 bays lit" was true of the old drawing, which lit every
+            // empty bay in the silo and made the choice a coin flip across
+            // two dozen identical boxes. The renderer now ranks them — merges, then one
             // suggestion per floor, then the rest as hairlines — so the count
             // that matters is how many are worth looking at, and a merge is
             // worth saying out loud because it widens a room instead of

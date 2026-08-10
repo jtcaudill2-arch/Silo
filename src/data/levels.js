@@ -12,7 +12,8 @@
  * `silo.repair.fractionOfBuildCost` of the build cost, spent through the
  * repair machinery that already exists. That reuse is deliberate. A found room
  * needs no new action, no new reducer path and no schema change — it is an
- * ordinary room that happens to arrive at eighteen per cent condition.
+ * ordinary room that happens to arrive somewhere between ten and twenty-six
+ * per cent condition.
  *
  * Two rules held while writing these:
  *
@@ -153,7 +154,9 @@ export const NAMED_LEVELS = {
     room: 'protein_vats', width: 2, level: 2, condition: 15,
     text: 'Vats, chilled by something that is still running. Nobody has fed it in a very long time.',
   },
-  // The three levels that carry the endgame, and why they carry it.
+  // The bottom four levels, three of which carry the endgame — 122, 129 and
+  // 143 hold artifacts; 136 is the reactor, and is here because a silo that
+  // has come this far has earned somewhere to put the coolant.
   //
   // Every one of the three endings is behind The Origin Record, and that node
   // wants two origin shards and a compact seal, and no single source produces

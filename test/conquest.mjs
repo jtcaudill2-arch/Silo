@@ -30,7 +30,7 @@ const ok = (m) => console.log(`  ✓ ${m}`);
 
 registerCoreReducers();
 
-const TARGET = 6; // Ninefold — a real row in the world table, not a fixture.
+const TARGET = 6; // Selby — a real row in the world table, not a fixture.
 
 function newSilo() {
   const store = createStore(createNewGame({ seed: BAL.meta.defaultSeed, now: 1_700_000_000_000 }));

@@ -40,7 +40,7 @@ const note = (m) => notes.push(m);
 
 registerCoreReducers();
 
-/** §16, converted to game days. One real minute is one cycle; eight is a day. */
+/** §16, converted to game days. A cycle is ninety real seconds; eight is a day. */
 // Crises are scheduled in real elapsed minutes, so converting to game days
 // needs the real length of a day. This used to divide by cyclesPerDay alone,
 // which is only the same number while a cycle happens to last exactly one real
@@ -98,7 +98,8 @@ function record(key, day) {
 
 for (let d = 0; d < DAYS; d++) {
   game.runDays(1);
-  // Real minutes elapsed: one cycle is one real minute at 1x.
+  // Real minutes elapsed at 1x, from the tick clock rather than from a
+  // minutes-per-cycle assumption — a cycle is ticksPerCycle seconds, not one.
   s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
   for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
 

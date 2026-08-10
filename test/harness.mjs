@@ -80,8 +80,8 @@ registerCoreReducers();
  * Fast-forward one silo. `scenario: 'sufficient'` starts from a silo that has
  * already solved its opening problems — that's the configuration that can
  * actually run 100 days, so it's the one divergence is measured against. The
- * default opening is the real starting position and
- * is only run as a short smoke test.
+ * default opening is the real starting position, and is only run as a short
+ * smoke test.
  */
 function run(label, { days, seed, scenario, expectSurvival, play }) {
   const store = createStore(createNewGame({ seed, scenario, now: 1_700_000_000_000 }));

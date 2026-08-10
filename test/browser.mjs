@@ -102,7 +102,7 @@ try {
   else ok('handover dismisses, marks itself seen, and resumes at 1×');
 
   // ---- 1c. the first morning is small -------------------------------------
-  // The game has 13 resources, 9 panels, 28 rooms and 46 research nodes, and
+  // The game has 13 resources, 9 panels, 29 rooms and 48 research nodes, and
   // showing all of it at once was the single loudest complaint from playing
   // it. What a new player meets should be a fraction of that, and it should
   // grow as the silo does.

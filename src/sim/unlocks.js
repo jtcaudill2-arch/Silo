@@ -52,10 +52,11 @@
  *      points, it is the standing order the moment income is nominal
  *      (directives.js ranks it 76, above salvage), and every gate below this
  *      one is behind a node it pays for. Lands on day one to three.
- *   2. World — Radio Range I. Seventy-five points and no prerequisites: the
- *      cheapest root in the tree, and therefore the fastest thing the panel
- *      above it can buy. It needs nothing from outside, which is what puts it
- *      ahead of the surface.
+ *   2. World — Radio Range I. Seventy-five points and no prerequisites, which
+ *      makes it the third-cheapest root in the tree behind Hydroponic Yield I
+ *      (55) and Antibiotics (70), and the cheapest one that opens a panel. It
+ *      needs nothing from outside, which is what puts it ahead of the
+ *      surface.
  *   3. Surface — the suit, or the door. Ninety points of research for
  *      Env-Suit I, then 260 scrap, 30 parts and 14 alloy for the Airlock. The
  *      panel is a ladder of bands with the dose and the suit tier each one
@@ -85,12 +86,15 @@
  * the player to do any of this. The invariant is that no standing order ever
  * points at a panel that is still shut:
  *
- *   - `research` (62) and `dig_research` (32) are the only orders aimed at
- *     the Research panel. The first is guarded on a finished Laboratory. The
- *     second is not — but while the silo has no Laboratory, directives.js
- *     always carries `laboratory` at 76, or 36 once demoted for being
- *     unaffordable, or a promoted salvage order at best+1. All three outrank
- *     32, so `dig_research` cannot reach the top slot before the panel opens.
+ *   - `research` (62), `ammo_research` (51) and `dig_research` (32) are the
+ *     orders aimed at the Research panel. The first is guarded on a finished
+ *     Laboratory; the second on `canStart(firearms_1)`, which cannot be true
+ *     until a node has been completed, and nothing completes without a
+ *     Laboratory. `dig_research` is guarded on neither — but while the silo
+ *     has no Laboratory, directives.js always carries `laboratory` at 76, or
+ *     36 once demoted for being unaffordable, or a promoted salvage order at
+ *     best+1. All three outrank 32, so `dig_research` cannot reach the top
+ *     slot before the panel opens.
  *   - `squad` (52) is guarded on an Armory, which is the Squads gate itself.
  *   - `airlock` (55) and `suit_bay` (54) open the *build* panel, and both are
  *     inside the Surface gate below rather than behind it.
@@ -102,19 +106,21 @@
  *
  * Measured, not argued. `test/unlocks.mjs` drives the project's own autopilot
  * for a hundred and sixty days on three seeds and prints the day each panel
- * arrives; it fails if any gate ever closes, if Order is not last, or if the
- * Surface panel is still hostage to a finished Airlock. What it currently
- * reports:
+ * arrives; it fails if any gate ever closes, if Research is not first, if the
+ * Surface panel does not land inside the first third, or if it is still
+ * hostage to a finished Airlock. What it currently reports:
  *
- *     seed 0x1234   d3 Research  d31 Surface  d34 World    d41 Squads  d58 Order
- *     seed 0xbeef   d3 Research  d32 Order    d35 World    d38 Squads  d42 Surface
- *     seed 0xd00d   d3 Research  d41 World    d49 Surface  d62 Order   d65 Squads
+ *     seed 0x1234   d3 Research  d26 Squads  d42 World    d45 Order   d49 Surface
+ *     seed 0xbeef   d3 Research  d30 World   d32 Order    d37 Surface d47 Squads
+ *     seed 0xd00d   d3 Research  d33 Squads  d45 World    d49 Order   d57 Surface
  *
- * Order arriving second on 0xbeef is not the calendar coming back: a murder
- * was committed on day 32 of that silo and there is a verdict waiting. A panel
- * the player is *required* to use has to be there, and the test asserts the
- * thing that actually went wrong before — that no value of `order.value`, on a
- * silo with no crime, no case, no policy and no sheriff, opens the panel.
+ * Order is not last on any of the three, and the test deliberately does not
+ * demand that it is. Order arriving third on 0xbeef is not the calendar
+ * coming back: a murder was committed on day 32 of that silo and there is a
+ * verdict waiting. A panel the player is *required* to use has to be there,
+ * and the test asserts the thing that actually went wrong before — that no
+ * value of `order.value`, on a silo with no crime, no case, no policy and no
+ * sheriff, opens the panel.
  *
  * (The claim that used to sit here — that test/obedient.mjs had verified this
  * ordering over 400 days on three seeds — was not true of that file. It drives
@@ -204,15 +210,16 @@ export const UNLOCKS = [
      * early game the *last* thing to arrive: measured across three seeds of the
      * project's own autopilot, the Airlock went up on days 31, 70 and 62, and
      * on two of the three the Surface panel was the fifth and final unlock.
-     * Fifteen to eighteen hours of real play before the screen that explains
-     * why any of the rest of it matters.
+     * A game day is twelve real minutes, so that is twelve to fourteen hours
+     * of real play before the screen that explains why any of the rest of it
+     * matters.
      *
      * Env-Suit I is the honest earlier line. It is the first half of going
      * outside — the door is useless without it and directives.js asks for both
      * in the same breath (airlock 55, suit_bay 54) — and the panel is a ladder
      * of bands with the dose and the suit tier each one costs, so it is worth
      * reading from the day the silo starts paying for the chain rather than the
-     * day it finishes. Same seeds, same runs: days 31, 42 and 49.
+     * day it finishes. Same seeds, same runs: days 49, 37 and 57.
      *
      * Both clauses are monotonic: a finished research node is never unfinished,
      * and the Suit Bay is named alongside the Airlock so losing the door to a
@@ -277,7 +284,7 @@ export const UNLOCKS = [
      *   - `stats.deaths`, which is a counter, for the silo that is failing
      *     quietly rather than criminally.
      *
-     * Measured on three autopilot seeds it first trips on days 58, 32 and 62 —
+     * Measured on three autopilot seeds it first trips on days 45, 32 and 49 —
      * and the day-32 one is a murder with a verdict waiting, not a drift. It
      * never closes again on any of them, nor on a silo driven to order 18 and
      * left to recover, which is the run the old line could not survive.
@@ -353,31 +360,27 @@ export function newlyUnlocked(prev, next) {
  */
 const CORE_RESOURCES = ['power', 'food', 'water', 'scrap'];
 
-/** The four the strip carries before the silo has done anything. */
-export function coreResourceKeys() {
-  return [...CORE_RESOURCES];
-}
-
 /**
  * Which counters the strip should carry.
  *
  * Eleven of them on the first morning — most reading a starting stock the
  * silo has no way to spend or replace for hours — is a good part of what
  * makes this look impenetrable, and it buries the four that decide whether
- * anybody lives. Deriving them from the rooms cut it to six; the two that
- * were left over, fuel and filters, are the two the opening silo consumes and
- * can do nothing about. The opening hall burns about 0.34 fuel a shift against
- * a starting 259, and the filtration bay 0.05 filters against 40: ninety-six
- * days and ninety-three days of stock, on the first morning, with no building
- * in the catalogue that changes either number. A figure that cannot be acted on
- * teaches the player to stop reading the strip.
+ * anybody lives. Deriving them from the rooms cuts it to exactly those four.
+ * Fuel and filters make the clearest case for leaving one out: the opening
+ * hall burns about 0.42 fuel a shift against a starting 260, and the
+ * filtration bay 0.05 filters against 40 — seventy-eight days and a hundred
+ * days of stock, on the first morning, with no building in the catalogue that
+ * changes either number. A figure that cannot be acted on teaches the player
+ * to stop reading the strip.
  *
  * The fuel figure is a measurement, not a rating, and it has to be: halls
  * throttle to the load now (economy.js, `plantPlan`), so what a hall burns
- * depends on what the silo is drawing that shift. The opening silo draws 28
- * against 55 of capacity, so its one hall runs at about half and burns about
- * half. This line used to say 0.65 — the old flat-out figure — which was
- * roughly double the truth and made the runway look half as long as it is.
+ * depends on what the silo is drawing that shift. The opening silo draws 36
+ * against 50 of capacity, so its one hall runs at about three quarters and
+ * burns about three quarters. This line used to say 0.65 — the old flat-out
+ * figure — which overstated the burn by half again and made the runway look
+ * shorter than it is.
  *
  * So a resource earns its counter three ways, and any one of them is enough:
  *
@@ -458,5 +461,4 @@ export default {
   unlockedIds,
   newlyUnlocked,
   liveResourceKeys,
-  coreResourceKeys,
 };

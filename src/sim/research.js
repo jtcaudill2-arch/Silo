@@ -4,7 +4,7 @@
  * Completed nodes are folded into one flat modifier object that the rest of
  * the sim reads. That aggregation is memoised on the completed-list length
  * plus the active node, because it's queried every cycle by the economy and
- * recomputing it from forty nodes each time would be silly.
+ * recomputing it from forty-eight nodes each time would be silly.
  */
 
 import { BAL } from '../config/balance.js';

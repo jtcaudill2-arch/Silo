@@ -296,12 +296,12 @@ export const ROOMS = {
     name: 'Armory',
     category: 'security',
     width: 2,
-    // Hand-loading, at the rate one bench can manage. Ammunition is
-    // otherwise unobtainable above the Lowers — the near band never loots
-    // any — so a silo's starting stock funds about fifteen expeditions and
-    // then the airlock closes for good. Munitions is still the volume
-    // source by an order of magnitude; this is just enough to keep a squad
-    // walking while you dig toward one.
+    // Hand-loading, at the rate one bench can manage. The near band never
+    // loots any ammunition, so before this bench existed a silo's starting
+    // stock funded about fifteen expeditions and then the airlock closed for
+    // good. Munitions is still the volume source by an order of magnitude —
+    // and, since it was de-gated, buildable at any depth; this is the cheaper
+    // bench that keeps a squad walking either way.
     produces: { ammo: 0.35 },
     consumes: { power: 2, scrap: 0.7 },
     // The other weapons bench, moved onto combat with the Munitions line for
@@ -486,9 +486,9 @@ export const ROOMS = {
    * It was meant to come off the surface — directives.js said so in as many
    * words, that a coolant shortfall is "a research and surface problem, and
    * the honest answer there is to hold". Measured, holding is all there was:
-   * a deep expedition brings back 10 to 45 coolant and one crewed Reactor
-   * burns about 27 a day, so the whole surface programme kept a Reactor lit
-   * for a fortnight a year. The campaign researched Reactor Containment for
+   * the deep band loots 0 to 20 coolant a haul and the scar 10 to 45, against
+   * one crewed Reactor that burns about 27 a day — so the whole surface
+   * programme kept a Reactor lit for a fortnight a year. The campaign researched Reactor Containment for
    * 1,500 points and two artifacts, paid 900 scrap for the room, crewed it to
    * capability 3.7 — and it ran at nothing for 830 of 900 days.
    *
@@ -538,11 +538,6 @@ export const ROOM_LIST = Object.values(ROOMS);
 
 export function getRoom(id) {
   return ROOMS[id] || null;
-}
-
-/** Resources a room type touches, for UI preview. */
-export function roomFlows(def) {
-  return { produces: def.produces || {}, consumes: def.consumes || {} };
 }
 
 export default ROOMS;

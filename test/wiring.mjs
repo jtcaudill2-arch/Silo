@@ -21,7 +21,10 @@
  *   - strain reaches the player through the day loop      (game.js wiring)
  *   - a found room is dark, restorable, and then ordinary (the Phase C loop)
  *   - unfired ammunition comes back, and only if anyone does
- *   - the crewing transfer lights a dark room
+ *   - the crewing transfer lights a dark room, and obeys its two safety rules
+ *   - the origin route down is a route and not a formality
+ *   - a seized room provides nothing, anywhere
+ *   - salvage, which nothing in this project had ever executed
  *   - migrations actually write the fields they promise
  *
  * Run: node test/wiring.mjs
@@ -444,7 +447,7 @@ console.log('');
   }
 }
 
-// ---- 5. migrations write what they promise ----------------------------------
+// ---- 7. migrations write what they promise ----------------------------------
 {
   const s = createNewGame({ seed: 9, now: 1 });
   // Look like an old save: no `found`, damaged deep floors, short floor array.

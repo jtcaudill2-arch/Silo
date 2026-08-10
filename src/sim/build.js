@@ -405,14 +405,6 @@ export function upgrade(state, roomId) {
 // --------------------------------------------------------------- repair ---
 
 /**
- * Restore a room's condition directly, for scrap and parts.
- *
- * The Maintenance Bay handles ordinary wear across the silo, but it cannot
- * pull a sabotaged generator back from 28 before the lights go out — and
- * without this the player would watch a critical room die with no lever to
- * touch. Repair is that lever: expensive, immediate, and always available.
- */
-/**
  * What a room of a given width actually cost to put up.
  *
  * `buildCost` per slot, because that is literally what the player paid. `build()`
@@ -429,8 +421,8 @@ export function upgrade(state, roomId) {
  *
  * The bug it was introduced to fix did not exist. The old `repairCost` charged
  * `buildCost x width x share`, which against the real price of `buildCost x
- * width` is exactly `share` — 49.5% for a full restore, precisely what
- * `fractionOfBuildCost` advertises. Reading the denominator as 900 instead of
+ * width` is exactly `share`: a full restore costs `fractionOfBuildCost` of a
+ * rebuild, which is what that constant is for. Reading the denominator as 900 instead of
  * 2,700 made that look like 149%, and the "fix" cut wide-room repairs to a
  * third of what they should be — `merge.maxWidth` is 3, so `width / steps`
  * cannot exceed 3. Caught by a reviewer mutating the helper and
@@ -445,7 +437,16 @@ export function buildCostFor(def, width) {
   return out;
 }
 
-/** Cost of restoring `points` of condition. Priced off the room's build cost. */
+/**
+ * Restore a room's condition directly, for scrap and parts.
+ *
+ * The Maintenance Bay handles ordinary wear across the silo, but it cannot pull
+ * a sabotaged generator back from 28 before the lights go out — and without
+ * this the player would watch a critical room die with no lever to touch.
+ * Repair is that lever: expensive, immediate, and always available.
+ *
+ * Cost of restoring `points` of condition, priced off the room's build cost.
+ */
 export function repairCost(room, points) {
   const def = getRoom(room.type);
   const share = (points / BAL.silo.condition.start) * BAL.silo.repair.fractionOfBuildCost;

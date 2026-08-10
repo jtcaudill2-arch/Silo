@@ -148,17 +148,12 @@ function jobSkillOf(c) {
   return c._jobSkill || null;
 }
 
-/** Kept for callers that still ask for a palette name. */
-export function citizenPalette(c) {
-  return citizenRole(c);
-}
-
 /**
  * A standalone canvas holding one atlas frame, for the DOM layer.
  *
  * The panels cannot draw from the atlas the way the game canvas does — they
- * are HTML — so the twenty-eight room interiors baked into the sheet were
- * invisible to the one screen with room to show them. This cuts a frame out
+ * are HTML — so the room interiors baked into the sheet were invisible to
+ * the one screen with room to show them. This cuts a frame out
  * and hands it over as an element, nearest-neighbour at an integer zoom.
  *
  * Returns null when the atlas has not loaded or the frame does not exist, so

@@ -292,9 +292,10 @@ export class Game {
   }
 
   /**
-   * The Order drift + the pressures that feed it. The full political layer
-   * (policies, crime, uprisings) lands in Phase 7; this is the economic half,
-   * which the economy needs from day one so shortages actually bite.
+   * The Order drift + the pressures that feed it. This is the economic half,
+   * which the economy needs from day one so shortages actually bite; the
+   * political half — policies, crime, investigations, uprisings — is in
+   * sim/order.js and runs from `day()` eight lines above.
    */
   dailyOrder() {
     const state = this.state;
@@ -387,7 +388,7 @@ export class Game {
     }
   }
 
-  /** The two ways a silo simply ends. */
+  /** The one way a silo simply ends: nobody left to run it. */
   checkFailure() {
     const state = this.state;
     if (state.meta.gameOver) return;

@@ -52,7 +52,7 @@ export const BAL = {
     reachableFloors: 144,
     slotsPerFloor: 6,
     // Six: the five the starting rooms occupy, and one spare to build the
-    // first thing into. It was fourteen, which handed the player eight empty
+    // first thing into. It was fourteen, which handed the player nine empty
     // floors on the first morning — enough room for everything the early game
     // asks for, so the silo could be played for hours without ever digging,
     // and digging read as a chore rather than as how the silo grows. Six makes
@@ -96,7 +96,7 @@ export const BAL = {
       // excavationCost() for what resetting it per tier did.
       //
       // Scrap deliberately is NOT what gates the bottom of the silo. At 1.03
-      // over 144 levels the last floor costs 17,958 scrap against a store that
+      // over 144 levels the last floor costs 12,287 scrap against a store that
       // caps at 900, or 1,400 with depots: the player would spend the last
       // third of the game unable to hold the price of a single level, which is
       // not difficulty, it is a wait. At 1.012 the bottom floor is about a
@@ -427,7 +427,7 @@ export const BAL = {
       'recycling',
       'workshop',
       // Ninth, and it was nowhere at all: `maintenance_bay` was the one room
-      // type of twenty-eight missing from this list, and `defaultRank()` gives
+      // type of twenty-nine missing from this list, and `defaultRank()` gives
       // anything unlisted 999 against a list that sorts ascending — so the only
       // room in the silo that restores condition was the *first* thing shed in
       // every brownout ever run. That is the exact crisis it exists for: a
@@ -762,7 +762,9 @@ export const BAL = {
       'clinic',
       'maintenance_bay',
       'cafeteria',
-      'suit_bay',
+      // No 'suit_bay'. It has no `staff` block — see the note on the room —
+      // and `openSlots` skips anything without one, so a rank for it is never
+      // read. A dead entry in a hand-ordered list reads as a decision.
       'armory',
       'sheriffs_office',
       'radio_room',
@@ -799,10 +801,10 @@ export const BAL = {
   research: {
     // Research throughput is per *lab*, and the number of labs a silo can
     // staff is a function of its population — so cutting the opening from 180
-    // people to 44 cut research by roughly the same factor, against a 46-node
+    // people to 44 cut research by roughly the same factor, against a 48-node
     // tree whose costs were set against the large silo. A broadly-played silo
     // reached 6 nodes in 300 days, which makes most of the tree scenery. This
-    // buys that back per bench rather than by re-pricing 46 hand-tuned nodes;
+    // buys that back per bench rather than by re-pricing 48 hand-tuned nodes;
     // the expensive nodes at the bottom of the tree (2100–3200) are what
     // absorb the throughput of a silo that has grown back to full strength.
     //
@@ -820,9 +822,9 @@ export const BAL = {
     // days, day 175 to day 275, in which the tree did not move at all. At 2.4
     // the same run reaches fourteen by day 300 and thirty-eight by day 700,
     // which is a tree the player can see the shape of. It is deliberately not
-    // enough to outrun the artifact gates: a third of the nodes still need
-    // something carried in from the surface, and no amount of bench time
-    // substitutes for opening the airlock.
+    // enough to outrun the artifact gates: a quarter of the nodes — twelve of
+    // the forty-eight — still need something carried in from the surface, and
+    // no amount of bench time substitutes for opening the airlock.
     pointsPerLabPerCycleBase: 2.4,
     scientistSkillWeight: 0.9,
     archiveBonus: 0.25,
@@ -886,12 +888,16 @@ export const BAL = {
   // `sim/directives.js`. That module ranks every applicable order by weight
   // and shows the highest. The bands are:
   //
-  //   95+   something runs out today
-  //   80-95 something is trending to zero, sooner is higher
-  //   76-79 no income of a resource every single room is built from
-  //   70-75 rooms standing empty, which is free output being thrown away
-  //   60-69 the first Laboratory, and idle labs after it
-  //   50-59 the surface chain
+  //   88-95 a hard stop already reached, or a floor about to come down
+  //   50-95 something is trending to zero, sooner is higher
+  //   85-   a room about to fail, 85 minus its condition
+  //   76-79 no income at all of a resource every room is built from, with the
+  //         first Laboratory at the bottom of the band
+  //   74-75 income of one that exists but is running short
+  //   72    rooms standing empty, which is free output being thrown away
+  //   62    a Laboratory with nothing on the bench
+  //   51-55 the surface chain
+  //   40    a seized room waiting to be restored
   //   <40   growth
   //
   // Each individual order's rank is written where the order is, because the
@@ -1031,12 +1037,15 @@ export const BAL = {
       // thing in the silo that makes filter media, and it makes 0.6 a shift
       // against an air plant that burns 0.05 a shift per filtration bay — both
       // figures from the room definitions in src/data/rooms.js, which is where
-      // a room's own upkeep lives — so a silo large enough to need six bays and small enough to
-      // staff exactly one Chem Lab runs a filter balance of about zero and
-      // banks nothing. At 2 a head that put a four-person decon at 8 filters,
-      // which such a silo takes over a hundred days to save up: measured, the
-      // squad was suited, armed and standing at the airlock from day 172 and
-      // did not get through it until day 284. 1 halves the fare without
+      // a room's own upkeep lives — so a silo large enough to need six bays and
+      // small enough to staff exactly one Chem Lab is running 0.6 against 0.3,
+      // a two-to-one surplus on paper. On paper is the whole of it: the Chem
+      // Lab is 13th in `power.defaultPriority` and 11th in
+      // `jobs.staffingPriority`, so it is among the first rooms a silo at the
+      // edge of its generation stops running, and the airlock burns another
+      // 0.05 a shift on top. At 2 a head a four-person decon cost 8 filters,
+      // and measured, the squad was suited, armed and standing at the airlock
+      // from day 172 and did not get through it until day 284. 1 halves the fare without
       // making decon free — it is still the reason a Chem Lab is on the
       // critical path, and skipping it still spreads the dose through the
       // whole silo.
@@ -1443,7 +1452,10 @@ export const BAL = {
     // Two crimes rather than one: a single theft on day twenty is an
     // incident, and crime scales with disorder, so a badly run silo reaches
     // the second one sooner. Measured on three autopilot seeds, it trips on
-    // days 58, 62 and 62 — last of the five panels every time.
+    // days 45, 32 and 49 — fourth, third and fourth of the five panels. It is
+    // not last and was never meant to be: the day-32 one is a murder with a
+    // verdict waiting, and a panel the player is required to use has to be
+    // there when the verdict is.
     orderCrimesBefore: 2,
     // …and the silo that is failing quietly rather than criminally. Six
     // funerals is well past what a stable silo of forty-four buries in the
@@ -1451,10 +1463,10 @@ export const BAL = {
     orderDeathsBefore: 6,
 
     // ---- placement: which bays are worth looking at ----
-    // Pick-then-place lit every legal bay equally: seventy-four identical
-    // amber boxes across fourteen floors on the first morning, of which
-    // exactly one — the merge — was a different decision from the other
-    // seventy-three. That is not a choice, it is a coin flip with extra
+    // Pick-then-place lit every legal bay equally: twenty-four identical
+    // amber boxes across six floors on the first morning, of which exactly
+    // one — the merge — was a different decision from the other
+    // twenty-three. That is not a choice, it is a coin flip with extra
     // steps. Bays are now ranked, and only the ranked few are drawn as
     // targets; the rest stay legible as free space and stay tappable.
     placement: {
@@ -1473,8 +1485,9 @@ export const BAL = {
       // a floor with nothing built on it has no bay that is better than any
       // other, so the only reason to mark one at all is to give the player
       // something to tap where they are already looking. The whole excavated
-      // silo fits on an 844px screen at fourteen floors, so this has to be
-      // small or "one per floor" is thirteen more amber boxes.
+      // silo fits on an 844px screen at the six floors it opens on, so this
+      // has to be small or "one per floor" is five more amber boxes on a
+      // screen that already has one.
       suggestFloorRadius: 1,
       // Everything else: still legal, still tappable, drawn as an empty bay
       // with a hairline rather than as a target competing for the eye.
@@ -1483,16 +1496,16 @@ export const BAL = {
     },
 
     // ---- the catalogue ----
-    // Twenty-eight rows, twelve of them greyed, is three thousand pixels of
-    // scrolling on a phone to find the four things that can actually be
+    // Twenty-nine rows, thirteen of them greyed, is three thousand pixels of
+    // scrolling on a phone to find the sixteen things that can actually be
     // built. The locked ones are still worth *knowing about* — they are the
     // shape of the game ahead — so they are kept, collapsed behind one line
     // that says how many there are and what they are waiting on.
     lockedRowsCollapsed: true,
     // A room that has more free bays than this is not interesting enough to
     // print a number for; below it, the count is a warning that the silo
-    // needs digging. It used to print "74 bays free" on all twenty-eight
-    // rows, identically, which is the definition of a chip nobody reads.
+    // needs digging. It used to print "24 bays free" on every row,
+    // identically, which is the definition of a chip nobody reads.
     baysChipBelow: 12,
   },
 };

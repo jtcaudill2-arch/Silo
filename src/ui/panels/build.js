@@ -81,9 +81,9 @@ export const buildPanel = {
     for (const opt of open) body.appendChild(catalogueRow(shell, opt));
 
     // ---- the ones that are still shut ------------------------------------
-    // Twenty-eight rows with twelve greyed out is three thousand pixels of
-    // scrolling on a phone to reach the four things that can actually be
-    // built, and the twelve are not a menu — they are the shape of the game
+    // Twenty-nine rows with thirteen greyed out is three thousand pixels of
+    // scrolling on a phone to reach the sixteen that can actually be built,
+    // and the thirteen are not a menu — they are the shape of the game
     // ahead. Worth knowing about, not worth scrolling past. So they fold
     // behind one line that says how many there are and what they are waiting
     // on, and the fold is remembered while the panel is open.
@@ -243,8 +243,8 @@ function catalogueRow(shell, opt) {
         // Room left, but only when running out of it is news.
         //
         // This used to print on every row, and on the first morning every row
-        // printed the same number — "74 bays free", twenty-eight times, on a
-        // silo with fourteen empty floors. A figure identical across every
+        // printed the same number — "24 bays free", on every row of the
+        // catalogue, on a silo with six floors dug and five rooms on them. A figure identical across every
         // option cannot inform a choice between them; it is furniture. Below a
         // couple of floors' worth it becomes a real warning that the silo needs
         // digging, and that is the only time it is worth the width.

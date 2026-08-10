@@ -67,6 +67,11 @@ export const ROOM_ART = {
   schoolhouse: null,
   suit_bay: null,
   maintenance_bay: null,
+  // Explicitly null rather than absent. `roomArt` treats both the same, but
+  // `missingRoomArt()` reports the nulls — so a room type that is simply not
+  // in this table drops off the list of art still to draw, which is how this
+  // one went unnoticed after it was added.
+  heat_exchange: null,
 };
 
 /**

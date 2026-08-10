@@ -129,8 +129,8 @@ export function autoAssign(state, opts = {}) {
   // thing that decides crewing for ever — and it is not a corner case.
   // Measured over 300 days: the Clinic goes up on day 36 and takes the
   // medics; the Chem Lab goes up on day 54 and needs the same skill; and the
-  // Chem Lab — the only source of meds in the game, including the meds the
-  // Clinic itself burns and the ones an expedition has to carry — ran on 24
+  // Chem Lab — the only room in the silo that makes meds, including the meds
+  // the Clinic itself burns and the ones an expedition has to carry — ran on 24
   // of the 247 days it existed. Reordering the list did nothing, because the
   // list was never the thing that was wrong.
   // Walk every post that went unfilled, not just the first one.

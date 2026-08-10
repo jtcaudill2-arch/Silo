@@ -103,7 +103,7 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
  *        save. The step index goes into state on every step and rides out on
  *        the ordinary autosave; ending is the one transition that cannot wait
  *        for it, because a player who skips and closes the tab inside the
- *        twenty-second interval would be shown the whole thing again.
+ *        thirty-second interval would be shown the whole thing again.
  * @param {boolean} [opts.persist]  false for a run that is not *the* first
  *        session — the one-card alert coach, which is armed in memory for the
  *        session the guide was finished in and writes no flag of its own.

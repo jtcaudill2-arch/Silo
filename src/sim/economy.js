@@ -673,13 +673,6 @@ function clampMag(v, mag) {
   return v > mag ? mag : v < -mag ? -mag : v;
 }
 
-/** Human-readable per-cycle net for the resource bar. */
-export function netFlow(state, key) {
-  const f = state.flows?.[key];
-  if (!f) return 0;
-  return f.in - f.out;
-}
-
 export default {
   simulateCycle,
   computeCaps,

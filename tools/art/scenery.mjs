@@ -1151,7 +1151,7 @@ export function drawRockTile(p, seed = 'env_rock') {
  * a stutter. That is what three separate comments here have always claimed and
  * what the code, which iterated a one-element list, never did: one identical
  * amber band every 32 rows, beating against the 40px floor pitch on a
- * five-floor cycle all the way down a 92-floor silo.
+ * five-floor cycle all the way down a 144-floor silo.
  *
  * The stripe period is 8px — four on, four off — and 32 is a multiple of 8, so
  * the band walks across the horizontal join without breaking step. Eight

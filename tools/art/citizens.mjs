@@ -92,7 +92,7 @@ export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4 };
  * to answer with.
  *
  * src/render/sprites.js:citizenFrame() names frames
- * `citizen_<palette>_<state><n>` and citizenPalette() can only ever return one
+ * `citizen_<palette>_<state><n>` and citizenRole() can only ever return one
  * of five palettes: worker, idle, hurt, irradiated, child. It samples walk at
  * four frames and work at two. This module was written around a richer set of
  * nine job roles and a six-frame walk, which is a better sprite sheet and a

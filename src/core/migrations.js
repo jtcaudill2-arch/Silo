@@ -170,9 +170,10 @@ export function latestVersion() {
   return SCHEMA_VERSION;
 }
 
-/** True if this save can be opened by this build at all. */
-export function canLoad(version) {
-  return typeof version === 'number' && version <= SCHEMA_VERSION;
-}
+// There is no `canLoad(version)` helper, and there was one here for a long
+// time that nothing ever called. `migrate` in save.js already refuses a record
+// from a newer build — migrations only run forward, so there is no step that
+// brings a future save back — and a second copy of that rule that no load path
+// consults is worse than none: it reads like the guard, and it is not.
 
 export default MIGRATIONS;

@@ -112,8 +112,10 @@ const OUTCOMES = [
       // an artifact — measured at 0% across every tier.
       //
       // Tier index 1-4 maps onto band 1-4: the Mids pay out like the near
-      // ruins, the Foundations like the deep band. The Uppers never reach here
-      // (weight 0), which is why there is no band 0.
+      // ruins, the Foundations like the scar — tier index 4 is `LOOT[4]`,
+      // which is the scar band's table and the only one carrying origin
+      // shards. The Uppers are clamped up into band 1 rather than having a
+      // band of their own.
       const band = LOOT[Math.max(1, Math.min(4, ti))] || {};
       const ids = Object.keys(band.artifacts || {});
       const out = {
@@ -146,7 +148,8 @@ const OUTCOMES = [
   {
     id: 'contamination',
     kind: 'rad',
-    // Deep only. This is the one place `--toxin` green is allowed on screen.
+    // Rare in the Uppers and common below. This is the one place `--toxin`
+    // green is allowed on screen.
     weight: [1, 6, 10, 12, 14, 16],
     apply: (rng, ti) => ({
       air: -Math.round(BAL.excavationFinds.contaminationAirPerTier[ti] * (0.7 + rng.next() * 0.6)),

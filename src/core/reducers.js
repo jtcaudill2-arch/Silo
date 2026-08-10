@@ -243,8 +243,8 @@ const siloReducers = {
         // for them, and a `true` here is a lie that never gets corrected.
         // Three separate systems ask `room.powered` directly — schooling,
         // airlock capacity, and whether the silo can craft a suit — so a
-        // seized Schoolhouse on floor 9 was teaching children with no crew,
-        // no power and no repairs.
+        // found Armory on floor 96 was fitting out squads with no crew, no
+        // power and no repairs.
         powered: false,
         // Never commissioned. This is what separates a room that arrived
         // seized from one that decayed to the same number while the silo
@@ -324,9 +324,11 @@ const citizenReducers = {
   },
 
   /**
-   * The only path a citizen leaves by. Writes the log entry itself so a death
-   * can never go unrecorded, applies the grief hit to everyone who cared, and
-   * frees whatever they were holding.
+   * How a citizen dies. Writes the log entry itself so a death can never go
+   * unrecorded, applies the grief hit to everyone who cared, and frees
+   * whatever they were holding. `CITIZEN_EXILE` below is the one other way a
+   * name leaves the roster, and it deliberately does not come through here:
+   * exile is a verdict, not a death, and it writes its own log line.
    */
   CITIZEN_DIE(state, a) {
     const c = state.citizens[a.id];
@@ -1022,6 +1024,11 @@ const worldReducers = {
   },
 
   PENDING_RAID(state, a) {
+    // Written, and — today — never read. `RAID_RESOLVED` below is dispatched
+    // from nowhere in src/ or test/, and no sim module looks at
+    // `world.pendingRaid`, so a raid announces itself and then nothing
+    // happens. Kept rather than deleted because the event and the reducer are
+    // the half that already works; what is missing is a resolver.
     state.world.pendingRaid = { siloId: a.siloId, strength: a.strength, day: state.clock.day };
     emit('alert', { kind: 'warn', glyph: '⚑', text: 'Raiders at the airlock' });
   },

@@ -1,6 +1,9 @@
 /**
- * combat.js — auto-resolve. One function, used by expeditions, sieges,
- * silo defence and uprisings (spec §13).
+ * combat.js — auto-resolve. One function, called from two places:
+ * expeditions (expedition.js) and uprisings (order.js). The spec's §13 also
+ * lists sieges and silo defence; neither resolves a fight today — conquest
+ * advances its breach stage on a gate check, and `world.pendingRaid` is
+ * written and never read.
  *
  * The maths is exactly the spec's. What earns auto-resolve its keep is the
  * log: round-by-round, four to eight lines, naming citizens. "Deputy Marra

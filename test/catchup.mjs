@@ -3,7 +3,7 @@
  * catchup.mjs — the Phase 2 gate.
  *
  * The spec is blunt about this one: do not proceed until closing the tab for
- * an hour produces a correct, readable report. So this checks four things:
+ * an hour produces a correct, readable report. So this checks five things:
  *
  *  1. DETERMINISM — a sub-5-minute absence replayed offline produces state
  *     byte-identical to having watched it. If that isn't true, the whole
@@ -14,6 +14,7 @@
  *  3. THE REPORT — an hour away produces a report with named deaths, causes,
  *     resource deltas, and a headline that reads like a sentence.
  *  4. THE CAP — three days away simulates twelve hours and says so.
+ *  5. SAVE ROUND-TRIP — a save exports, imports and migrates back to itself.
  *
  * Run: node test/catchup.mjs
  */
@@ -119,9 +120,9 @@ function comparable(state) {
   if (d.length) {
     fail(`fine catch-up diverged from live play:\n      ${d.join('\n      ')}`);
   } else {
-    ok(`4 minutes away replays byte-identical to 4 minutes watched (${live.store.state.clock.cycle} cycles)`);
+    ok(`4.5 minutes away replays byte-identical to 4.5 minutes watched (${live.store.state.clock.cycle} cycles)`);
   }
-  if (!report) fail('a 4-minute absence should still produce a report');
+  if (!report) fail('a 4.5-minute absence should still produce a report');
   else if (report.mode !== 'fine') fail(`expected mode "fine", got "${report.mode}"`);
 }
 

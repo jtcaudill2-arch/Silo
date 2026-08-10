@@ -325,8 +325,12 @@ for (const [reason, n] of base.stuck) {
 }
 
 // The advice has to move the silo forward, not just keep it breathing.
-if (Object.keys(s.silo.rooms).length <= 6) {
-  fail(`the silo never grew past its starting six rooms (${Object.keys(s.silo.rooms).length})`);
+// Counted from a fresh silo rather than written down. It was `<= 6` against a
+// hard-coded "starting six rooms" for as long as the opening had six; the
+// opening has five now, so that threshold had quietly become "grew by two".
+const STARTING_ROOMS = Object.keys(createNewGame({ seed: BAL.meta.defaultSeed }).silo.rooms).length;
+if (Object.keys(s.silo.rooms).length <= STARTING_ROOMS + 1) {
+  fail(`the silo never meaningfully grew past its ${STARTING_ROOMS} starting rooms (${Object.keys(s.silo.rooms).length})`);
 } else {
   ok(`grew to ${Object.keys(s.silo.rooms).length} rooms without the player deciding anything`);
 }

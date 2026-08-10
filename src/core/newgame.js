@@ -59,9 +59,9 @@ import { RES_KEYS } from '../sim/economy.js';
  * Eighteen posts across the four staffed bays, filled from forty-four people
  * with plenty spare, so nothing runs part-crewed on the first morning.
  *
- * (These figures have gone stale twice while the rooms underneath them moved.
- * If you change a width or the population, redo the arithmetic here — it is
- * the only place the sizing is explained.)
+ * (These figures have gone stale twice while the rooms underneath them moved,
+ * and they are stated here and again on the list itself. If you change a
+ * width or the population, redo the arithmetic in both.)
  */
 const STARTING_ROOMS = [
   // From floor one down, with nothing above them and nothing empty between.
@@ -73,7 +73,7 @@ const STARTING_ROOMS = [
   // × width` and output scales by the fraction of posts crewed, so a wide bay
   // in a small silo is a half-crewed bay: at width 2 across the board the
   // generator ran at 35 of a possible 73 power and browned out everything the
-  // player then built. These are sized so all twelve posts are filled with
+  // player then built. These are sized so all eighteen posts are filled with
   // people to spare, and so the ceilings each room provides — 63 beds, 90 air
   // — sit far enough above 44 to leave somewhere to grow into.
   { type: 'residences', floor: 1, slot: 0, width: 3, level: 1 }, // 63 beds

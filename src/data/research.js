@@ -120,7 +120,7 @@ export const RESEARCH = {
     id: 'deep_excavation_1', branch: 'infrastructure', name: 'Deep Excavation I',
     cost: 80, minCycles: 12,
     effects: { unlockTier: ['mids'], unlockRoom: ['laboratory', 'schoolhouse'] },
-    desc: 'Opens the Mids: floors fifteen through thirty-four.',
+    desc: 'Opens the Mids: floors twenty-one through forty-eight.',
   }),
   power_efficiency: N({
     id: 'power_efficiency', branch: 'infrastructure', name: 'Load Balancing',
@@ -190,7 +190,7 @@ export const RESEARCH = {
   // This is the same correction Shaft Seals already got one node further
   // down, for the same reason. Origin Systems keeps its `unlockTier` effect,
   // so a silo that goes the origin route still opens the Foundations that
-  // way — there are two roads down, and neither one is nine thousand points
+  // way — there are two roads down, and neither one is six thousand points
   // of somebody else's research.
   deep_excavation_4: N({
     id: 'deep_excavation_4', branch: 'infrastructure', name: 'Deep Excavation IV',
@@ -373,8 +373,9 @@ export const RESEARCH = {
   // link on the origin chain.
   //
   // It was written as requiring Origin Systems, which put it behind
-  // origin_record (3200) and origin_systems (2600) as well as its own cost —
-  // nine thousand points in sequence, after everything else in the tree. A
+  // origin_record (3200) and origin_systems (2600) as well as its own 1400 —
+  // seven thousand two hundred points in sequence, after everything else in
+  // the tree. A
   // broadly-played silo opened the Foundations on day 703 of 900 and never
   // reached the Shaft Floor at all, which makes the deepest twenty levels
   // scenery.

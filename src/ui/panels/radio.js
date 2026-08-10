@@ -38,9 +38,9 @@ export const radioPanel = {
     return (state.world.pending || []).filter((e) => e.kind === 'call_to_arms_pending').length;
   },
 
-  // Second of the gated systems: Radio Range I is the cheapest root in the
-  // tree and needs nothing from outside, which is what puts it ahead of the
-  // surface. The condition and the sentence live in sim/unlocks.js.
+  // Second of the gated systems: Radio Range I is the cheapest root that
+  // opens a panel and needs nothing from outside, which is what puts it ahead
+  // of the surface. The condition and the sentence live in sim/unlocks.js.
   locked(state) {
     return lockReason(state, 'radio');
   },

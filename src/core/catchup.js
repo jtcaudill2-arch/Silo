@@ -98,7 +98,8 @@ function replayFine(store, game, ms) {
 }
 
 function replayCoarse(store, game, ms) {
-  // One real minute is one cycle; one game day is CYCLES_PER_DAY of them.
+  // A cycle is TICKS_PER_CYCLE real seconds, not one real minute; a game day
+  // is CYCLES_PER_DAY of them, which is why this multiplies by ticksPerDay.
   const msPerGameDay = BAL.time.TICK_MS * TIME.ticksPerDay;
   const days = Math.floor(ms / msPerGameDay);
   const remainderMs = ms - days * msPerGameDay;

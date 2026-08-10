@@ -5,9 +5,11 @@
  * last dug floor is drawn as solid darkness. That boundary is the visible
  * frontier of the game — it should always be obvious where the silo stops.
  *
- * Room art is placeholder blocks for now (Phase 1 ships without an atlas);
- * the shapes, lighting and category colouring are already final so swapping
- * in sprites is a drop-in at Phase 8.
+ * Room interiors come out of the atlas, one fixture per bay, so a three-wide
+ * room reads as three machines rather than one stretched one. The shapes,
+ * lighting and category colouring underneath are what a room falls back to
+ * when the atlas has not loaded or has no frame for that type — see
+ * `missingRoomArt()` for which types those are.
  */
 
 import { BAL } from '../config/balance.js';
@@ -224,10 +226,10 @@ function drawPlaceholderContents(ctx, room, def, x, y, w, h, tint) {
  * Placement mode: where the chosen building could go, ranked.
  *
  * This used to light every legal bay identically. On the first morning that is
- * seventy-four amber boxes across fourteen floors, of which exactly one — the
- * bay that would merge into the room beside it — is a different decision from
- * the other seventy-three. Seventy-four equal targets is not a choice, and the
- * one that mattered was drawn as a 2px bar between 2px corner ticks in the same
+ * twenty-four amber boxes across six floors, of which exactly one — the bay
+ * that would merge into the room beside it — is a different decision from the
+ * other twenty-three. Twenty-four equal targets is not a choice, and the one
+ * that mattered was drawn as a 2px bar between 2px corner ticks in the same
  * colour, so it was not even visible.
  *
  * So the bays are ranked, and only the ranked ones are drawn as targets:

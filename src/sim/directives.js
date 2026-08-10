@@ -47,13 +47,20 @@ import { canStart, isComplete } from './research.js';
  * carries its own rank beside the sentence it decides, rather than being
  * looked up somewhere else:
  *
- *   95+   something runs out today
- *   80-95 something is trending to zero, sooner is higher
- *   76-79 no income of a resource every single room is built from
- *   70-75 rooms standing empty, which is free output being thrown away
- *   60-69 the first Laboratory, and idle labs after it
- *   50-59 the surface chain
- *   <40   growth
+ *   88-95 a hard stop already reached — no generation headroom, no coolant,
+ *         more breath than scrubbers, nowhere to sleep — or a floor that is
+ *         about to come down (88 minus its integrity)
+ *   50-95 something is trending to zero, sooner is higher: see `runwayWeight`,
+ *         which starts at 95 the day it empties and falls to 50 past a season
+ *   85-   a room about to fail, 85 minus its condition
+ *   76-79 no income at all of a resource every single room is built from,
+ *         with the first Laboratory at the bottom of the band
+ *   74-75 income of one that exists but is running short
+ *   72    rooms standing empty, which is free output being thrown away
+ *   62    a Laboratory with nothing on the bench
+ *   51-55 the surface chain, and the munitions line at the end of it
+ *   40    a seized room waiting to be restored
+ *   <40   growth: digging, the radio, more benches
  *
  * The Laboratory sits below life support deliberately. It is the most
  * important building in the game and it costs 220 scrap, and an opening that
@@ -99,7 +106,7 @@ function runwayWeight(days) {
 }
 
 // Both skip seized rooms. "Does the silo have one of these" has to mean one it
-// can use: a found Schoolhouse standing dark on floor 9 otherwise answers yes
+// can use: the found Workshop on floor 45 standing dark otherwise answers yes
 // and the order to build a working one never comes.
 const has = (state, type) =>
   Object.values(state.silo.rooms).some(
@@ -183,7 +190,8 @@ function scarcest(state, type) {
  * one impossible instruction for another is the same failure wearing a
  * different hat.
  *
- * Scrap, parts, coolant and alloy — every shortfall a room can answer.
+ * Scrap, parts, coolant, ammunition and alloy — every shortfall a room can
+ * answer.
  *
  * Alloy was left out on the grounds that it is a research problem, the Foundry
  * being behind a node. That is true right up until the silo has one, and
@@ -195,9 +203,9 @@ function scarcest(state, type) {
  * furnaces, and nothing ever said so.
  *
  * Coolant is here because it stopped being a surface problem. This comment
- * used to say it was one, and it was wrong: a deep expedition brings back ten
- * to forty-five and a crewed Reactor burns about twenty-seven a day, so no
- * amount of walking outside ever kept one lit. The Heat Exchange makes it out
+ * used to say it was one, and it was wrong: the deep band loots nothing to
+ * twenty a haul, the scar ten to forty-five, and a crewed Reactor burns about
+ * twenty-seven a day — so no amount of walking outside ever kept one lit. The Heat Exchange makes it out
  * of mined ore, so a silo staring at an idle Reactor now gets told the room
  * that fixes it instead of being told to wait.
  */
@@ -489,12 +497,13 @@ export function directives(state) {
   // ---- a room about to fail --------------------------------------------
   //
   // A room the silo has never crewed is excluded, however bad its number is.
-  // The found levels arrive at ten to thirty condition, which reads to a
+  // The found levels arrive at ten to twenty-six condition, which reads to a
   // straight worst-first sort exactly like a generator hall about to die — so
-  // opening floor 9 put "Repair the Schoolhouse" at the top of the standing
-  // orders and an obedient silo spent 288 scrap on a room it had no crew for
-  // and no need of. Measured: it cost the campaign five research nodes and
-  // every expedition it would otherwise have run. Getting crewed makes a found
+  // opening floor 24 put "Repair The Works" at the top of the standing orders
+  // and an obedient silo spent 74 scrap and 6 parts restoring a maintenance
+  // bay it had no crew for and no need of. Measured on the level table of the
+  // day: it cost the campaign five research nodes and every expedition it
+  // would otherwise have run. Getting crewed makes a found
   // room ordinary again, and so does a full repair.
   // Not `inService`: this is a looser question than the imported one, and
   // naming it the same shadowed the import for the rest of the function.
@@ -547,7 +556,7 @@ export function directives(state) {
   // better one it can only stare at.
   // Only offered when the silo can finish it today. A repair pays for whatever
   // it can afford and stops, which is right for a generator dying at eleven
-  // condition and wrong here: a silo drip-feeding scrap into a schoolhouse
+  // condition and wrong here: a silo drip-feeding scrap into a found room
   // held this order at the top of the list for day after day, spent the
   // actions it had on it, and pushed Env-Suit I — and with it the whole
   // surface half of the game — nine days past where it belongs. A found room
@@ -657,7 +666,7 @@ export function directives(state) {
   // ---- posts standing empty ---------------------------------------------
   // Seized rooms are excluded, and it is not cosmetic. A found room always has
   // an empty roster, and `openSlots` — what auto-assign actually walks — skips
-  // it until it has been restored. Left in, "Crew the Schoolhouse" stands at
+  // it until it has been restored. Left in, "Crew The Works" stands at
   // 72 for ever: above digging, above the surface chain, and impossible to
   // carry out. Measured, a silo sat on that order with thirty-seven people
   // idle and its Foundry and Suit Bay uncrewed, and never reached the surface.
@@ -707,8 +716,9 @@ export function directives(state) {
         // that discharges it — and a silo waiting for people has spare hours
         // and a full treasury, which is exactly when it should be excavating.
         // At 60 it outranked `excavate` at 30 and an obedient silo sat on 900
-        // scrap and fourteen floors for a hundred and seventy days rather than
-        // digging: the hold was true, and it was still the wrong thing to say.
+        // scrap and the fourteen floors it had dug by then, for a hundred and
+        // seventy days, rather than digging a fifteenth: the hold was true, and
+        // it was still the wrong thing to say.
         weight: 5,
       });
     }

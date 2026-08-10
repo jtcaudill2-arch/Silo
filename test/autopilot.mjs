@@ -2,7 +2,7 @@
  * autopilot.mjs — a competent-but-not-clever player, for regression testing.
  *
  * This is not an AI opponent and it is not shipped in the game. It exists so
- * the harness can drive the *real* six-room opening the way a player would —
+ * the harness can drive the *real* five-room opening the way a player would —
  * building, excavating, researching, re-staffing — and assert that the silo
  * survives. A pure passive run can only ever prove the opening is lethal; it
  * can't prove it's solvable, which is the more important claim.
@@ -33,8 +33,8 @@ import { canLaunch, launch, airlockCapacity } from '../src/sim/expedition.js';
  *
  * The suit line is load-bearing and it is easy to under-rate. The near ruins
  * drop no artifacts at all, so a silo that never fields tier-2 suits never
- * recovers a single artifact, and every artifact-gated node — a third of the
- * tree, including all three endings — sits permanently out of reach while
+ * recovers a single artifact, and every artifact-gated node — twelve of the
+ * forty-eight, including all three endings — sits permanently out of reach while
  * the lab keeps busy on yield upgrades. This list used to stop at the
  * economy nodes and reached env_suit_2 only by accident, four hundred days
  * late, which is exactly what that failure looks like from the inside: no
@@ -240,8 +240,8 @@ export function autopilot(state) {
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
 
   // Everything else waits until nothing is on fire and there's a reserve
-  // left over. Spending the last of the scrap on a schoolhouse while the
-  // water runs out is exactly the mistake this ordering exists to prevent.
+  // left over. Spending the last of the scrap on an Archive while the water
+  // runs out is exactly the mistake this ordering exists to prevent.
   const RESERVE = 170;
   if (!urgent.length && state.resources.scrap > RESERVE) {
     // Reaching outward is the growth lever (§6), and the chain only pays
@@ -260,8 +260,9 @@ export function autopilot(state) {
     // weapon or a vest, so without one a squad can be formed, housed and
     // fed, and never sent anywhere.
     if (count('armory') < 1) wants.push('armory');
-    // Straight after the armoury, not thirty entries later. A squad carries
-    // two rounds a person a day and brings none back; the armoury hand-loads
+    // Straight after the armoury, not thirty entries later. A squad draws two
+    // rounds a person a day and only gets back what it did not fire — a trip
+    // that fights every day comes home with nothing; the armoury hand-loads
     // 0.35 a shift from a bench that is usually dark. Sitting near the end of
     // this list it never once got built in 300 days, because a growing silo
     // always has another dormitory or filtration bay wanting the money first —
@@ -273,9 +274,11 @@ export function autopilot(state) {
     if (count('foundry') < 1) wants.push('foundry');
     if (airHeadroom < 30) wants.push('air_filtration');
     if (env.housingFree < 12) wants.push('residences');
-    // Meds and filters both come out of the chem lab and nothing else makes
-    // either. Without it the clinic runs dry, no expedition can be supplied,
-    // and no squad that comes home can be decontaminated.
+    // Meds and filters both come out of the chem lab, and nothing else in the
+    // silo makes either — the surface does, but only from the mid band up for
+    // meds, and the near band's filters are a trickle. Without a chem lab the
+    // clinic runs dry, no expedition can be supplied, and no squad that comes
+    // home can be decontaminated.
     //
     // Size it against the thing that actually eats filters, which is the air
     // plant, not the headcount: a filtration bay draws media every shift
@@ -544,7 +547,9 @@ function runSurface(state) {
   }
 
   // Don't send a squad you cannot clean when it gets back — *if* cleaning
-  // them is on the table at all. Only the Chem Lab makes filters, and the
+  // them is on the table at all. The Chem Lab is the only room that makes
+  // filters — the near band loots a few, which is not something to plan
+  // around — and the
   // documented order of the chain (Env-Suit I, Airlock, Suit Bay, Armory,
   // Foundry, Chem Lab) puts it last on purpose, so the first runs out of
   // the door are meant to be made on the starting stock and, once that is
