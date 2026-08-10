@@ -342,11 +342,24 @@ if (!s.research.completed.length) {
 // slack on rooms and floors is for trajectory noise — two silos that diverge on
 // day 3 do not land on the same floor plan on day 200 — while research and
 // survival are checked strictly, because those are what the treadmill destroyed.
+//
+// Research allows a single node, and only out of a healthy total. A node is a
+// step function against the 200-day wall — one that lands on day 199 in one run
+// and day 201 in the other is a boundary effect, not a treadmill — but the
+// shortfall the treadmill produced was 2 nodes against 1, a *halving*, and a
+// flat one-node tolerance would wave that through. Below five nodes there is no
+// slack at all, so the original failure is still caught by this line and not
+// only by the death check underneath it. The savings-raid counter below is the
+// precise instrument; this is the coarse one.
 const SLACK = 2;
+const RESEARCH_MIN_FOR_SLACK = 5;
 for (const r of runs.slice(1)) {
   const worse = [];
   if (base.residents > 0 && r.residents === 0) worse.push(`everyone died on day ${r.day}`);
-  if (r.research < base.research) worse.push(`${r.research} research against ${base.research}`);
+  const researchSlack = base.research >= RESEARCH_MIN_FOR_SLACK ? 1 : 0;
+  if (r.research < base.research - researchSlack) {
+    worse.push(`${r.research} research against ${base.research}`);
+  }
   if (r.rooms < base.rooms - SLACK) worse.push(`${r.rooms} rooms against ${base.rooms}`);
   if (r.floors < base.floors - SLACK) worse.push(`${r.floors} floors against ${base.floors}`);
   if (worse.length) {

@@ -55,7 +55,8 @@ function pick(rng, table, ti) {
 /**
  * The outcomes, and how their likelihood moves with depth.
  *
- * Weights are indexed by tier: [Uppers, Mids, Lowers, Deeps, Foundations].
+ * Weights are indexed by tier: [Uppers, Mids, Lowers, Deeps, Foundations,
+ * Shaft Floor].
  * The Uppers are almost always empty, because the top of the silo is the part
  * that was lived in and stripped. Everything interesting is further down.
  */
@@ -63,13 +64,13 @@ const OUTCOMES = [
   {
     id: 'bare',
     kind: 'alert',
-    weight: [70, 40, 26, 18, 12],
+    weight: [70, 40, 26, 18, 12, 8],
     text: () => 'Six bays of bare rock and a lighting circuit that still works.',
   },
   {
     id: 'stores',
     kind: 'good',
-    weight: [22, 30, 28, 24, 20],
+    weight: [22, 30, 28, 24, 20, 18],
     apply: (rng, ti) => {
       const m = BAL.excavationFinds.storesPerTier[ti];
       return {
@@ -86,7 +87,7 @@ const OUTCOMES = [
   {
     id: 'cistern',
     kind: 'good',
-    weight: [4, 10, 12, 10, 8],
+    weight: [4, 10, 12, 10, 8, 6],
     apply: (rng, ti) => ({
       resources: { water: Math.round(BAL.excavationFinds.cisternPerTier[ti] * (0.7 + rng.next() * 0.6)) },
     }),
@@ -99,7 +100,7 @@ const OUTCOMES = [
     kind: 'good',
     // Nothing above the Mids: the artifacts are what the builders left behind,
     // and they did not leave anything in the part of the silo people lived in.
-    weight: [0, 6, 12, 20, 26],
+    weight: [0, 6, 12, 20, 26, 32],
     apply: (rng, ti) => {
       // LOOT is keyed by expedition band 1-4 with the artifacts nested inside,
       // not an array of pools. Indexing it as an array silently produced an
@@ -129,7 +130,7 @@ const OUTCOMES = [
     id: 'collapse',
     kind: 'warn',
     // The reason to shore, and the reason not to dig faster than you can.
-    weight: [3, 8, 12, 16, 20],
+    weight: [3, 8, 12, 16, 20, 24],
     apply: (rng, ti) => ({
       condition: -Math.round(BAL.excavationFinds.collapseConditionPerTier[ti] * (0.7 + rng.next() * 0.6)),
       hurts: true,
@@ -142,7 +143,7 @@ const OUTCOMES = [
     id: 'contamination',
     kind: 'rad',
     // Deep only. This is the one place `--toxin` green is allowed on screen.
-    weight: [1, 6, 10, 12, 14],
+    weight: [1, 6, 10, 12, 14, 16],
     apply: (rng, ti) => ({
       air: -Math.round(BAL.excavationFinds.contaminationAirPerTier[ti] * (0.7 + rng.next() * 0.6)),
     }),

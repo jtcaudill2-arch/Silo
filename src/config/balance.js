@@ -45,13 +45,11 @@ export const BAL = {
     // of them are drawn — the point of the number is the scale of what is under
     // you, not how much of it you can currently open.
     totalFloors: 144,
-    // How far down the stair currently goes. The tier table below covers 1-92,
-    // so 92 is where the descent ends until the bands are rebuilt across the
-    // full depth (phase B of the sealed-levels spec). Levels past this are
-    // drawn sealed and say so when asked, rather than silently costing Upper
-    // prices — `tierForFloor` falls back to the first tier out of range, which
-    // would have made level 140 look like a cheap dig.
-    reachableFloors: 92,
+    // How far down the stair goes. The bands now cover all 144, so this is the
+    // whole silo — it stays a separate number because it is the guard that
+    // stops `tierForFloor`'s out-of-range fallback (the *first* tier) from
+    // quietly pricing the bottom of the silo like the top.
+    reachableFloors: 144,
     slotsPerFloor: 6,
     // Six: the five the starting rooms occupy, and one spare to build the
     // first thing into. It was fourteen, which handed the player eight empty
@@ -61,31 +59,50 @@ export const BAL = {
     // the first excavation an early decision with a price on it, and every one
     // after that a larger one.
     startExcavatedFloors: 6,
+    // Six bands across 144. Five stretched over that depth would put thirty
+    // levels behind each gate, which is a long time between arrivals — the
+    // bands are what make going down feel like getting somewhere, so there is
+    // one more of them and none is longer than twenty-eight levels.
     tiers: [
-      { key: 'upper', name: 'Upper', from: 1, to: 14, gate: null },
-      { key: 'mids', name: 'Mids', from: 15, to: 34, gate: 'deep_excavation_1' },
-      { key: 'lowers', name: 'Lowers', from: 35, to: 58, gate: 'deep_excavation_2' },
-      { key: 'deeps', name: 'Deeps', from: 59, to: 80, gate: 'deep_excavation_3' },
-      { key: 'foundations', name: 'Foundations', from: 81, to: 92, gate: 'origin_systems' },
+      { key: 'upper', name: 'Upper', from: 1, to: 20, gate: null },
+      { key: 'mids', name: 'Mids', from: 21, to: 48, gate: 'deep_excavation_1' },
+      { key: 'lowers', name: 'Lowers', from: 49, to: 76, gate: 'deep_excavation_2' },
+      { key: 'deeps', name: 'Deeps', from: 77, to: 104, gate: 'deep_excavation_3' },
+      { key: 'foundations', name: 'Foundations', from: 105, to: 124, gate: 'origin_systems' },
+      { key: 'shaft', name: 'Shaft Floor', from: 125, to: 144, gate: 'shaft_seals' },
     ],
     excavation: {
       baseScrap: 40,
       baseLabor: 30,
       // Per floor of absolute depth, so the cost only ever rises — see
-      // excavationCost() for what resetting it per tier did. 1.09 was the
-      // per-tier rate and would reach 40 x 1.09^91 = 88,000 scrap at the
-      // bottom; over the whole silo the rate has to be gentler. At 1.03 with
-      // the tier step below, floor 2 costs 41 scrap and floor 92 about 3,900 —
-      // a ninety-fold climb, paid a floor at a time.
-      growth: 1.03,
+      // excavationCost() for what resetting it per tier did.
+      //
+      // Scrap deliberately is NOT what gates the bottom of the silo. At 1.03
+      // over 144 levels the last floor costs 17,958 scrap against a store that
+      // caps at 900, or 1,400 with depots: the player would spend the last
+      // third of the game unable to hold the price of a single level, which is
+      // not difficulty, it is a wait. At 1.012 the bottom floor is about a
+      // thousand — one full store, bankable in a few days at a decent salvage
+      // rate — and the depth is paid for in the two currencies below instead.
+      growth: 1.012,
       // The step on crossing into a new tier, on top of the depth growth. Each
       // boundary is also a research gate, so this is what makes the first
       // floor of the Mids feel like arriving somewhere rather than like the
       // next floor of the Uppers.
-      tierMultiplier: 1.6,
+      tierMultiplier: 1.35,
+      // Time is the first of the two real costs. Labour scales on the same
+      // curve, so a shallow floor is a few shifts and a floor in the Shaft
+      // Floor is over a week of game time with the crew committed to it.
       maxDigCycles: 120,
       ticksPerLaborHour: 1,
       shoringRequiredBelowFloor: 35,
+      // Alloy is the second, and the one that bites. It was a flat 6 a floor,
+      // which is a rounding error by the time a silo is deep enough to need
+      // it. It now scales with the same tier step, so the deep bands cost
+      // twenty to thirty alloy a level — and alloy is the same resource the
+      // surface chain wants for suits. A silo cannot outfit a squad and drive
+      // for the bottom at the same time, which is the decision the descent was
+      // missing.
       shoringAlloyPerFloor: 6,
       collapseChancePerDayUnshored: 0.02,
     },
@@ -197,25 +214,28 @@ export const BAL = {
   // Opening a sealed floor used to produce the same sentence every time, which
   // made digging a purchase rather than a decision. These are the two things
   // depth now buys: more worth finding, and more that can go wrong. Each array
-  // is indexed by tier — [Uppers, Mids, Lowers, Deeps, Foundations].
+  // is indexed by tier — [Uppers, Mids, Lowers, Deeps, Foundations, Shaft Floor].
+  // Six entries, one per band: these are read as `array[tierIndex]`, so a
+  // five-entry array does not clamp, it returns undefined and poisons the
+  // arithmetic with NaN the moment a silo opens level 125.
   excavationFinds: {
     // Scrap from an untouched storeroom (parts come out at a sixth of it).
     // The Uppers were lived in and stripped; the Foundations were not.
-    storesPerTier: [70, 130, 210, 320, 460],
+    storesPerTier: [70, 130, 210, 320, 460, 620],
     // A half-flooded level, which is water the reclaimers did not have to make.
-    cisternPerTier: [60, 110, 170, 230, 300],
+    cisternPerTier: [60, 110, 170, 230, 300, 360],
     // Alloy from a sealed cache. Nothing else in the early silo makes alloy,
     // so this is the reason to go down before the Foundry exists.
-    cacheAlloyPerTier: [0, 14, 26, 40, 58],
+    cacheAlloyPerTier: [0, 14, 26, 40, 58, 80],
     // Chance a cache also holds something the Laboratory can work on. The
     // research tree turns artifact-gated below the Mids, and this is the
     // second source besides the surface — a silo that never digs and never
     // opens its airlock cannot finish the tree at all.
     artifactChance: 0.45,
     // Condition taken off a room on the floor above when a seal gives way.
-    collapseConditionPerTier: [12, 20, 30, 40, 52],
+    collapseConditionPerTier: [12, 20, 30, 40, 52, 68],
     // Air quality lost when whatever was sealed in there is still leaking.
-    contaminationAirPerTier: [4, 8, 13, 18, 24],
+    contaminationAirPerTier: [4, 8, 13, 18, 24, 32],
     // What the alloy spent on shoring actually buys: collapses become roughly
     // a third as likely. Below `shoringRequiredBelowFloor` the dig is charged
     // for it whether or not the player thinks about it, so the premium is

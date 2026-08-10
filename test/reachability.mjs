@@ -138,6 +138,26 @@ for (const node of RESEARCH_LIST) {
 }
 if (!failures.length) ok('every suit tier can be bootstrapped from the tier below it');
 
+// Every band of the silo has to be openable. A tier whose gate is a node no
+// player can complete is not a hard tier, it is a wall — and it fails silently,
+// because the game will happily draw those levels and simply never let anybody
+// through. This is a separate question from "is every node reachable" below: a
+// gate can be reachable while its *tier* is misconfigured, and a new band added
+// without a gate that resolves would otherwise only show up as a player
+// reaching the bottom of the silo and finding no way on.
+for (const tier of BAL.silo.tiers) {
+  if (!tier.gate) continue;
+  if (!RESEARCH_LIST.some((n) => n.id === tier.gate)) {
+    fail(`the ${tier.name} is gated on "${tier.gate}", which is not a research node at all`);
+  } else if (!completed.has(tier.gate)) {
+    fail(`the ${tier.name} (floors ${tier.from}-${tier.to}) is gated on "${tier.gate}", which no player can reach`);
+  }
+}
+if (!failures.length) {
+  const gated = BAL.silo.tiers.filter((t) => t.gate).length;
+  ok(`all ${BAL.silo.tiers.length} bands are openable (${gated} behind a research gate)`);
+}
+
 const unreachable = RESEARCH_LIST.filter((n) => !completed.has(n.id));
 if (unreachable.length) {
   console.log('');

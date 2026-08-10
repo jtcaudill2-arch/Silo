@@ -326,6 +326,27 @@ export const RESEARCH = {
     endgame: true,
     desc: 'The Foundations were never on the schematics you were given.',
   }),
+  // The sixth band, and the fourth of the excavation line rather than a fifth
+  // link on the origin chain.
+  //
+  // It was written as requiring Origin Systems, which put it behind
+  // origin_record (3200) and origin_systems (2600) as well as its own cost —
+  // nine thousand points in sequence, after everything else in the tree. A
+  // broadly-played silo opened the Foundations on day 703 of 900 and never
+  // reached the Shaft Floor at all, which makes the deepest twenty levels
+  // scenery.
+  //
+  // It does not need that chain to keep its place in the order. The descent is
+  // sequential: level 125 is unreachable until the twenty Foundation levels
+  // above it are open, and those *are* gated on Origin Systems. The rock
+  // enforces the sequence, so the research only has to be hard.
+  shaft_seals: N({
+    id: 'shaft_seals', branch: 'infrastructure', name: 'Shaft Seals',
+    cost: 1400, minCycles: 40, requires: ['deep_excavation_3'],
+    artifacts: { intact_servo: 2, alloy_ingot: 2 },
+    effects: { unlockTier: ['shaft'] },
+    desc: 'The last twenty levels were sealed from underneath. Nobody wrote down why.',
+  }),
 
   // ------------------------------------------------------ governance ---
   radio_range_1: N({

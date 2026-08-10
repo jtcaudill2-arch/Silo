@@ -49,7 +49,13 @@ export function excavationCost(state) {
   if (next && next >= BAL.silo.excavation.shoringRequiredBelowFloor) {
     const e = effects(state);
     const discount = 1 + (e.shoringCost || 0);
-    cost.alloy = Math.max(1, Math.round(BAL.silo.excavation.shoringAlloyPerFloor * discount));
+    // Shoring scales with the tier, not flat. A fixed six alloy a floor is a
+    // rounding error by the time a silo is deep enough to be charged it, which
+    // left nothing but scrap gating the descent — and scrap cannot gate it
+    // without the store becoming the late game. This is what makes the bottom
+    // of the silo compete with the surface for the same alloy.
+    const step = Math.pow(BAL.silo.excavation.tierMultiplier, tierIdx);
+    cost.alloy = Math.max(1, Math.round(BAL.silo.excavation.shoringAlloyPerFloor * step * discount));
   }
   return cost;
 }
