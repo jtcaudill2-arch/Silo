@@ -229,7 +229,13 @@ export function autopilot(state) {
   // alloy is what buys env-suits, shoring for every floor below 35, and the
   // Munitions line. Measured over 300 days the silo held 4,699 scrap and five
   // alloy: not short of the material, short of furnaces.
-  if (count('foundry') > 0 && flow('alloy') < 0.6 && !full('alloy')) wants.push('foundry');
+  // Judged on the stock, not the flow. Alloy is spent in lumps the flow figure
+  // never sees — shoring a floor, crafting a suit, putting up a Munitions line
+  // — so income can read healthy while the store sits at nothing, which is
+  // exactly what it did: the first version of this rule never fired once.
+  if (count('foundry') > 0 && state.resources.alloy < 40 && state.resources.scrap > 400) {
+    wants.push('foundry');
+  }
   if (powerHeadroom < 0.25) wants.push('generator_hall');
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
 

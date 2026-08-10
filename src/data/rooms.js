@@ -428,7 +428,16 @@ export const ROOMS = {
     category: 'surface',
     width: 2,
     consumes: { power: 4 },
-    staff: { skill: 'engineering', slotsPerLevel: [2, 2, 3, 4, 5] },
+    // No crew, because none was ever used. `canCraft` asks only that a bay
+    // exists, is powered and is finished — there is no capability term in it
+    // — and `provides.suitRepair` is declared here and read nowhere at all.
+    // The two engineering posts this used to advertise were a room asking the
+    // player to staff it and then doing exactly the same thing either way,
+    // while the Foundry that supplies its alloy went short of the same skill.
+    //
+    // Left as a power-only bay rather than made crew-dependent on purpose:
+    // making fabrication need a crew would be more coherent and would make
+    // suits *harder*, which is the opposite of the problem.
     buildCost: { scrap: 240, parts: 28, alloy: 18 },
     provides: { suitCraft: true, suitRepair: true },
     unlock: 'env_suit_1',
