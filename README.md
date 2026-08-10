@@ -1,7 +1,7 @@
 # Deepwater
 
-Real-time colony management in **Silo 12** — ninety-two floors, forty-four
-named people, and a sky that kills in under an hour.
+Real-time colony management in **Silo 12** — a hundred and forty-four floors,
+forty-four named people, and a sky that kills in under an hour.
 
 An installable PWA. Vanilla ES modules, no framework, no build step, no server,
 no network. Canvas for the silo, DOM for everything you read.
