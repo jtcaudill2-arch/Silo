@@ -122,9 +122,11 @@ function obey(state, d) {
       };
     }
     case 'research': {
-      // The order says "choose a project" and does not say which. An obedient
-      // player takes the first thing offered.
-      const node = RESEARCH_LIST.find((n) => canStart(state, n.id).ok);
+      // The order now names a project. Follow the one it named; fall back to
+      // the first startable only if it did not say (which it should always do
+      // — a research order that does not name a node is not an order).
+      const named = d.research && canStart(state, d.research).ok ? { id: d.research } : null;
+      const node = named || RESEARCH_LIST.find((n) => canStart(state, n.id).ok);
       if (!node) return 'refused: nothing startable';
       return {
         actions: [{ type: 'RESEARCH_SET_ACTIVE', active: { id: node.id, progress: 0, cycles: 0 } }],

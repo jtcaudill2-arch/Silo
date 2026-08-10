@@ -576,14 +576,39 @@ export function directives(state) {
   }
 
   // ---- the labs are idle -------------------------------------------------
-  if (!state.research.active && has(state, 'laboratory') && availableResearch(state).length) {
-    add({
-      id: 'research',
-      text: 'Choose a research project',
-      why: `${Math.floor(state.research.points)} points are banked and nothing is being worked on.`,
-      panel: 'research',
-      weight: 62,
-    });
+  //
+  // Name the project. This used to read "Choose a research project" and leave
+  // it there, which is not advice — it is the game noticing something and
+  // declining to say what. Worse, it outranked `dig_research` (32), the one
+  // order that names the node the silo is actually blocked on, so a player
+  // taking each order at face value started whatever came first in the tree
+  // and never reached the gate: seed 99 sat at floor 14 — the exact boundary
+  // of the Uppers — for a hundred and seventy days with the Mids one node
+  // away, and finished with four research nodes where every other seed had
+  // ten to fourteen.
+  //
+  // The tier gate wins when the silo has run out of room and that gate is what
+  // is holding the next floor, because "we cannot dig any deeper" is a more
+  // specific problem than "the labs are idle".
+  if (!state.research.active && has(state, 'laboratory')) {
+    const open = availableResearch(state);
+    if (open.length) {
+      const dig = canExcavate(state);
+      const gate = dig.needsResearch && open.some((n) => n.id === dig.needsResearch)
+        ? dig.needsResearch
+        : null;
+      const pick = gate ? getResearch(gate) : open[0];
+      add({
+        id: 'research',
+        text: `Research ${pick.name}`,
+        research: pick.id,
+        why: gate
+          ? `${dig.reason} It is the only thing standing between the silo and the next floor down.`
+          : `${Math.floor(state.research.points)} points are banked and nothing is being worked on.`,
+        panel: 'research',
+        weight: 62,
+      });
+    }
   }
 
   // ---- reaching outward --------------------------------------------------

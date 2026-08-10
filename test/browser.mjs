@@ -295,8 +295,18 @@ try {
   if (catalogue.locked !== catalogue.withReasons) {
     fail(`${catalogue.locked - catalogue.withReasons} locked rooms give no reason why`);
   }
-  if (catalogue.bays !== 6) fail(`floor shows ${catalogue.bays} bays, expected 6`);
-  if (catalogue.floors !== 14) fail(`floor strip shows ${catalogue.floors} floors, expected 14`);
+  if (catalogue.bays !== BAL.silo.slotsPerFloor) {
+    fail(`floor shows ${catalogue.bays} bays, expected ${BAL.silo.slotsPerFloor}`);
+  }
+  // Read from balance: how deep the silo starts is a design decision that has
+  // already moved once (14 -> 6, so that digging is how the silo grows rather
+  // than something to get round to), and a pinned number fails for the change
+  // rather than for a defect.
+  if (catalogue.floors !== BAL.silo.startExcavatedFloors) {
+    fail(
+      `floor strip shows ${catalogue.floors} floors, expected ${BAL.silo.startExcavatedFloors}`
+    );
+  }
   ok(`build catalogue: ${catalogue.buildable} buildable, ${catalogue.locked} locked (all explained)`);
   if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'build.png') });
 
@@ -340,13 +350,15 @@ try {
 
   await page.evaluate(async () => {
     const { store, game } = window.DEEPWATER;
-    const { build } = await import('./src/sim/build.js');
-    // Drop a Laboratory into the first free bay on floor 13.
-    const floor = store.state.silo.floors[12];
-    const slot = floor.slots.findIndex((s) => s == null);
+    const { build, allPlacements } = await import('./src/sim/build.js');
+    // Find a bay rather than naming floor 13. The opening used to come with
+    // fourteen floors already excavated; it starts at six now and digs, so a
+    // hardcoded floor is one the silo has not reached.
     store.state.resources.scrap += 500;
     store.state.resources.parts += 60;
-    store.dispatchAll(build(store.state, 13, slot, 'laboratory'));
+    const spot = allPlacements(store.state, 'laboratory')[0];
+    if (!spot) throw new Error('browser fixture: nowhere to build a laboratory');
+    store.dispatchAll(build(store.state, spot.floor, spot.slot, 'laboratory'));
     game.runCycles(10); // let construction finish and points accrue
   });
 

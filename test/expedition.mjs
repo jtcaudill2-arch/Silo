@@ -18,7 +18,7 @@ import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
-import { build, upgrade } from '../src/sim/build.js';
+import { build, upgrade, allPlacements } from '../src/sim/build.js';
 import { craft, formSquad, equipBest, readiness } from '../src/sim/military.js';
 import { launch, canLaunch, resolveExpedition, riskPreview, airlockCapacity } from '../src/sim/expedition.js';
 import { resolve as resolveCombat, rollEnemyForce, unitPower } from '../src/sim/combat.js';
@@ -54,9 +54,21 @@ function expeditionarySilo(seed = SEED) {
   // Staff before running any cycles: unstaffed generators produce no power,
   // and an unpowered airlock is not an airlock.
   store.dispatchAll(autoAssign(s));
-  store.dispatchAll(build(s, 14, 0, 'airlock'));
-  store.dispatchAll(build(s, 14, 1, 'suit_bay'));
-  store.dispatchAll(build(s, 14, 2, 'armory'));
+  // A silo that is ready to open its airlock has been digging for a while.
+  // The opening now starts at six excavated floors and grows by excavation, so
+  // the fixture has to stand somewhere that reflects the stage it is testing
+  // rather than inheriting the first morning's silo.
+  for (const f of s.silo.floors.slice(0, 12)) f.excavated = true;
+
+  // Ask the game where these can go rather than naming a floor. This said
+  // floor 14 three times, which was the bottom of the silo when fourteen
+  // floors came pre-excavated; the opening now starts at six and digs, so a
+  // hardcoded floor is a floor that does not exist yet.
+  for (const type of ['airlock', 'suit_bay', 'armory']) {
+    const spot = allPlacements(s, type)[0];
+    if (!spot) throw new Error(`expedition fixture: nowhere to build a ${type}`);
+    store.dispatchAll(build(s, spot.floor, spot.slot, type));
+  }
   game.runCycles(20); // finish construction
   store.dispatchAll(autoAssign(s)); // crew the new rooms
   // A level-1 Airlock decontaminates four at a time; an eight-strong squad

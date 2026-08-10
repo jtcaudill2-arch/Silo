@@ -64,8 +64,11 @@ import { RES_KEYS } from '../sim/economy.js';
  * the only place the sizing is explained.)
  */
 const STARTING_ROOMS = [
-  // Kept on consecutive floors so the whole silo is one screen — the player
-  // never has to go looking for a room during the first session.
+  // From floor one down, with nothing above them and nothing empty between.
+  // The silo used to open on floors 3 to 7 inside fourteen excavated floors,
+  // so the first thing a player saw was two empty floors above their home and
+  // seven below it — a silo that had already been dug for them, in which
+  // digging was something to do eventually rather than the way it grows.
   // Widths are chosen from posts, not floor space. Staffing is `slotsPerLevel
   // × width` and output scales by the fraction of posts crewed, so a wide bay
   // in a small silo is a half-crewed bay: at width 2 across the board the
@@ -73,8 +76,8 @@ const STARTING_ROOMS = [
   // player then built. These are sized so all twelve posts are filled with
   // people to spare, and so the ceilings each room provides — 63 beds, 90 air
   // — sit far enough above 44 to leave somewhere to grow into.
-  { type: 'residences', floor: 3, slot: 0, width: 3, level: 1 }, // 63 beds
-  { type: 'air_filtration', floor: 4, slot: 0, width: 2, level: 1 }, // 90 air cap
+  { type: 'residences', floor: 1, slot: 0, width: 3, level: 1 }, // 63 beds
+  { type: 'air_filtration', floor: 2, slot: 0, width: 2, level: 1 }, // 90 air cap
   // Two slots each, not one, and the reason is the same one written against
   // the generator below: rated output is not real output. A single bay is
   // rated 11 food against the 5.5 that 44 people eat, which looks like a
@@ -85,17 +88,17 @@ const STARTING_ROOMS = [
   // negative from day 3 with thirty people idle and 697 scrap unspent, and
   // everyone starved on day 49. An opening that is survivable on some seeds
   // and not others is not a difficulty setting, it is a coin toss.
-  { type: 'hydroponics', floor: 5, slot: 0, width: 2, level: 1 },
+  { type: 'hydroponics', floor: 3, slot: 0, width: 2, level: 1 },
   // Sized against the crop as well as the people: the bay above drinks 12 a
   // shift on top of the 6.6 that 44 residents do.
-  { type: 'water_reclaimer', floor: 6, slot: 0, width: 2, level: 1 },
+  { type: 'water_reclaimer', floor: 4, slot: 0, width: 2, level: 1 },
   // Deliberately oversized. A green crew works at roughly sixty per cent of a
   // bay's rated output, so "enough generation for today" is a silo that
   // browns out the moment the player builds anything — and the power priority
   // correctly sheds the Laboratory first, which quietly removes research from
   // the game. Three slots is about 125 rated, ~75 real, against a starting
   // draw of 31: room to build three or four rooms before power is the lesson.
-  { type: 'generator_hall', floor: 7, slot: 0, width: 3, level: 1 },
+  { type: 'generator_hall', floor: 5, slot: 0, width: 3, level: 1 },
 ];
 
 /**
@@ -116,18 +119,18 @@ const STARTING_ROOMS = [
  * filtration bay and the clinic — the control silo suffocated.
  */
 const SUFFICIENT_EXTRA = [
-  { type: 'residences', floor: 3, slot: 3, width: 3, level: 3 },
-  { type: 'air_filtration', floor: 4, slot: 2, width: 2, level: 2 },
-  { type: 'hydroponics', floor: 5, slot: 2, width: 2, level: 3 },
-  { type: 'water_reclaimer', floor: 6, slot: 2, width: 2, level: 2 },
+  { type: 'residences', floor: 1, slot: 3, width: 3, level: 3 },
+  { type: 'air_filtration', floor: 2, slot: 2, width: 2, level: 2 },
+  { type: 'workshop', floor: 2, slot: 4, width: 2, level: 2 },
+  { type: 'hydroponics', floor: 3, slot: 2, width: 2, level: 3 },
+  { type: 'clinic', floor: 3, slot: 4, width: 2, level: 2 },
+  { type: 'water_reclaimer', floor: 4, slot: 2, width: 2, level: 2 },
+  { type: 'maintenance_bay', floor: 4, slot: 4, width: 1, level: 2 },
+  { type: 'storage_depot', floor: 4, slot: 5, width: 1, level: 2 },
   // Every room added here draws power, so the generation has to follow.
-  { type: 'generator_hall', floor: 7, slot: 3, width: 3, level: 3 },
-  { type: 'recycling', floor: 8, slot: 0, width: 2, level: 2 },
-  { type: 'recycling', floor: 8, slot: 2, width: 2, level: 2 },
-  { type: 'workshop', floor: 9, slot: 0, width: 2, level: 2 },
-  { type: 'clinic', floor: 9, slot: 2, width: 2, level: 2 },
-  { type: 'maintenance_bay', floor: 10, slot: 0, width: 1, level: 2 },
-  { type: 'storage_depot', floor: 10, slot: 1, width: 1, level: 2 },
+  { type: 'generator_hall', floor: 5, slot: 3, width: 3, level: 3 },
+  { type: 'recycling', floor: 6, slot: 0, width: 2, level: 2 },
+  { type: 'recycling', floor: 6, slot: 2, width: 2, level: 2 },
 ];
 
 export function createNewGame(opts = {}) {

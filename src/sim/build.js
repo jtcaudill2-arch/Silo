@@ -25,10 +25,23 @@ export function excavationCost(state) {
   if (next == null) return { scrap: 0, labor: 0 };
   const tier = tierForFloor(next);
   const tierIdx = BAL.silo.tiers.findIndex((t) => t.key === tier.key);
-  const intoTier = next - tier.from; // 0-based depth within this tier
+  // Depth from the top, not depth into the current tier.
+  //
+  // It used to compound within a tier and reset at every boundary, with a
+  // multiplier per tier meant to make up the difference. It did not: floor 14
+  // cost 123 scrap and floor 15 cost 88, floor 58 cost 1405 and floor 59 cost
+  // 426. Digging got *cheaper* four times on the way down, each time the silo
+  // reached somewhere it had needed a research node to reach — so the deeper
+  // the silo went the less each floor was worth thinking about, which is the
+  // opposite of a decision.
+  //
+  // Compounding on absolute depth cannot do that: every floor costs more than
+  // the one above it, and a tier boundary is a step on top rather than a
+  // reset. The growth rate is correspondingly gentler, because it now applies
+  // over ninety-two floors instead of restarting five times.
   const growth =
-    Math.pow(BAL.silo.excavation.growth, intoTier) *
-    Math.pow(BAL.silo.excavation.tierMultiplier, Math.max(0, tierIdx - 1));
+    Math.pow(BAL.silo.excavation.growth, next - 1) *
+    Math.pow(BAL.silo.excavation.tierMultiplier, tierIdx);
   const cost = {
     scrap: Math.round(BAL.silo.excavation.baseScrap * growth),
     labor: Math.round(BAL.silo.excavation.baseLabor * growth),

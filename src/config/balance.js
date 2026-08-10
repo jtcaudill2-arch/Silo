@@ -43,7 +43,14 @@ export const BAL = {
   silo: {
     totalFloors: 92,
     slotsPerFloor: 6,
-    startExcavatedFloors: 14,
+    // Six: the five the starting rooms occupy, and one spare to build the
+    // first thing into. It was fourteen, which handed the player eight empty
+    // floors on the first morning — enough room for everything the early game
+    // asks for, so the silo could be played for hours without ever digging,
+    // and digging read as a chore rather than as how the silo grows. Six makes
+    // the first excavation an early decision with a price on it, and every one
+    // after that a larger one.
+    startExcavatedFloors: 6,
     tiers: [
       { key: 'upper', name: 'Upper', from: 1, to: 14, gate: null },
       { key: 'mids', name: 'Mids', from: 15, to: 34, gate: 'deep_excavation_1' },
@@ -54,12 +61,18 @@ export const BAL = {
     excavation: {
       baseScrap: 40,
       baseLabor: 30,
-      // Compounding across all 92 floors at 1.18 reaches 10^6 — floor 60
-      // would cost eighteen million scrap and take seven hundred game days.
-      // Growth compounds *within* a tier and steps between them instead, so
-      // the Deeps stay expensive without becoming arithmetically impossible.
-      growth: 1.09,
-      tierMultiplier: 2.2,
+      // Per floor of absolute depth, so the cost only ever rises — see
+      // excavationCost() for what resetting it per tier did. 1.09 was the
+      // per-tier rate and would reach 40 x 1.09^91 = 88,000 scrap at the
+      // bottom; over the whole silo the rate has to be gentler. At 1.03 with
+      // the tier step below, floor 2 costs 41 scrap and floor 92 about 3,900 —
+      // a ninety-fold climb, paid a floor at a time.
+      growth: 1.03,
+      // The step on crossing into a new tier, on top of the depth growth. Each
+      // boundary is also a research gate, so this is what makes the first
+      // floor of the Mids feel like arriving somewhere rather than like the
+      // next floor of the Uppers.
+      tierMultiplier: 1.6,
       maxDigCycles: 120,
       ticksPerLaborHour: 1,
       shoringRequiredBelowFloor: 35,
