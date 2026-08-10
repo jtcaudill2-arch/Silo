@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# Publishes the playable game to a real HTTPS URL so a phone can just open it,
+# with no laptop serving on the LAN.
+#
+# The site is served from a project subpath (https://<user>.github.io/Silo/),
+# which is why every path in the game is relative — `test/mobile.mjs` runs the
+# whole game from that subpath to keep it that way.
+
+on:
+  push:
+    branches: [claude/deepwater-game-design-5pml4z, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No install step: the game has zero runtime dependencies and the build
+      # only copies and verifies. (There is no lockfile to `npm ci` from.)
+      - name: Assemble dist/
+        run: node tools/build-site.mjs
+
+      - uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on for the repo if it isn't already, so this works
+          # without a trip to the settings page.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

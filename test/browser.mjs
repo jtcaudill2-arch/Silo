@@ -105,9 +105,13 @@ try {
   // showing all of it at once was the single loudest complaint from playing
   // it. What a new player meets should be a fraction of that, and it should
   // grow as the silo does.
+  // Counted as *rendered*, not as `!node.hidden`. Those disagreed once: the
+  // hidden property was set correctly on all of them while every counter and
+  // locked panel stayed on screen, because `[hidden]` is a user-agent rule and
+  // loses to the author `display: flex` on .res and .nav-btn.
   const firstLook = await page.evaluate(() => ({
-    resources: [...document.querySelectorAll('.res')].filter((n) => !n.hidden).length,
-    panels: [...document.querySelectorAll('.nav-btn')].filter((n) => !n.hidden).length,
+    resources: [...document.querySelectorAll('.res')].filter((n) => n.offsetParent !== null).length,
+    panels: [...document.querySelectorAll('.nav-btn')].filter((n) => n.offsetParent !== null).length,
     order: document.getElementById('directive').hidden
       ? null
       : document.getElementById('directive-text').textContent,

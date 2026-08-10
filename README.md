@@ -23,13 +23,47 @@ service workers both refuse to load from `file://`, so it does need to be
 served over http, and `tools/serve.mjs` is a fifty-line static server that
 does nothing else. Any other static server works just as well.
 
-Open `http://localhost:8123` in a browser. On a phone, serve it on your
-machine and visit `http://<your-machine>:8123` — Chrome and Safari will both
-offer to install it to the home screen, after which it runs offline with no
-network at all.
-
 Progress autosaves to IndexedDB continuously and on tab close. Settings ⚙ has
 export/import if you want the save as a file.
+
+## Playing it on a phone
+
+The layout is phone-first — 390×844 is the viewport the tests drive and the
+screenshots are taken at — so the browser is a first-class way to play, not a
+fallback.
+
+**Over Wi-Fi, from your own machine.** `npm run serve` listens on every
+interface and prints the LAN address:
+
+```
+  Deepwater — http://localhost:8123/
+
+  On your phone, same Wi-Fi, open:
+      http://192.168.1.24:8123/
+```
+
+Type that into the phone and play. The laptop has to stay awake and on the
+same network; guest Wi-Fi with client isolation blocks it entirely, in which
+case a personal hotspot from the phone with the laptop joined to it works.
+
+**From a URL, with no laptop involved.** Pushing to the default branch runs
+`.github/workflows/pages.yml`, which publishes to
+`https://jtcaudill2-arch.github.io/Silo/`. GitHub Pages needs the repository
+to be public, or an account with Pages enabled for private repositories.
+
+That URL is HTTPS, which matters for more than privacy: browsers only grant
+service workers and install prompts to a secure context, and a plain-http LAN
+address is not one. So over Wi-Fi you get the game; from the Pages URL you
+also get *Add to Home Screen* and genuine offline play afterwards.
+
+A project site is served from `/Silo/`, not `/`. Every path in the game is
+relative for that reason, and `npm run test:mobile` plays the whole game from
+a subpath — boot, manifest scope, service worker scope, offline reload — so a
+stray root-absolute path fails locally instead of on the live site.
+
+Whichever route: the save lives in IndexedDB keyed to the origin, so a silo
+started on the LAN address is a different silo from one started on the Pages
+URL. Settings ⚙ → *Export save* moves one across.
 
 ## Your first ten minutes
 
@@ -98,10 +132,19 @@ npm run test:sim                # headless: 100 game days, no rendering
 npm run test:pacing -- --days=800
 node test/harness.mjs --days=300 --verbose
 node test/browser.mjs --shots   # real browser, incl. offline boot; writes .shots/
+npm run test:mobile             # a phone, by finger, served from /Silo/
 ```
 
-`test/browser.mjs` is the only one that needs anything installed
-(`npm i -D playwright`); the rest are pure Node.
+`test/browser.mjs` and `test/mobile.mjs` are the only ones that need anything
+installed (`npm i -D playwright`); the rest are pure Node.
+
+`mobile.mjs` covers what the desktop test structurally cannot: it builds
+`dist/`, serves it from a subpath the way GitHub Pages does, and drives it as
+a touch device. It caught the bug where `node.hidden = true` set the property
+correctly on every hidden resource counter and locked panel while all of them
+stayed on screen — `[hidden]` is a user-agent rule and loses to the author
+`display: flex` on `.res` and `.nav-btn`. The old assertion counted
+`!node.hidden` and passed throughout. Both tests now count what renders.
 
 `reachability.mjs` is the cheapest and the one to run first. It is a
 fixed-point solve over the research tree, the loot tables and the band suit
@@ -125,7 +168,16 @@ None are required to play. These regenerate committed artefacts:
 node tools/gen-precache.mjs   # rewrite the service worker's precache list
 node tools/gen-icons.mjs      # regenerate the PWA icons
 node tools/fetch-fonts.mjs    # vendor the woff2 files into assets/fonts
+npm run build                 # assemble dist/ for a static host
+npm run serve:dist            # build, then serve it at /Silo/ like Pages does
 ```
+
+`build-site.mjs` copies rather than bundles — nothing is transpiled and
+`npm run serve` still needs no prior command. What it adds is the check: it
+fails if a precached path is missing from the shipped tree, if a shipped
+module is missing from the precache list, or if a root-absolute path crept
+into the HTML, manifest or worker. Each of those produces a game that works
+locally and breaks on a host, or works online and dies offline.
 
 Run `gen-precache` after adding any file under `src/` or `assets/`, or it won't
 be available offline.

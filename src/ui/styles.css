@@ -90,6 +90,13 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+/* `[hidden] { display: none }` lives in the user-agent sheet, and *any* author
+   rule that sets display beats it — so a control styled `display: flex` stays
+   on screen after `node.hidden = true`, with nothing in the DOM to show for
+   it. Progressive disclosure hides resource counters and locked panels that
+   way, so state it once here rather than per-class. */
+[hidden] { display: none !important; }
+
 button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: none; cursor: pointer; padding: 0; }
 h1, h2, h3, h4 { margin: 0; font-weight: 600; }
@@ -166,7 +173,6 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
-.app[hidden] { display: none; }
 
 /* ------------------------------------------------------------ artwork --- */
 /* Imported cutaways and figures. Pixel art is never smoothed, in either
@@ -228,7 +234,6 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   -webkit-tap-highlight-color: transparent;
 }
 .directive:active { background: var(--concrete-deep); }
-.directive[hidden] { display: none; }
 .directive-eyebrow {
   font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--sodium);
@@ -386,7 +391,6 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   background: var(--concrete-deep);
   display: flex; flex-direction: column; min-height: 0;
 }
-.panel-host[hidden] { display: none; }
 
 .panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .panel-head {
