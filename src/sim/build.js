@@ -16,6 +16,7 @@
 import { BAL } from '../config/balance.js';
 import { getRoom, ROOM_LIST } from '../data/rooms.js';
 import { roomUnlocked, tierUnlocked, tierForFloor, effects } from './research.js';
+import { fullName } from './population.js';
 
 // ------------------------------------------------------------ excavation ---
 
@@ -629,7 +630,19 @@ function collapse(state, floor, rng) {
       const c = state.citizens[cid];
       if (!c || c.status === 'dead') continue;
       if (!rng.chance(S.crewLostChance)) continue;
-      actions.push({ type: 'CITIZEN_DIE', id: cid, cause: 'crushed in the collapse of floor ' + floor.n, day: state.clock.day });
+      // The cause is the bucket `stats.causes` counts, so it stays generic —
+      // one key per floor would shatter the tally into "the collapse of floor
+      // 110", "…of floor 136" and so on. The floor goes in the sentence
+      // instead, which is also the only place it reads properly: the reducer
+      // writes "<name>, <age>, died of <cause>." and a participle there gives
+      // "died of crushed in the collapse of floor 110".
+      actions.push({
+        type: 'CITIZEN_DIE',
+        id: cid,
+        cause: 'a collapse',
+        day: state.clock.day,
+        text: `${fullName(c)}, ${Math.floor(c.age)}, was on floor ${floor.n} when it came down.`,
+      });
     }
   }
   return actions;
