@@ -88,6 +88,23 @@ function rollStats(rng, bonus) {
   return s;
 }
 
+/**
+ * One or two specialities, drawn without replacement against the weights in
+ * `citizens.skillWeights`. Falls back to whatever is left if a weight is
+ * missing, so adding a skill to SKILLS can never silently make it unrollable.
+ */
+function weightedFocus(rng, n) {
+  const pool = SKILLS.slice();
+  const out = [];
+  for (let i = 0; i < n && pool.length; i++) {
+    const pick = rng.weighted(pool, (k) => BAL.citizens.skillWeights?.[k] ?? 1);
+    if (!pick) break;
+    out.push(pick);
+    pool.splice(pool.indexOf(pick), 1);
+  }
+  return out;
+}
+
 function rollSkills(rng, age, stats) {
   const sk = {};
   // Adults arrive with a lifetime of work behind them; children with none.
@@ -95,7 +112,9 @@ function rollSkills(rng, age, stats) {
   for (const k of SKILLS) sk[k] = 0;
   if (yearsWorked <= 0) return sk;
   // One or two things they're actually good at, everything else incidental.
-  const focus = rng.sample(SKILLS, rng.int(1, 2));
+  // Weighted by what the silo actually needs a lot of — see
+  // `citizens.skillWeights` for the counts this is drawn from.
+  const focus = weightedFocus(rng, rng.int(1, 2));
   for (const k of SKILLS) {
     const base = rng.float(0, 8);
     const depth = focus.includes(k) ? rng.float(1.4, 2.6) : rng.float(0.1, 0.5);

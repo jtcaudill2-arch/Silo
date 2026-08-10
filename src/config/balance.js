@@ -449,6 +449,53 @@ export const BAL = {
 
   // ------------------------------------------------------------ citizens ---
   citizens: {
+    // How likely each skill is to be somebody's speciality.
+    //
+    // It used to be a flat `rng.sample(SKILLS, 1..2)` — every skill equally
+    // likely — against demand that is nothing like flat. Counted off the room
+    // catalogue: engineering is wanted by eight room types, mechanics by five,
+    // admin four, farming three, medicine and science two each, combat one.
+    // The opening forty-four came out with three engineers and two mechanics
+    // against fifteen farmers and nine soldiers.
+    //
+    // That single mismatch is behind most of the crewing failures measured in
+    // this pass. Recycling, the Workshop, the Foundry, the Heat Exchange, the
+    // Suit Bay, the Armory, Munitions and the Deep Mine all want engineers, in
+    // that order, and the list simply ran out of people: over 300 days the
+    // Suit Bay was built on day 79 and ran on none of the 222 days it stood
+    // there, and the Armory was dark for 225 of 265. Promoting either of them
+    // up the crewing order moved nothing, because there was nobody to promote
+    // — which is the tell that the shortage is in the population, not the
+    // ordering.
+    //
+    // Weighted to the demand, with two deliberate departures from it, both of
+    // which are about what a skill unlocks rather than how many rooms want it.
+    //
+    // Combat is wanted by exactly one room, but every squad and every
+    // expedition is made of people who can fight, so it keeps the share a flat
+    // roll gave it — about one in seven. Also measured: at 3.5 it dropped to
+    // one in nine, squads went into the same fights meaningfully weaker, and
+    // battles ran nine rounds where the readable limit is eight. The point of
+    // this table is to stop starving engineering, not to start starving
+    // anything else.
+    //
+    // Science is wanted by two, and sits level with mechanics anyway, because
+    // the Laboratory is the one bench the entire research tree runs through.
+    // This is measured, not asserted: the first cut of these weights set
+    // science at 3 and the opening silo came out with one or two scientists,
+    // which slowed the research spine enough to push the Surface panel — the
+    // hinge of the early game — out to day 65 on one of the three unlock
+    // seeds. Nothing else in the game makes a research point, so a shortage
+    // there is not one system running slowly, it is all of them.
+    skillWeights: {
+      engineering: 8,
+      mechanics: 5,
+      science: 5,
+      admin: 4,
+      combat: 4.5,
+      farming: 3,
+      medicine: 3,
+    },
     // A silo you can hold in your head. 180 was the full-strength population
     // and it needed eight staffed rooms on the first morning just to stand
     // still, which is most of the game's systems running before the player has
