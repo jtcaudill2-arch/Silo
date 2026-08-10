@@ -217,7 +217,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .directive-why {
   font-size: 11.5px; color: var(--bone-faint); line-height: 1.4;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* Two lines, not one. The reason is the half that teaches — clamping it to
+     a single line cut every order off mid-sentence ("Past it, rooms shut down
+     from the …"), which is worse than not explaining at all. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .directive.urgent { border-left-color: var(--rust); }
 .directive.urgent .directive-eyebrow { color: var(--rust); }

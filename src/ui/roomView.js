@@ -13,6 +13,7 @@ import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
 import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost, canRepair, repair } from '../sim/build.js';
 import { roomArt, artImage } from './artwork.js';
+import * as sprites from '../render/sprites.js';
 import { el, modal, row, button, fmt, fmtDelta, meter, chip, emptyState, sectionLabel, toast, humanise } from './dom.js';
 
 export function openRoom(store, roomId, shell) {
@@ -46,10 +47,16 @@ export function openRoom(store, roomId, shell) {
     // cross-section draws this room into a 64×40 slot; this is the one place
     // it gets to be looked at. Absent art costs nothing — the panel simply
     // starts at the numbers, as it always did.
-    const cutaway = roomArt(r.type);
-    if (cutaway) {
-      const img = artImage(cutaway, def.name);
-      if (img) body.appendChild(el('div.room-art' + (r.powered ? '' : '.dark'), img));
+    // Imported artwork wins if any has been imported; otherwise the atlas
+    // cutaway, which ships with the game. Either way the panel opens on the
+    // room rather than on a grid of percentages.
+    const imported = roomArt(r.type);
+    const art = imported
+      ? artImage(imported, def.name)
+      : sprites.frameCanvas(`cutaway_${r.type}`, 3);
+    if (art) {
+      if (art.tagName === 'CANVAS') art.setAttribute('aria-hidden', 'true');
+      body.appendChild(el('div.room-art' + (r.powered ? '' : '.dark'), art));
     }
 
     // ---- headline numbers -------------------------------------------------

@@ -85,21 +85,95 @@ export function drawAt(ctx, name, dx, dy, scale = 1) {
  * catch-up, and it means a citizen's gait is stable across sessions.
  */
 export function citizenFrame(citizen, timeMs, moving) {
-  const palette = citizenPalette(citizen);
-  if (!moving) {
-    const f = Math.floor(timeMs / 420 + citizen.id) % 2;
-    return `citizen_${palette}_work${f}`;
-  }
-  const f = Math.floor(timeMs / 150 + citizen.id * 3) % 4;
-  return `citizen_${palette}_walk${f}`;
+  const role = citizenRole(citizen);
+  const action = citizenAction(citizen, moving);
+  const n = FRAME_COUNTS[action] || 1;
+  // Phase by id so two people on the same floor are never in lockstep.
+  const f = Math.floor(timeMs / FRAME_MS[action] + citizen.id * 3) % n;
+  return `citizen_${role}_${action}${f}`;
 }
 
-export function citizenPalette(c) {
+/** Frames per action, matching what tools/art/citizens.mjs bakes. */
+const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4 };
+/** How long each frame holds. Sleep breathes slowly; a walk cycle does not. */
+const FRAME_MS = { walk: 130, idle: 520, work: 300, sleep: 1400, injured: 260 };
+
+/**
+ * What somebody is doing, in the order that a glance should read it.
+ *
+ * Injury outranks everything: a person limping is the most important thing
+ * about them on screen. Sleep outranks work because a resting shift is a
+ * state, not an absence of one — before this the atlas baked sleep frames
+ * that nothing ever asked for.
+ */
+export function citizenAction(c, moving) {
+  if (c.health < BAL.render.injuredBelowHealth) return 'injured';
+  if (c.status === 'resting' || c.restShifts > 0) return 'sleep';
+  if (moving) return 'walk';
+  if (c.status === 'working') return 'work';
+  return 'idle';
+}
+
+/**
+ * Which figure to draw them as. Condition first — irradiated is a warning and
+ * must not be hidden by a job — then age, then the work they actually do, so
+ * the silo reads as a place with farmers and mechanics in it rather than two
+ * hundred identical jumpsuits.
+ */
+export function citizenRole(c) {
   if (c.radiation >= BAL.citizens.radiation.sicknessThreshold) return 'irradiated';
-  if (c.health < 45) return 'hurt';
+  if (c.status === 'expedition') return 'hazmat';
   if (c.age < BAL.citizens.workingAgeMin) return 'child';
-  if (c.status === 'idle') return 'idle';
-  return 'worker';
+  if (c.age >= BAL.citizens.vitality.declineSteepAge) return 'elder';
+  if (c.squadId != null) return 'militia';
+  return SKILL_ROLE[jobSkillOf(c)] || 'base';
+}
+
+const SKILL_ROLE = {
+  farming: 'farmer',
+  mechanics: 'mechanic',
+  engineering: 'mechanic',
+  medicine: 'medic',
+  admin: 'deputy',
+  combat: 'militia',
+};
+
+/**
+ * The renderer has no room table, and importing one here would pull the whole
+ * data layer into the render path. The floor renderer knows the room and
+ * stamps the skill onto the citizen it passes down; absent that, everyone is
+ * a plain resident, which is a correct answer rather than a broken one.
+ */
+function jobSkillOf(c) {
+  return c._jobSkill || null;
+}
+
+/** Kept for callers that still ask for a palette name. */
+export function citizenPalette(c) {
+  return citizenRole(c);
+}
+
+/**
+ * A standalone canvas holding one atlas frame, for the DOM layer.
+ *
+ * The panels cannot draw from the atlas the way the game canvas does — they
+ * are HTML — so the twenty-eight room interiors baked into the sheet were
+ * invisible to the one screen with room to show them. This cuts a frame out
+ * and hands it over as an element, nearest-neighbour at an integer zoom.
+ *
+ * Returns null when the atlas has not loaded or the frame does not exist, so
+ * every caller keeps whatever it drew before.
+ */
+export function frameCanvas(name, scale = 1) {
+  const f = frame(name);
+  if (!f || !atlas) return null;
+  const c = document.createElement('canvas');
+  c.width = f.w * scale;
+  c.height = f.h * scale;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(atlas, f.x, f.y, f.w, f.h, 0, 0, c.width, c.height);
+  return c;
 }
 
 /** In-world numerals, from the baked 3x5 font. UI text never goes on canvas. */
@@ -119,4 +193,4 @@ export function numberWidth(n, scale = 1) {
   return String(Math.max(0, Math.floor(n))).length * 4 * scale;
 }
 
-export default { loadAtlas, draw, drawAt, frame, citizenFrame, drawNumber, isLoaded };
+export default { loadAtlas, draw, drawAt, frame, frameCanvas, citizenFrame, drawNumber, isLoaded };

@@ -650,6 +650,17 @@ export const BAL = {
 
   // ---------------------------------------------------------- render ---
   render: {
+    // Below this health a citizen is drawn limping rather than walking. It is
+    // a rendering threshold, not a simulation one, but it decides what the
+    // player sees and so it lives here like everything else that does.
+    injuredBelowHealth: 45,
+    // How many people are drawn at one post, and loose on one floor. A silo of
+    // two hundred and fifty has forty residents on a residential floor, and
+    // drawing all forty produces a wall of overlapping heads that reads as a
+    // rendering fault rather than as a crowd. A handful, well spaced, says
+    // "busy" far better — the roster is where the real headcount lives.
+    maxCitizensPerRoom: 5,
+    maxIdleCitizensPerFloor: 8,
     tileSize: 32,
     floorHeight: 40,
     floorWidth: 384, // 6 slots * 64

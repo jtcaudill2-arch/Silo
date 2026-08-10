@@ -12,6 +12,7 @@ import { TRAITS } from '../data/traits.js';
 import { fullName, topSkill, workFactor } from '../sim/population.js';
 import { portraitCanvas } from '../render/portraits.js';
 import { citizenArt, artImage } from './artwork.js';
+import * as sprites from '../render/sprites.js';
 import { el, modal, button, meter, chip, sectionLabel, humanise, emptyState, row } from './dom.js';
 
 const STAT_LABEL = { str: 'Strength', agi: 'Agility', int: 'Intellect', end: 'Endurance', cha: 'Charisma' };
@@ -178,14 +179,18 @@ function header(state, c) {
   // A drawn figure when one has been imported for this citizen's role, the
   // procedural portrait otherwise. The procedural one is not a placeholder —
   // it is per-citizen and always right — so this is a swap, not a repair.
+  // Imported art, then the atlas figure for their role, then the procedural
+  // portrait. All three are real answers — the procedural one is per-citizen
+  // and always correct — so this is preference, not repair.
   const drawn = citizenArt(c, state);
   let figure;
   if (drawn) {
     figure = artImage(drawn, fullName(c));
     figure.className = 'portrait-lg portrait-art';
   } else {
-    figure = portraitCanvas(c, 4);
+    figure = sprites.frameCanvas(`portrait_${sprites.citizenRole(c)}`, 2) || portraitCanvas(c, 4);
     figure.className = 'portrait-lg';
+    figure.setAttribute('aria-hidden', 'true');
   }
   const dead = c.status === 'dead';
   return el(

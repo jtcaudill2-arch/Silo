@@ -8,6 +8,12 @@
  */
 
 import { BAL } from '../config/balance.js';
+import { getRoom } from '../data/rooms.js';
+
+/** The skill a room's post trains, or null for rooms with no crew. */
+function roomSkill(room) {
+  return getRoom(room.type)?.staff?.skill || null;
+}
 import { PALETTE, SLOT_W, FLOOR_H } from './canvas.js';
 import { withAlpha } from './floors.js';
 import * as sprites from './sprites.js';
@@ -39,12 +45,52 @@ export function drawCitizens(ctx, state, cam) {
 
   for (const [floorN, list] of byFloor) {
     const y = (floorN - 1) * FLOOR_H + FLOOR_H - 6;
-    for (const { c, room } of list) {
+
+    // Give everyone a lane before drawing anybody.
+    //
+    // Every citizen used to wander the full width of their room on nothing but
+    // a phase offset, and sin() lingers at its extremes — so eight people at
+    // one post spent most of their time standing inside each other, and a busy
+    // floor rendered as a smear of overlapping heads. Sorting by id and
+    // dealing out lanes is deterministic, costs nothing, and turns a crowd
+    // into a shift.
+    const byRoom = new Map();
+    for (const item of list) {
+      const key = item.room ? item.room.id : 'idle';
+      if (!byRoom.has(key)) byRoom.set(key, []);
+      byRoom.get(key).push(item);
+    }
+    const shown = [];
+    for (const [key, group] of byRoom) {
+      group.sort((a, b) => a.c.id - b.c.id);
+      // Cap per post and per floor. Sorting by id first means the same faces
+      // are shown every frame rather than the crowd flickering between them.
+      const cap = key === 'idle'
+        ? BAL.render.maxIdleCitizensPerFloor
+        : BAL.render.maxCitizensPerRoom;
+      const take = group.slice(0, cap);
+      take.forEach((item, i) => { item.lane = i; item.lanes = take.length; });
+      shown.push(...take);
+    }
+
+    for (const { c, room, lane, lanes } of shown) {
       if (drawn >= BAL.render.maxSpritesPerFrame - cam.drawn) return;
-      const x = citizenX(c, room, t, reduced);
+      const x = citizenX(c, room, t, reduced, lane, lanes);
       // Walking if they're between posts or idle; working if they're at one.
       const moving = !room || c.status !== 'working';
-      if (!sprites.drawAt(ctx, sprites.citizenFrame(c, cam.time, moving && !reduced), Math.round(x) - 3, y - 9, 1)) {
+      // The sprite picker needs to know what job somebody holds to choose a
+      // farmer over a plain resident, and it has no room table of its own —
+      // importing one would drag the data layer into the render path. The
+      // floor renderer already has the room, so it stamps the skill on the way
+      // past. Non-enumerable so it never reaches a save or a structured clone.
+      if (room && !Object.getOwnPropertyDescriptor(c, '_jobSkill')) {
+        Object.defineProperty(c, '_jobSkill', { value: null, writable: true, enumerable: false });
+      }
+      if (room) c._jobSkill = roomSkill(room);
+      const frame = sprites.citizenFrame(c, cam.time, moving && !reduced);
+      // Sprites are 12x16 with the feet on the bottom row: half the width to
+      // the left of the anchor, the full height above the floor line.
+      if (!sprites.drawAt(ctx, frame, Math.round(x) - 6, y - 15, 1)) {
         drawOne(ctx, c, x, y);
       }
       drawn++;
@@ -58,16 +104,23 @@ export function drawCitizens(ctx, state, cam) {
  * drift along the whole floor. Both are pure functions of id + time, which is
  * what keeps this free of per-citizen render state.
  */
-function citizenX(c, room, t, reduced) {
-  const phase = (c.id * 2654435761) % 1000 / 1000;
-  if (room) {
-    const left = room.slot * SLOT_W + 4;
-    const width = room.width * SLOT_W - 10;
-    const wander = reduced ? 0.5 : (Math.sin(t * 0.4 + phase * 6.28) * 0.5 + 0.5);
-    return left + wander * width;
-  }
-  const wander = reduced ? phase : (Math.sin(t * 0.22 + phase * 6.28) * 0.5 + 0.5);
-  return 6 + wander * (SLOT_W * BAL.silo.slotsPerFloor - 12);
+function citizenX(c, room, t, reduced, lane = 0, lanes = 1) {
+  const phase = ((c.id * 2654435761) % 1000) / 1000;
+  const span = room ? room.width * SLOT_W - 14 : SLOT_W * BAL.silo.slotsPerFloor - 16;
+  const left = room ? room.slot * SLOT_W + 7 : 8;
+
+  // One lane each, centred in its share of the room. When a post is crowded
+  // past what the width can hold the lanes overlap — but evenly, which reads
+  // as a full room rather than as a rendering fault.
+  const step = span / Math.max(1, lanes);
+  const home = left + step * (lane + 0.5);
+
+  if (reduced) return home;
+  // Drift is a fraction of the lane, never more than a body width, so nobody
+  // walks through the person next to them.
+  const drift = Math.min(step * 0.35, 5);
+  const speed = room ? 0.35 : 0.18;
+  return home + Math.sin(t * speed + phase * 6.28) * drift;
 }
 
 function drawOne(ctx, c, x, y) {
