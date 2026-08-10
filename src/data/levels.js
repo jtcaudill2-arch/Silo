@@ -153,10 +153,28 @@ export const NAMED_LEVELS = {
     room: 'protein_vats', width: 2, level: 2, condition: 15,
     text: 'Vats, chilled by something that is still running. Nobody has fed it in a very long time.',
   },
+  // The three levels that carry the endgame, and why they carry it.
+  //
+  // Every one of the three endings is behind The Origin Record, and that node
+  // wants two origin shards and a compact seal. Shards drop only from band-4
+  // expeditions and seals only from band 3, so whether a campaign could be
+  // finished at all came down to three rolls on two loot tables. Measured on
+  // two seeds of the project's own autopilot: one drew the seal and won on day
+  // 713; the other dug all 144 floors, finished 45 of 48 research nodes, and
+  // could not finish the game, because in 900 days the seal never dropped.
+  //
+  // The surface is still the faster road when the rolls are kind. This is the
+  // other one: dig to the bottom of the shaft and the silo finds the same
+  // evidence for itself. Two progressions, two ways to the same door — which
+  // is the shape the rest of the game already has, and it means the deepest
+  // twenty levels are worth reaching for a reason the player can plan.
   122: {
     name: 'Signal Room',
     room: 'radio_room', width: 2, level: 3, condition: 18,
     text: 'A radio set an order of magnitude beyond anything upstairs, aimed at nothing on the surface.',
+    // Aimed at nothing on the surface because it was never pointed there.
+    artifact: 'compact_seal',
+    artifactText: 'The log book is still in the desk, and the call signs in it are not this silo\'s.',
   },
 
   // ---- Shaft Floor (125-144): the reasons to have come this far -----------
@@ -164,6 +182,8 @@ export const NAMED_LEVELS = {
     name: 'The Deep Bench',
     room: 'laboratory', width: 2, level: 3, condition: 12,
     text: 'A laboratory built to a standard the silo has never matched. The benches are still calibrated.',
+    artifact: 'origin_shard',
+    artifactText: 'One of the sample drawers was left locked, and what is in it predates the silo.',
   },
   136: {
     name: 'The Old Plant',
@@ -174,6 +194,8 @@ export const NAMED_LEVELS = {
     name: 'Last Store',
     room: 'storage_depot', width: 3, level: 3, condition: 20,
     text: 'The deepest room in the silo is a warehouse, and it was stocked for somebody who never arrived.',
+    artifact: 'origin_shard',
+    artifactText: 'The manifest on the door lists a delivery date, and it is eleven years before the silo was sealed.',
   },
 };
 

@@ -26,6 +26,7 @@ import { NAMED_LEVELS } from '../src/data/levels.js';
 import { getRoom } from '../src/data/rooms.js';
 import { repairCost, buildCostFor } from '../src/sim/build.js';
 import { tierForFloor } from '../src/sim/research.js';
+import { RESEARCH_LIST } from '../src/data/research.js';
 import { BAL } from '../src/config/balance.js';
 
 const failures = [];
@@ -183,7 +184,46 @@ if (!failures.length) ok(`all ${floors.length} named levels name a real room tha
   }
 }
 
-// ---- 5. the silo, not the seed ---------------------------------------------
+// ---- 5. the ending is not a lottery ----------------------------------------
+//
+// Every ending is behind The Origin Record, and that node wants artifacts that
+// drop from two specific expedition bands. Left at that, whether a campaign
+// can be finished at all is three rolls on a loot table: measured, one seed
+// won on day 713 and another dug all 144 floors, finished 45 of 48 nodes, and
+// could not finish, because the compact seal never dropped in 900 days.
+//
+// So the shaft has to be a second road to the same door. Whatever the endgame
+// research needs, digging to the bottom has to be able to supply it.
+{
+  const need = {};
+  for (const node of RESEARCH_LIST) {
+    if (!node.endgame && node.id !== 'origin_record') continue;
+    for (const [k, v] of Object.entries(node.artifacts || {})) {
+      need[k] = Math.max(need[k] || 0, v);
+    }
+  }
+  const fromDigging = {};
+  for (const f of floors) {
+    const a = NAMED_LEVELS[f].artifact;
+    if (a) fromDigging[a] = (fromDigging[a] || 0) + 1;
+  }
+  const short = Object.entries(need).filter(([k, v]) => (fromDigging[k] || 0) < v);
+  if (!Object.keys(need).length) {
+    fail('no endgame node names an artifact — this check is testing nothing, so the tree moved');
+  } else if (short.length) {
+    fail(
+      'digging the whole shaft cannot finish the game: still short ' +
+        short.map(([k, v]) => `${k} ${fromDigging[k] || 0}/${v}`).join(', ')
+    );
+  } else {
+    ok(
+      'digging the shaft alone supplies the whole ending chain: ' +
+        Object.entries(need).map(([k, v]) => `${k} ${fromDigging[k]}/${v}`).join(', ')
+    );
+  }
+}
+
+// ---- 6. the silo, not the seed ---------------------------------------------
 {
   const store = createStore(createNewGame({ seed: 1, now: 1 }));
   store.silent = true;

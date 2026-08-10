@@ -170,7 +170,7 @@ export function digOutcome(state, floorN, rng) {
   const named = namedLevel(floorN);
   if (named) {
     const def = getRoom(named.room);
-    return {
+    const out = {
       id: 'found',
       kind: 'good',
       floor: floorN,
@@ -185,6 +185,14 @@ export function digOutcome(state, floorN, rng) {
         `Floor ${floorN} is open — ${named.name}. ${named.text} ` +
         `The ${def?.name || named.room} is at ${named.condition}% and will run again if it is repaired.`,
     };
+    // A few of the deepest carry the evidence the ending chain is built on.
+    // Not rolled for, for the same reason the level itself is not: whether a
+    // campaign can be finished should not come down to a loot table.
+    if (named.artifact) {
+      out.artifact = named.artifact;
+      if (named.artifactText) out.text += ` ${named.artifactText}`;
+    }
+    return out;
   }
 
   const ti = tierIndex(floorN);
