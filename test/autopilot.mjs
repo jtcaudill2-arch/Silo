@@ -51,6 +51,14 @@ const RESEARCH_ORDER = [
   'alloy_refining',
   // Get to the mid waste. Nothing is recoverable below tier 2.
   'decon_protocols',
+  // With the suits, not two dozen nodes after them. Firearms I is 190 points
+  // and it is the only thing standing between the silo and a Munitions line;
+  // at twenty-first in this list it landed past day 300, so the silo built the
+  // whole surface chain — suits, door, armoury, squad — and then could not
+  // supply an expedition with the two rounds a person a day one costs.
+  // Measured: munitions was unbuildable on 298 of the first 300 days, and on
+  // 298 of those the reason was this node.
+  'firearms_1',
   'env_suit_2',
   'atmospheric_analysis',
   // Consolidate while the squad starts bringing things home.
@@ -64,7 +72,6 @@ const RESEARCH_ORDER = [
   'terrain_mapping',
   'env_suit_3',
   'deep_excavation_3',
-  'firearms_1',
   'ballistic_armor_1',
   'rad_treatment_1',
   'surgery',
@@ -217,6 +224,12 @@ export function autopilot(state) {
   if (flow('food') < 4 && !full('food')) wants.push('hydroponics');
   if (scrapIncome < 5 + pop / 30 && !full('scrap')) wants.push('recycling');
   if (partsIncome < 1.5 + pop / 160 && !full('parts')) wants.push('workshop');
+  // Alloy belongs with the other income rules, not thirty entries down a list
+  // the silo never reaches. A Foundry turns three scrap into one alloy, and
+  // alloy is what buys env-suits, shoring for every floor below 35, and the
+  // Munitions line. Measured over 300 days the silo held 4,699 scrap and five
+  // alloy: not short of the material, short of furnaces.
+  if (count('foundry') > 0 && flow('alloy') < 0.6 && !full('alloy')) wants.push('foundry');
   if (powerHeadroom < 0.25) wants.push('generator_hall');
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
 
@@ -241,6 +254,14 @@ export function autopilot(state) {
     // weapon or a vest, so without one a squad can be formed, housed and
     // fed, and never sent anywhere.
     if (count('armory') < 1) wants.push('armory');
+    // Straight after the armoury, not thirty entries later. A squad carries
+    // two rounds a person a day and brings none back; the armoury hand-loads
+    // 0.35 a shift from a bench that is usually dark. Sitting near the end of
+    // this list it never once got built in 300 days, because a growing silo
+    // always has another dormitory or filtration bay wanting the money first —
+    // so the silo equipped expeditions it could not supply, and 211 of the
+    // first 300 days had a squad ready and no rounds to send it out with.
+    if (count('armory') > 0 && count('munitions') < 1) wants.push('munitions');
     // Suits, weapons and armour above tier one are all made of alloy, and
     // the foundry is the only thing that makes any.
     if (count('foundry') < 1) wants.push('foundry');
@@ -269,10 +290,6 @@ export function autopilot(state) {
     if (count('schoolhouse') < 1) wants.push('schoolhouse');
     if (foodDays > 25 && waterDays > 25 && count('storage_depot') < 2) wants.push('storage_depot');
     if (count('sheriffs_office') < 1) wants.push('sheriffs_office');
-    // Ammunition. A mid-band run costs 24 rounds and brings none back, so
-    // the armoury's hand-loading bench alone paces expeditions at one per
-    // nine days. Munitions is the room that makes the surface sustainable.
-    if (count('munitions') < 1) wants.push('munitions');
     if (count('foundry') < 2) wants.push('foundry');
     // Research is the long pole all game; keep adding benches to it.
     if (count('laboratory') < 4 && state.resources.scrap > RESERVE * 3) wants.push('laboratory');

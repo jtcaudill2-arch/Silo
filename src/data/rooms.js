@@ -232,7 +232,10 @@ export const ROOMS = {
     // programme. It bought three suits, one short of a squad, and the
     // airlock stayed shut for ninety days waiting on a foundry that was
     // three research nodes and twenty floors away. The research is gate
-    // enough; the Lowers keep munitions, barracks and the deep mine.
+    // enough; the Lowers keep the barracks and the deep mine.
+    //
+    // Munitions used to be on that list and has since come off it, for the
+    // same reason and off the same kind of measurement — see the note there.
     desc: 'Three scrap in, one alloy out. Gates every weapon worth carrying.',
   }),
 
@@ -243,10 +246,45 @@ export const ROOMS = {
     width: 2,
     produces: { ammo: 4.4 },
     consumes: { power: 6, alloy: 0.55 },
-    staff: { skill: 'engineering', slotsPerLevel: [2, 2, 3, 4, 5] },
+    // Crewed by the people who use what it makes, not by the silo's engineers.
+    //
+    // Eight room types wanted engineering — the Workshop, Recycling, the
+    // Foundry, the Suit Bay, the Deep Mine, the Heat Exchange and both weapons
+    // benches — and exactly one wanted combat, the optional Training Yard. So
+    // about one resident in seven had a speciality no room in the game could
+    // use, while the ammunition line queued behind every industrial building
+    // in the silo and lost. Measured: built on day 134 and crewed on none of
+    // the following 167 days.
+    //
+    // Moving both weapons benches onto combat fixes it from the demand side
+    // rather than by taking engineers off the growth engine. Trying that the
+    // other way first — reordering the crewing queue so ammunition beat the
+    // Workshops — did fix the ammunition and halved the population, because
+    // the queue was never the problem: eight rooms were chasing one skill.
+    //
+    // It also gives squads a real cost. The armed hands are the same people,
+    // so a silo with everybody outside is a silo not making rounds.
+    staff: { skill: 'combat', slotsPerLevel: [2, 2, 3, 4, 5] },
     buildCost: { scrap: 280, parts: 30, alloy: 16 },
     unlock: 'firearms_1',
-    tierGate: 'lowers',
+    // Not depth-gated, on exactly the argument that un-gated the Foundry a few
+    // rooms up — and the comment there used to name this room as one the
+    // Lowers could keep. That was wrong, and by the same measurement.
+    //
+    // A squad carries two rounds per person per day, so a four-day trip is
+    // thirty-two. The only other source of ammunition is the Armory's trickle
+    // of 0.35 a shift, from a bench that competes for engineers with Recycling,
+    // the Workshop, the Foundry and the Heat Exchange and therefore stands dark
+    // most of the time — measured at 77 running days out of 265. Put the real
+    // line behind the Lowers and the surface programme spends its first two
+    // hundred days rationing: 211 of the first 300 days had an expedition
+    // ready to leave and stopped at the ammunition locker.
+    //
+    // Firearms I is gate enough. It costs 190 points behind Alloy Refining, so
+    // it already asks for the Foundry, and this room eats 0.55 alloy a shift on
+    // top — which is the same alloy that buys env-suits and shores deep floors.
+    // That is the cost that should pace ammunition: a decision about what the
+    // silo smelts, not twenty floors of stairs.
     desc: 'Ammunition. The single biggest multiplier on combat power.',
   }),
 
@@ -263,7 +301,9 @@ export const ROOMS = {
     // walking while you dig toward one.
     produces: { ammo: 0.35 },
     consumes: { power: 2, scrap: 0.7 },
-    staff: { skill: 'engineering', slotsPerLevel: [2, 2, 3, 4, 5] },
+    // The other weapons bench, moved onto combat with the Munitions line for
+    // the same reason — see the note there.
+    staff: { skill: 'combat', slotsPerLevel: [2, 2, 3, 4, 5] },
     buildCost: { scrap: 200, parts: 18 },
     provides: { gearStorage: 24, gearRepair: true, cap: { ammo: 300 } },
     desc: 'Racks, benches, and a quartermaster who reloads and repairs what comes back.',

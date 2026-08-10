@@ -29,7 +29,7 @@ import {
 import { staffSlots, inService } from './economy.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
-import { canStart } from './research.js';
+import { canStart, isComplete } from './research.js';
 
 /**
  * @typedef {object} Directive
@@ -183,9 +183,16 @@ function scarcest(state, type) {
  * one impossible instruction for another is the same failure wearing a
  * different hat.
  *
- * Scrap, parts and coolant, because those are the shortfalls a room can
- * answer. Alloy is still a research problem — the Foundry is behind a node —
- * and the honest answer there is to hold.
+ * Scrap, parts, coolant and alloy — every shortfall a room can answer.
+ *
+ * Alloy was left out on the grounds that it is a research problem, the Foundry
+ * being behind a node. That is true right up until the silo has one, and
+ * `incomeRelief` already refuses to name a room the silo has never built, so
+ * the guard was always there. What the omission actually cost: 193 of the
+ * first 300 days unable to afford the sixteen alloy a Munitions line costs,
+ * while holding 4,699 scrap and 1,884 parts. A Foundry turns three scrap into
+ * one alloy, so the silo was not short of the material — it was short of
+ * furnaces, and nothing ever said so.
  *
  * Coolant is here because it stopped being a surface problem. This comment
  * used to say it was one, and it was wrong: a deep expedition brings back ten
@@ -198,6 +205,8 @@ const RELIEF = {
   scrap: { id: 'scrap_income', room: 'recycling', noun: 'salvage' },
   parts: { id: 'parts_income', room: 'workshop', noun: 'parts work' },
   coolant: { id: 'coolant_income', room: 'heat_exchange', noun: 'coolant' },
+  ammo: { id: 'ammo_income', room: 'munitions', noun: 'ammunition' },
+  alloy: { id: 'alloy_income', room: 'foundry', noun: 'smelting' },
 };
 
 function incomeRelief(state, key) {
@@ -754,6 +763,44 @@ export function directives(state) {
       panel: 'build',
       weight: 53,
     });
+  }
+  // The last link in the chain, and the one nothing ever mentioned.
+  //
+  // The surface programme runs on rounds — two per person per day, so a
+  // four-day trip is thirty-two, and none of it comes home. The only other
+  // source is the Armory's hand-loading bench at 0.35 a shift, from a room
+  // that competes for engineers with Recycling, the Workshop, the Foundry and
+  // the Heat Exchange and therefore stands dark most of the time: measured at
+  // 77 running days out of 265.
+  //
+  // So a silo that has built the whole chain — suits, door, armoury, squad —
+  // then sits behind it. Measured over the first 300 days, 211 of them had a
+  // squad ready to leave and stopped at the ammunition locker, and not one
+  // standing order in the game so much as named the room that fixes it.
+  if (has(state, 'armory') && has(state, 'airlock') && count(state, 'munitions') === 0 && flow(state, 'ammo') <= 0) {
+    const why =
+      'A squad carries two rounds a person a day and brings none back. The Armory hand-loads ' +
+      'a fraction of that, so the silo can equip an expedition it cannot supply.';
+    const gate = getRoom('munitions')?.unlock;
+    if (placeable(state, 'munitions')) {
+      add({ id: 'munitions', text: 'Build a Munitions line', room: 'munitions', why, panel: 'build', weight: 51 });
+    } else if (gate && !isComplete(state, gate) && !state.research.active && canStart(state, gate).ok) {
+      // Name the node, the way the excavation order does. The room is behind
+      // 190 points of Firearms I, and a standing order that says "build the
+      // thing you cannot build" is not an order. Measured, this is the whole
+      // bottleneck: munitions was unbuildable on 298 of the first 300 days and
+      // the reason was never alloy or money, it was that nothing in the game
+      // ever suggested the cheap node that unlocks it.
+      const node = getResearch(gate);
+      add({
+        id: 'ammo_research',
+        text: `Research ${node?.name || gate}`,
+        why: `${why} The line that fixes it is behind this.`,
+        panel: 'research',
+        weight: 51,
+        research: gate,
+      });
+    }
   }
   if (has(state, 'suit_bay') && has(state, 'armory') && !state.military.squadIds.length) {
     add({

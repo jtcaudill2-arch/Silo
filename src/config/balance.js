@@ -492,7 +492,7 @@ export const BAL = {
       mechanics: 5,
       science: 5,
       admin: 4,
-      combat: 4.5,
+      combat: 7,
       farming: 3,
       medicine: 3,
     },
@@ -724,12 +724,18 @@ export const BAL = {
       // Reactor, which is four generator halls' worth of power standing still.
       'heat_exchange',
       'chem_lab',
+      // Ammunition, on the same argument as the three rooms above it: nothing
+      // else in the game makes any at a rate that matters, and every
+      // expedition the silo will ever run is two rounds per person per day
+      // with none coming back. At sixteenth it was built on day 134 and then
+      // crewed on two of the next 167 days, which is a room the silo paid 280
+      // scrap and 16 alloy for and never once used.
+      'munitions',
       'clinic',
       'maintenance_bay',
       'cafeteria',
       'suit_bay',
       'armory',
-      'munitions',
       'sheriffs_office',
       'radio_room',
       'schoolhouse',
