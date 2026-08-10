@@ -61,17 +61,14 @@ export function computeCaps(state) {
 
 /**
  * What a room is worth at full crew: condition, level and merge width, and
- * nothing about who is standing in it.
+ * nothing about who is standing in it. `roomCapability` is this multiplied by
+ * the fraction of its posts that are filled.
  *
- * This is the ceiling more building raises. It answers a question `roomCapability`
- * cannot — "would another one of these help?" — because a plant that is short of
- * people reads as short of capacity, and the standing order used to answer that
- * by asking for another hall, then another, then another. Deliberately blind to
- * whether the room is finished: a hall going up in the bay is a hall that is
- * coming, and counting it is what stops three being ordered while the first is
- * still under construction.
+ * Split out so the two halves of "how well is this room running" can be read
+ * apart, because they have different answers: a half-crewed bay and a worn-out
+ * one both produce half, and only one of them is fixed by posting somebody.
  */
-export function roomCeiling(state, room) {
+function roomCeiling(state, room) {
   const def = getRoom(room.type);
   if (!def) return 0;
   if (room.condition <= BAL.silo.condition.failAt) return 0;
@@ -196,7 +193,7 @@ function roomLoads(state, roomIds) {
  * that comes back is a copy with any hall that could not get its fuel zeroed
  * out, which is what the rest of the cycle then treats as an idle room.
  */
-export function plantPlan(state, roomIds, capability, draw, caps) {
+function plantPlan(state, roomIds, capability, draw, caps) {
   const res = state.resources;
   const generators = generatorOrder(state, roomIds);
   const isGenerator = new Set(generators);

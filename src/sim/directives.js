@@ -232,31 +232,30 @@ export function directives(state) {
   // thing. It suffocated on day 181.
   //
   // So every order below that asks for a room somebody has to stand in is
-  // conditional on there being enough people unassigned to crew it — the whole
-  // room, not one post of it, because a bay at a quarter crew is a bay running
-  // at a quarter and drawing full power. When there are not, the orders that
-  // remain are the ones that are actually worth a shift: repairs, housing, a
-  // research project, digging. That is also what makes obedience converge: each
-  // order carried out is one that can be finished, and carrying one out spends
-  // the hands that would have let the next one be issued.
+  // conditional on there being people unassigned to crew it. When there are
+  // not, the orders that remain are the ones that are actually worth a shift:
+  // repairs, housing, a research project, digging. That is also what makes
+  // obedience converge — each order carried out is one that can be finished,
+  // and carrying one out spends the hands that would have let the next one be
+  // issued, so the list shortens as the player works down it.
   //
-  // Two rooms are exempt in principle and one in practice: anything whose value
-  // is a *ceiling* rather than a throughput still counts for something with
-  // nobody in it. Bunks are bunks whether the lights are on or not
-  // (population.js counts housing regardless), a depot raises the stockpile cap
-  // out of its own walls, and economy.js pays an uncrewed filtration bay 55% of
-  // its air capacity — which matters more than it sounds, because air capacity
-  // is the hard ceiling on population and population is what the silo is short
-  // of. Gating filtration on spare hands is a deadlock with the key inside it:
-  // no air, so no births, so no hands, so no air.
-  const spare = employableCitizens(state).filter((c) => !c.job).length;
-  const PASSIVE = ['airCapacity', 'housing', 'depot', 'cap'];
-  //
-  // Half the posts, not all of them: output scales with the fraction of a room
+  // Half the posts, not all of them. Output scales with the fraction of a room
   // that is crewed, so a bay at half crew is half a bay and worth having, while
   // a bay at no crew is a hole in the power budget. Asking for the full
-  // complement leaves a silo with two spare hands, a full treasury and every
-  // order filtered out, which is how this gate first went wrong.
+  // complement is how this gate first went wrong: it left a silo with two spare
+  // hands, a full treasury and every single order filtered out.
+  //
+  // And some rooms are exempt entirely, because their value is a *ceiling*
+  // rather than a throughput and a ceiling still stands with nobody under it.
+  // Bunks are bunks whether the lights are on or not (population.js counts
+  // housing regardless), a depot raises the stockpile cap out of its own walls,
+  // and economy.js pays an uncrewed filtration bay 55% of its air capacity —
+  // which matters more than it sounds, because air capacity is the hard ceiling
+  // on population and population is what the silo is short of. Gating
+  // filtration on spare hands is a deadlock with the key locked inside it: no
+  // air, so no births, so no hands, so no air.
+  const spare = employableCitizens(state).filter((c) => !c.job).length;
+  const PASSIVE = ['airCapacity', 'housing', 'depot', 'cap'];
   const crewed = (type) => {
     const def = getRoom(type);
     if (!def?.staff) return true;
@@ -821,6 +820,11 @@ export function directives(state) {
         // obedient-player test — needs to be able to tell "wait" apart from
         // "we have no advice".
         wait: true,
+        // What is being saved for, though, as a room type. Not for the UI —
+        // `target` is how test/obedient.mjs can watch a held target get closer
+        // rather than further away, which is the whole assertion that keeps the
+        // treadmill from coming back.
+        target: goal.room,
         text: `Save up for ${aOrAn(goal.text.replace(/^Build (a|an|another) /, ''))}`,
         why:
           `${goal.why} ${gap === 'scrap' ? 'Salvage' : `${gap[0].toUpperCase()}${gap.slice(1)}`} is ` +

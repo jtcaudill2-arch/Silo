@@ -740,8 +740,9 @@ export const BAL = {
       shiftsPerMember: 1,
       // Filters to hose down one returning body. The Chem Lab is the only
       // thing in the silo that makes filter media, and it makes 0.6 a shift
-      // against an air plant that burns roughly 0.05 a shift per filtration
-      // bay — so a silo large enough to need six bays and small enough to
+      // against an air plant that burns 0.05 a shift per filtration bay — both
+      // figures from the room definitions in src/data/rooms.js, which is where
+      // a room's own upkeep lives — so a silo large enough to need six bays and small enough to
       // staff exactly one Chem Lab runs a filter balance of about zero and
       // banks nothing. At 2 a head that put a four-person decon at 8 filters,
       // which such a silo takes over a hundred days to save up: measured, the
@@ -1069,13 +1070,15 @@ export const BAL = {
     resourceRunwayDays: 30,
     // Order at which the silo has politics and the Order panel opens.
     //
-    // This supersedes `order.contentThreshold` (55) for that one job, which
-    // is the only job that key ever had. 55 cannot be the line: order starts
-    // at 64 and drifts toward `order.driftToward` — 50 — at a quarter of the
-    // gap a day, so it crosses 55 on day four or five of every silo ever
-    // played, whatever the mayor does. Measured across three seeds: day 5,
-    // day 5, day 5. That is not politics arriving, it is a timer, and it put
-    // the Order panel on screen ahead of Research in every game.
+    // This replaced an `order.contentThreshold: 55`, which has since been
+    // deleted — opening the Order panel was the only job that key ever had,
+    // and once unlocks.js stopped reading it nothing read it at all. 55 could
+    // not be the line anyway: order starts at 64 and drifts toward
+    // `order.driftToward` — 50 — at a quarter of the gap a day, so it crosses
+    // 55 on day four or five of every silo ever played, whatever the mayor
+    // does. Measured across three seeds: day 5, day 5, day 5. That is not
+    // politics arriving, it is a timer, and it put the Order panel on screen
+    // ahead of Research in every game.
     //
     // 45 is the number the Order panel itself already draws as a warning
     // rather than as normal, and it sits under the drift attractor, so

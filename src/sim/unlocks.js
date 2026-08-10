@@ -362,11 +362,18 @@ export function coreResourceKeys() {
  * makes this look impenetrable, and it buries the four that decide whether
  * anybody lives. Deriving them from the rooms cut it to six; the two that
  * were left over, fuel and filters, are the two the opening silo consumes and
- * can do nothing about. A generator hall burns about 0.65 fuel a shift
- * against a starting 260, and a filtration bay about 0.11 filters against 40:
- * fifty days and forty-five days of stock, on the first morning, with no
- * building in the catalogue that changes either number. A figure that cannot
- * be acted on teaches the player to stop reading the strip.
+ * can do nothing about. The opening hall burns about 0.34 fuel a shift against
+ * a starting 259, and the filtration bay 0.05 filters against 40: ninety-six
+ * days and ninety-three days of stock, on the first morning, with no building
+ * in the catalogue that changes either number. A figure that cannot be acted on
+ * teaches the player to stop reading the strip.
+ *
+ * The fuel figure is a measurement, not a rating, and it has to be: halls
+ * throttle to the load now (economy.js, `plantPlan`), so what a hall burns
+ * depends on what the silo is drawing that shift. The opening silo draws 28
+ * against 55 of capacity, so its one hall runs at about half and burns about
+ * half. This line used to say 0.65 — the old flat-out figure — which was
+ * roughly double the truth and made the runway look half as long as it is.
  *
  * So a resource earns its counter three ways, and any one of them is enough:
  *

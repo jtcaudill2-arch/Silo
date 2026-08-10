@@ -34,18 +34,23 @@ import { RES_KEYS } from '../sim/economy.js';
  * is. Surviving the opening and understanding it are different problems, and
  * the second one was still failing.
  *
- * So: five rooms at level one, twenty-eight people. One of each thing, which
- * means each room can be pointed at and explained in a sentence, and the
- * chain between them is short enough to see whole — fuel burns to make power,
- * power runs the reclaimer, the reclaimer waters the crop, the crop feeds the
- * people who work the generator.
+ * So: five rooms at level one and `citizens.startPopulation` people — forty-
+ * four. One of each thing, which means each room can be pointed at and
+ * explained in a sentence, and the chain between them is short enough to see
+ * whole — fuel burns to make power, power runs the reclaimer, the reclaimer
+ * waters the crop, the crop feeds the people who work the generator.
  *
- * The margins are deliberately loose at this size: one hydroponics bay makes
- * eleven food a cycle and twenty-eight people eat three and a half. That is
- * not an oversight. Production here is per-room and consumption is per-head,
- * so the surplus closes on its own as the population grows, and the silo
- * starts asking for a second bay exactly when the player has had time to
- * learn what the first one does.
+ * The margins are deliberately loose at this size: one hydroponics bay is rated
+ * at eleven food a shift and forty-four people eat five and a half of it — one
+ * a day each over eight shifts. That is not an oversight. Production here is
+ * per-room and consumption is per-head, so the surplus closes on its own as the
+ * population grows, and the silo starts asking for a second bay exactly when
+ * the player has had time to learn what the first one does.
+ *
+ * (Both figures moved when the opening did and the prose did not: it read
+ * "twenty-eight people eat three and a half", which was the arithmetic of a
+ * population this file no longer creates — and three and a half was not that
+ * silo's figure either.)
  */
 const STARTING_ROOMS = [
   // Kept on consecutive floors so the whole silo is one screen — the player
