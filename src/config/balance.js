@@ -68,12 +68,30 @@ export const BAL = {
       { key: 'mids', name: 'Mids', from: 21, to: 48, gate: 'deep_excavation_1' },
       { key: 'lowers', name: 'Lowers', from: 49, to: 76, gate: 'deep_excavation_2' },
       { key: 'deeps', name: 'Deeps', from: 77, to: 104, gate: 'deep_excavation_3' },
-      { key: 'foundations', name: 'Foundations', from: 105, to: 124, gate: 'origin_systems' },
+      { key: 'foundations', name: 'Foundations', from: 105, to: 124, gate: 'deep_excavation_4' },
       { key: 'shaft', name: 'Shaft Floor', from: 125, to: 144, gate: 'shaft_seals' },
     ],
     excavation: {
       baseScrap: 40,
-      baseLabor: 30,
+      // Labour is dig time and nothing else — `shortfall` skips it and the
+      // cost line never prints it, so this constant sets how many shifts a
+      // floor takes and touches no other price in the game.
+      //
+      // It was 30, which put 409 days of pure digging between the top of the
+      // silo and the bottom of the shaft: floor 110 was four and a half days
+      // with the crew committed, floor 143 was nine. Even a silo that was
+      // never once blocked on money, alloy or research could not reach the
+      // Shaft Floor inside a 900-day campaign, which made the deepest twenty
+      // levels — and the Reactor and the Deep Bench standing on them —
+      // scenery. Measured against the same autopilot, digging was only 26% of
+      // where the descent's time actually went, so this is a real cut and not
+      // the whole answer; the research ladder above was the larger half.
+      //
+      // At 18 the same descent is 245 days of digging, the bottom floor is
+      // five and a half days rather than nine, and the shape is untouched: a
+      // floor still costs more time than the one above it and a tier boundary
+      // is still a step.
+      baseLabor: 18,
       // Per floor of absolute depth, so the cost only ever rises — see
       // excavationCost() for what resetting it per tier did.
       //

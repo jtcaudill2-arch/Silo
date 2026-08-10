@@ -152,12 +152,51 @@ export const RESEARCH = {
     effects: { shiftRotation: 1 },
     desc: 'Three rotating shifts. Nobody burns out, and nobody is at their post all day either.',
   }),
+  // Nothing on the excavation ladder asks for an artifact, and that is a rule
+  // rather than an oversight.
+  //
+  // Going deeper is the one progression in the game the player is supposed to
+  // be able to *plan*: it costs research points, shifts, scrap and alloy, all
+  // of which a silo can decide to go and get. An artifact cannot be decided
+  // on. It falls out of an expedition or a sealed cache, or it does not.
+  //
+  // This node asked for two intact servos and Shaft Seals asked for two servos
+  // and two alloy ingots, and measured over a 900-day autopilot campaign that
+  // is where the descent actually stopped: 160 days waiting on the servos and
+  // 198 on the ingots, against 31 days of genuinely accumulating the points.
+  // Nearly a year of the campaign spent waiting for a die roll in the middle
+  // of the one line that is meant to reward deciding.
+  //
+  // The gates are still expensive — 800 and 1,400 points, thirty and forty
+  // shifts — and every floor below them is still bought with scrap, alloy and
+  // time. Artifacts keep gating the origin chain and the exotic tech, where
+  // waiting on something you can only find is the point of the thing.
   deep_excavation_3: N({
     id: 'deep_excavation_3', branch: 'infrastructure', name: 'Deep Excavation III',
     cost: 800, minCycles: 30, requires: ['deep_excavation_2'],
-    artifacts: { intact_servo: 2 },
     effects: { unlockTier: ['deeps'], unlockRoom: ['deep_mine'] },
     desc: 'Opens the Deeps. The boring heads that got this far are all seized.',
+  }),
+  // The fifth band, on the excavation line rather than the origin chain.
+  //
+  // The Foundations used to be gated on Origin Systems, which is an endgame
+  // node: 2,600 points of its own, behind origin_record's 3,200, behind the
+  // artifact that unlocks that. Nearly six thousand points on the ending
+  // chain standing between the Deeps and the next twenty levels of the shaft.
+  // Measured on the project's own autopilot, that is where the descent went:
+  // 373 of 900 days blocked on a research gate, the Foundations opening on
+  // day 860, and the Shaft Floor never.
+  //
+  // This is the same correction Shaft Seals already got one node further
+  // down, for the same reason. Origin Systems keeps its `unlockTier` effect,
+  // so a silo that goes the origin route still opens the Foundations that
+  // way — there are two roads down, and neither one is nine thousand points
+  // of somebody else's research.
+  deep_excavation_4: N({
+    id: 'deep_excavation_4', branch: 'infrastructure', name: 'Deep Excavation IV',
+    cost: 1200, minCycles: 35, requires: ['deep_excavation_3'],
+    effects: { unlockTier: ['foundations'] },
+    desc: 'Opens the Foundations. Below this the shaft stops matching the schematics.',
   }),
   reactor_tech: N({
     id: 'reactor_tech', branch: 'infrastructure', name: 'Reactor Containment',
@@ -342,8 +381,7 @@ export const RESEARCH = {
   // enforces the sequence, so the research only has to be hard.
   shaft_seals: N({
     id: 'shaft_seals', branch: 'infrastructure', name: 'Shaft Seals',
-    cost: 1400, minCycles: 40, requires: ['deep_excavation_3'],
-    artifacts: { intact_servo: 2, alloy_ingot: 2 },
+    cost: 1400, minCycles: 40, requires: ['deep_excavation_4'],
     effects: { unlockTier: ['shaft'] },
     desc: 'The last twenty levels were sealed from underneath. Nobody wrote down why.',
   }),
