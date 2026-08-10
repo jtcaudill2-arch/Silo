@@ -1,8 +1,8 @@
 /**
  * dig.js — what is behind the door.
  *
- * Silo 12 is not being carved out of bedrock. It was built, all ninety-two
- * floors of it, and the ones below the lit part were sealed by somebody who
+ * Silo 12 is not being carved out of bedrock. It was built, all hundred and
+ * forty-four floors of it, and the ones below the lit part were sealed by somebody who
  * had a reason. Opening one is therefore not construction, it is a door being
  * broken — and what is on the other side is the point.
  *
@@ -18,10 +18,12 @@
  * sealing. A player who digs as fast as they can afford to will get hurt; one
  * who never digs stays poor and never finds an artifact. That is the decision.
  *
- * Shoring is the lever between the two. Below `shoringRequiredBelowFloor` the
- * dig is charged alloy for it, and a shored floor is markedly less likely to
- * come down on the crew — so the alloy is not a tax, it is the premium on an
- * insurance policy the player can see the terms of.
+ * Shoring used to be the lever between the two, and is no longer: below
+ * `shoringRequiredBelowFloor` the dig is charged alloy for it and `canExcavate`
+ * will not start one that cannot pay, so every crew is working behind supports
+ * and `shoredCollapseMultiplier` applies to every dig. The alloy is a toll, not
+ * a premium — there is no policy to decline. If it is ever meant to be a choice
+ * again, `digOutcome`'s `shored` is where the decision would have to be read.
  *
  * Pure: (state, floorN, rng) -> outcome descriptor. The caller dispatches.
  */

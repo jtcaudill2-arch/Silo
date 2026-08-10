@@ -1,7 +1,7 @@
 /**
  * directives.js — what to do next, in one line.
  *
- * The silo has twenty-eight rooms, forty-six research nodes and nine panels,
+ * The silo has twenty-nine rooms, forty-eight research nodes and nine panels,
  * and on the first morning it presents all of them at once with no indication
  * of which matters. That is the single loudest complaint from playing it: not
  * that any one system is hard, but that there is no thread.
