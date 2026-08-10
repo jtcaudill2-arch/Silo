@@ -8,7 +8,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
-import { roomCapability, roomDraw, staffSlots } from '../sim/economy.js';
+import { roomCapability, roomDraw, staffSlots, powerPicture } from '../sim/economy.js';
 import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
 import { canUpgrade, upgrade, upgradeCost, canDemolish, demolish, describeCost, canRepair, repair } from '../sim/build.js';
@@ -87,16 +87,34 @@ export function openRoom(store, roomId, shell) {
     }
 
     // ---- throughput -------------------------------------------------------
+    // Priced at `rate × capability × load`, not `rate × capability`. Generator
+    // halls throttle to the silo's actual draw, so a hall's plate rate is a
+    // ceiling rather than a bill — and this panel is where a player goes to
+    // ask what the room in front of them is costing. Without the load it
+    // over-reports a part-loaded hall's fuel burn, which is the same defect
+    // the Stores ledger had, in the one place a player would go to check it.
+    const load = powerPicture(s).load[r.id] ?? 1;
     const flows = [];
     for (const [k, v] of Object.entries(def.produces || {})) {
-      flows.push({ k, v: k === 'power' ? v * cap : v * cap, dir: 1 });
+      flows.push({ k, v: v * cap * load, dir: 1 });
     }
     for (const [k, v] of Object.entries(def.consumes || {})) {
       if (k === 'power') flows.push({ k, v: draw, dir: -1 });
-      else flows.push({ k, v: v * cap, dir: -1 });
+      else flows.push({ k, v: v * cap * load, dir: -1 });
     }
     if (flows.length) {
       body.appendChild(sectionLabel('Per cycle'));
+      // A hall running under its rating is not broken, and the Output tile
+      // above says 100% — say which it is before the numbers.
+      if (load < 0.995) {
+        body.appendChild(
+          el(
+            'div.note',
+            `Part-loaded at ${Math.round(load * 100)}% — the silo is not drawing everything ` +
+              'this room could make, so it is burning less than its rating.'
+          )
+        );
+      }
       const grid = el('div.flow-grid');
       for (const f of flows) {
         grid.appendChild(

@@ -64,8 +64,20 @@ const STARTING_ROOMS = [
   // — sit far enough above 44 to leave somewhere to grow into.
   { type: 'residences', floor: 3, slot: 0, width: 3, level: 1 }, // 63 beds
   { type: 'air_filtration', floor: 4, slot: 0, width: 2, level: 1 }, // 90 air cap
-  { type: 'hydroponics', floor: 5, slot: 0, width: 1, level: 1 }, // 11 food/cycle
-  { type: 'water_reclaimer', floor: 6, slot: 0, width: 1, level: 1 }, // 22 water/cycle
+  // Two slots each, not one, and the reason is the same one written against
+  // the generator below: rated output is not real output. A single bay is
+  // rated 11 food against the 5.5 that 44 people eat, which looks like a
+  // comfortable double — but a green crew works at 40-60% of rating, so the
+  // real figure is 4.4 to 6.6 and it *straddles* the requirement. Whether the
+  // opening silo feeds itself then depends on the quality of the crew the seed
+  // happened to roll. It does on the default seed; on seed 2024 food ran
+  // negative from day 3 with thirty people idle and 697 scrap unspent, and
+  // everyone starved on day 49. An opening that is survivable on some seeds
+  // and not others is not a difficulty setting, it is a coin toss.
+  { type: 'hydroponics', floor: 5, slot: 0, width: 2, level: 1 },
+  // Sized against the crop as well as the people: the bay above drinks 12 a
+  // shift on top of the 6.6 that 44 residents do.
+  { type: 'water_reclaimer', floor: 6, slot: 0, width: 2, level: 1 },
   // Deliberately oversized. A green crew works at roughly sixty per cent of a
   // bay's rated output, so "enough generation for today" is a silo that
   // browns out the moment the player builds anything — and the power priority

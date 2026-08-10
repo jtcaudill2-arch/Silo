@@ -55,6 +55,7 @@ const DAYS = Number(args.days ?? 200);
  * to roughly once a shift. None of them is allowed to come out behind the
  * reference — see the monotonicity check.
  */
+const SEED = Number(args.seed ?? BAL.meta.defaultSeed);
 const RATES = String(args.rates ?? '3,5,8,12').split(',').map(Number);
 const REFERENCE = RATES[0];
 
@@ -169,7 +170,7 @@ function distanceTo(state, type) {
  * and then the next order spent the savings on something else.
  */
 function playObediently(perDay, days) {
-  const store = createStore(createNewGame({ seed: BAL.meta.defaultSeed, now: 1_700_000_000_000 }));
+  const store = createStore(createNewGame({ seed: SEED, now: 1_700_000_000_000 }));
   store.silent = true;
   const game = new Game(store);
   const s = store.state;
