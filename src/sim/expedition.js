@@ -188,6 +188,10 @@ export function resolveExpedition(state, expedition) {
   );
 
   // ---- one encounter per travel day ---------------------------------------
+  // Days on which somebody actually shot at them. Counted because the rounds
+  // they carried and did not fire come home in the pouch — see the refund
+  // below.
+  let fightDays = 0;
   const dayCount = Math.max(1, Math.round(travelDays));
   for (let day = 0; day < dayCount; day++) {
     const rng = streamFor(seed, 'expedition-day', expedition.id, day);
@@ -205,6 +209,7 @@ export function resolveExpedition(state, expedition) {
 
     switch (enc.type) {
       case 'combat': {
+        fightDays++;
         const res = runCombat(ctx, enc, suitIntegrity);
         suitIntegrity = Math.max(0, suitIntegrity - BAL.gear.suit.degradePerCombatHit);
         if (res) {
@@ -268,6 +273,31 @@ export function resolveExpedition(state, expedition) {
   // ---- home ----------------------------------------------------------------
   const survivors = roster.slice();
   const radEach = Math.round(radAccrued);
+
+  // Unfired ammunition comes back.
+  //
+  // Food and water are eaten and meds are used up, but a squad that walks to
+  // the near ruins, finds nobody, and walks home again is carrying every round
+  // it left with. The supply was being written off wholesale regardless of
+  // what happened out there, which made a quiet patrol cost exactly as much as
+  // a running battle — and ammunition is the one supply the silo can barely
+  // make. Measured over 300 days: a squad blocked at the airlock for want of
+  // rounds on 192 of them, while the weapons benches stood empty because the
+  // silo was at full employment and had nobody to put in them. The demand was
+  // the part that was wrong, not the supply.
+  //
+  // Charged by the day, from the same frozen roster the supply was bought for,
+  // so re-resolving the same expedition always returns the same number.
+  const carried = supplyCost(band, expedition.roster.length).ammo;
+  const unfired = Math.floor(carried * (1 - fightDays / dayCount));
+  if (unfired > 0) {
+    actions.push({ type: 'RESOURCE_DELTA', deltas: { ammo: unfired } });
+    journal.push(
+      fightDays === 0
+        ? `Nobody fired a shot. All ${unfired} rounds came back.`
+        : `${unfired} unfired rounds came back to the armoury.`
+    );
+  }
 
   actions.push({
     type: 'EXPEDITION_RESOLVE',
