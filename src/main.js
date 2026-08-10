@@ -259,9 +259,9 @@ async function main() {
     store,
     shell,
     alreadySeen: hadHandover,
-    // Write each step through immediately. The autosave interval is twenty
-    // seconds, and a player who skips the guide and closes the tab inside that
-    // window would be shown it again on the way back in.
+    // Flush once, when the guide ends. The autosave interval is twenty
+    // seconds, and a player who skips it and closes the tab inside that window
+    // would be shown the whole thing again on the way back in.
     onPersist: () => autosave.saveNow('tutorial'),
   });
   window.DEEPWATER.tutorial = tutorial;

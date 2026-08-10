@@ -50,6 +50,8 @@ const EVAL_MS = 96;
 const BACK_GRACE_MS = 800;
 /** A press that travels further than this was a drag, not a tap. */
 const TAP_SLOP = 12;
+/** Attempts to scroll a step's control into view, per step. See `resolve`. */
+const SCROLL_TRIES = 4;
 
 const GAP = 10; // between the spotlight and the card
 const EDGE = 8; // between the card and the edge of the screen
@@ -98,6 +100,7 @@ export function startTutorial({
   let mark = null;
   let current = null; // the resolved target element
   let tapped = false;
+  let scrollTries = 0;
   let press = null; // { x, y } of a pointerdown inside the target
   let lastCopy = '';
   let measured = null; // cached card size; re-taken when the copy or screen changes
@@ -308,6 +311,7 @@ export function startTutorial({
     tapped = false;
     press = null;
     current = null;
+    scrollTries = 0;
     lastCopy = '';
     measured = null;
     const step = steps[index];
@@ -381,7 +385,18 @@ export function startTutorial({
   function resolve(target, ctx) {
     try {
       const node = typeof target === 'function' ? target(ctx) : document.querySelector(target);
-      if (node && !isOnScreen(node)) node.scrollIntoView({ block: 'center', inline: 'nearest' });
+      // Bring it into view if it isn't. Measured with `visibleRect` rather than
+      // against the viewport, because the catalogue row this most often points
+      // at is clipped by the panel's own scroller long before it leaves the
+      // screen — by the viewport's reckoning it was visible the whole time.
+      //
+      // A handful of attempts on entering the step, and then it stops. A guide
+      // that kept scrolling the list back would be taking the panel off the
+      // player every time they looked at something else in it.
+      if (node && scrollTries < SCROLL_TRIES && !visibleRect(node)) {
+        scrollTries++;
+        node.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
       return node || null;
     } catch (err) {
       console.warn('[tutorial] could not resolve a target:', err);
@@ -404,11 +419,6 @@ export function startTutorial({
     return typeof target === 'string' && !!node.closest?.(target);
   }
 
-  function isOnScreen(node) {
-    const r = node.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) return true; // detached: scrolling won't help
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  }
 }
 
 /** The live standing order, or null. Never allowed to break the guide. */
