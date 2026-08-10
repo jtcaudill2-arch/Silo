@@ -25,6 +25,8 @@
  *   - the origin route down is a route and not a formality
  *   - a seized room provides nothing, anywhere
  *   - salvage, which nothing in this project had ever executed
+ *   - a pending raid resolves, and cannot outlive its own resolution
+ *   - a conquest advances all four stages through the player's own path
  *   - migrations actually write the fields they promise
  *
  * Run: node test/wiring.mjs
@@ -51,6 +53,13 @@ import { inService } from '../src/sim/economy.js';
 import { tierUnlocked } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
+import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
+import { canLaunchRun, nextStage, garrisonForce, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
+import { resolve as resolveCombat } from '../src/sim/combat.js';
+import { conquestState } from '../src/sim/diplomacy.js';
+import { formSquad } from '../src/sim/military.js';
+import { placeRoom } from '../src/core/newgame.js';
+import * as raid from '../src/sim/raid.js';
 import { BAL, TIME } from '../src/config/balance.js';
 
 const failures = [];
@@ -444,6 +453,254 @@ console.log('');
     } else {
       ok(`salvage tracks condition: a seized plant returns ${Math.round(ratio * 100)}% of build, a healthy one pays out`);
     }
+  }
+}
+
+// ---- 8. a raid resolves, and cannot outlive its own resolution --------------
+//
+// The defect this replaces: `PENDING_RAID` wrote `world.pendingRaid`, nothing
+// read it, `RAID_RESOLVED` was dispatched from nowhere, and shell.js told the
+// player "Squads defend the silo; without one, the raid takes what it wants"
+// about a mechanic that did not exist. So the assertions here are about the
+// *pending raid going away* and about the two branches differing — a test
+// that only checked `raid.simulateDay` returns actions would have passed
+// against the broken build, because the broken build's problem was that
+// nothing called it.
+{
+  // Undefended: no squad at all.
+  const store = newStore(4242);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  game.runDays(2);
+  const before = { scrap: s.resources.scrap, pop: s.citizenIds.length };
+  store.dispatch({ type: 'PENDING_RAID', siloId: 5, strength: 0.9 });
+  if (!s.world.pendingRaid) fail('PENDING_RAID did not record a pending raid');
+
+  game.runDays(1 + BAL.raid.graceDays);
+  if (s.world.pendingRaid) {
+    fail('a raid was still pending after its grace day — nothing is reading world.pendingRaid');
+  } else {
+    ok('a pending raid is resolved by the day loop, not left standing for ever');
+  }
+  if (!(s.resources.scrap < before.scrap)) {
+    fail(`an undefended raid took nothing (scrap ${before.scrap} -> ${s.resources.scrap})`);
+  } else {
+    ok(`an undefended raid costs real stores: scrap ${Math.round(before.scrap)} -> ${Math.round(s.resources.scrap)}`);
+  }
+  if (!s.stats.raidsLost) fail('an undefended raid was not counted as lost');
+
+  // Every death the raid caused has to name somebody and say why. That is the
+  // project's rule for every death, and a new death path is exactly where it
+  // gets forgotten.
+  const dead = before.pop - s.citizenIds.length;
+  if (dead > 0) {
+    const named = s.log.filter((e) => /came through the airlock/.test(e.text || '')).length;
+    if (named < dead) fail(`${dead} died in the raid but only ${named} were named in the log`);
+    else ok(`${dead} civilian deaths, each named in the log with its cause`);
+    if (!s.stats.causes || !s.stats.causes['a raid']) {
+      fail('raid deaths did not reach stats.causes');
+    }
+  }
+}
+{
+  // Defended: the same raid, met by a squad, must come out differently.
+  const store = newStore(4242);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  game.runDays(2);
+  store.dispatchAll(formSquad(s, 'Watch'));
+  const sqId = s.military.squadIds[0];
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  for (let i = 0; i < BAL.military.squadMin + 2; i++) {
+    if (adults[i]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[i].id });
+  }
+  if (raid.defenders(s).length < BAL.military.squadMin) fail('a garrisoned squad did not count as defenders');
+
+  const before = s.resources.scrap;
+  store.dispatch({ type: 'PENDING_RAID', siloId: 6, strength: 0.2 });
+  game.runDays(1 + BAL.raid.graceDays);
+  if (s.world.pendingRaid) fail('a defended raid was never resolved');
+  else if (!s.stats.raidsRepelled) fail('a squad met the weakest raiders and did not turn them back');
+  else ok('a squad standing by turns back the weakest raiders, and it is recorded');
+
+  const lost = before - s.resources.scrap;
+  if (!(lost < before * BAL.raid.undefendedTheft)) {
+    fail(`meeting the raid cost as much as ignoring it (${Math.round(lost)} of ${Math.round(before)})`);
+  } else {
+    ok(`meeting it costs less than ignoring it: ${Math.round(lost)} scrap against ${Math.round(before * BAL.raid.undefendedTheft)}`);
+  }
+
+  // A squad that is outside is outside. This is the cost the whole feature
+  // exists to price, so it is asserted rather than assumed.
+  for (const cid of s.military.squads[sqId].members) s.citizens[cid].status = 'expedition';
+  if (raid.defenders(s).length !== 0) {
+    fail('a squad on an expedition still counted as defending the silo');
+  } else {
+    ok('a squad that is outside does not defend the airlock');
+  }
+}
+
+// ---- 9. a conquest advances through the player's own path -------------------
+//
+// `CONQUEST_PATCH` used to be dispatched from nowhere in src/ — the only
+// thing that ever moved a conquest was test/conquest.mjs dispatching the
+// reducer by hand, which is why the ladder could be green and impassable at
+// the same time. So this drives it the way the radio panel does: gate, launch
+// an expedition, run the clock, read the stage back. Nothing here dispatches
+// CONQUEST_PATCH itself; if the wiring breaks, the stage stops moving.
+{
+  const store = newStore(0x1234);
+  const s = store.state;
+  const game = new Game(store);
+  const TARGET = 6;
+  const band = BAL.conquest.band;
+  const days = BANDS.find((b) => b.key === band).travelDays;
+
+  for (const f of s.silo.floors) f.excavated = true;
+  placeRoom(s, { type: 'generator_hall', floor: 7, slot: 0, width: 3, level: 3 });
+  placeRoom(s, { type: 'generator_hall', floor: 7, slot: 3, width: 3, level: 3 });
+  placeRoom(s, { type: 'airlock', floor: 8, slot: 0, width: 3, level: 3 });
+  store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'breaching_charges' });
+  store.dispatchAll(autoAssign(s));
+  game.runDays(3);
+  if (airlockCapacity(s) <= 0) fail('the conquest fixture never got a working airlock');
+  for (const k of ['food', 'water', 'ammo', 'meds']) s.resources[k] = 9000;
+
+  for (let n = 0; n < BAL.conquest.breachSquadsRequired; n++) store.dispatchAll(formSquad(s, `Column ${n + 1}`));
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  let k = 0;
+  for (const sqId of s.military.squadIds) {
+    for (let i = 0; i < BAL.military.squadMax; i++) {
+      if (adults[k]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[k++].id });
+    }
+  }
+  let gid = 0;
+  for (const sqId of s.military.squadIds) {
+    for (const cid of s.military.squads[sqId].members) {
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++gid;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+      }
+    }
+  }
+
+  const seen = [];
+  for (let round = 0; round < 20; round++) {
+    if (s.world.silos[TARGET].contact === 'satellite') break;
+    const gate = canLaunchRun(s, TARGET);
+    if (!gate.ok) { fail(`conquest stalled at ${nextStage(s, TARGET)}: ${gate.reason}`); break; }
+    const free = s.military.squadIds.find(
+      (id) => !s.military.squads[id].deployed &&
+        s.military.squads[id].members.filter((c) => s.citizens[c]?.status !== 'dead').length >= BAL.military.squadMin
+    );
+    if (!free) { fail('no squad was ever available for the next conquest stage'); break; }
+    if (!canLaunch(s, free, band).ok) { fail(`could not launch: ${canLaunch(s, free, band).reason}`); break; }
+    const acts = launchConquest(s, free, TARGET);
+    if (!acts.length) { fail(`launchConquest produced nothing at stage ${gate.stage}`); break; }
+    seen.push(gate.stage);
+    store.dispatchAll(acts);
+    game.runDays(days + 1);
+  }
+
+  for (const stage of ['scout', 'undermine', 'breach', 'hold']) {
+    if (!seen.includes(stage)) fail(`the ${stage} stage was never reached by playing`);
+  }
+  if (seen.includes('hold')) ok(`all four stages ran from the player's own path (${seen.join(' → ')})`);
+
+  if (s.world.silos[TARGET].contact !== 'satellite') {
+    fail('a fully-prepared assault on the weakest silo never took it');
+  } else {
+    ok(`${s.world.silos[TARGET].name} was taken, and is a satellite`);
+  }
+  if (!s.world.satellites.some((x) => x.siloId === TARGET)) fail('a conquered silo was not added to the satellite list');
+  if (!s.stats.silosTaken) fail('taking a silo was not recorded in stats');
+
+  // The whole point of the garrison scaling: the target has to matter.
+  //
+  // Asserting `strong > weak * 3` on the two power figures would be a
+  // tautology — both scale linearly off the same constant, so that ratio is
+  // 95/20 whatever the constant is, and it stayed green against the original
+  // 1.15 that made every silo in the game fall to four people with no
+  // casualties. What broke was the *outcome*, so that is what is measured:
+  // the same squad, the same seeds, against the softest and the hardest
+  // garrison in the world table.
+  const outcomes = (military) => {
+    let wins = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const f = newStore(seed).state;
+      f.clock.day = 200;
+      f.resources.ammo = 9000;
+      const ids = f.citizenIds.filter((i) => f.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+      let g = 0;
+      for (const cid of ids) {
+        for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+          const id = 'g' + ++g;
+          f.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+          f.citizens[cid].gear = { ...(f.citizens[cid].gear || {}), [kind]: id };
+        }
+      }
+      const enemy = garrisonForce({ id: 9, name: 'T', power: { military } }, BAL.conquest.breachGarrisonScale, 0.75);
+      if (resolveCombat(f, ids, enemy, { battleId: 'wiring-cal:' + seed }).outcome.win) wins++;
+    }
+    return wins;
+  };
+  const softWins = outcomes(20);
+  const hardWins = outcomes(95);
+  if (!(softWins - hardWins >= 10)) {
+    fail(
+      `the target's military rating barely changes the breach: ${softWins}/30 wins against a rating of 20, ` +
+      `${hardWins}/30 against 95. A conquest that plays the same against every silo makes the world table decoration.`
+    );
+  } else {
+    ok(`the world table's military column decides the fight: ${softWins}/30 breaches won against 20, ${hardWins}/30 against 95`);
+  }
+}
+
+// ---- 9b. the hard targets are hard, not shut ---------------------------------
+//
+// A mutation exposed this gap: reverting the approach check from the party's
+// *average* quality back to its summed force left §9 green, because §9 takes
+// Selby (military 20) and the summed version only closes the top of the
+// table. That is the worse failure of the two — a stage that is impossible
+// looks exactly like a stage that is merely difficult, and the player cannot
+// tell which they are looking at. So the hardest silo in the world table is
+// asserted to be *reachable*: not likely, not cheap, but not zero.
+{
+  const store = newStore(77);
+  const s = store.state;
+  s.clock.day = 200;
+  const hardest = Object.values(s.world.silos)
+    .filter((x) => x.id !== 12)
+    .sort((a, b) => (b.power?.military ?? 0) - (a.power?.military ?? 0))[0];
+
+  const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMin);
+  let g = 0;
+  for (const cid of ids) {
+    for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+      const id = 'g' + ++g;
+      s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+      s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+    }
+  }
+
+  let scouted = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const exp = { id: 9000 + seed, target: hardest.id, purpose: 'scout', roster: ids, leaderId: ids[0] };
+    const out = resolveConquestRun(s, exp);
+    if (out.actions.some((a) => a.type === 'CONQUEST_PATCH')) scouted++;
+  }
+  if (scouted === 0) {
+    fail(
+      `a best-equipped party could not scout ${hardest.name} (military ${hardest.power.military}) on any of 40 seeds — ` +
+      'the stage is closed, not hard'
+    );
+  } else if (scouted === 40) {
+    fail(`scouting ${hardest.name} (military ${hardest.power.military}) never failed in 40 seeds — the check does nothing`);
+  } else {
+    ok(`the hardest silo is hard, not shut: ${scouted}/40 approach runs on ${hardest.name} got in unseen`);
   }
 }
 

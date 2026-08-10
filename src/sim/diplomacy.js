@@ -469,6 +469,23 @@ export function canAdvance(state, siloId) {
     }
     return { ok: true, stage: 'hold' };
   }
+  // The stage this function never had. A won breach writes stage 'hold', and
+  // every value that is not scout/undermine/breach fell through to "Already
+  // taken." — so a silo whose door had just been forced reported itself as
+  // conquered and refused the assault that actually takes it. It never showed
+  // up because nothing in the game wrote 'hold' in the first place: the only
+  // caller was a test that stopped at breach.
+  //
+  // Note the contract, which the rest of this function set and which is
+  // asserted in test/conquest.mjs: on success `stage` is the stage you may
+  // now *reach*, not the one you are on. `ok: false` means "this stage is not
+  // finished", not "you may not attempt it" — see `canLaunchRun` in
+  // sim/conquest.js, which is what actually gates sending a squad.
+  if (c.stage === 'hold') {
+    const ready = state.military.squadIds.filter((id) => !state.military.squads[id].deployed).length;
+    if (!ready) return { ok: false, stage: 'hold', reason: 'Every squad is already out.' };
+    return { ok: true, stage: 'hold' };
+  }
   return { ok: false, reason: 'Already taken.' };
 }
 

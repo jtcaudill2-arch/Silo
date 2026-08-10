@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -161,6 +161,49 @@ export const MIGRATIONS = {
       if (!floor || typeof floor !== 'object') continue;
       floor.integrity = BAL.silo.condition.start;
       if (floor.excavated) floor.shored = true;
+    }
+    return state;
+  },
+
+  // 16 -> 17: raids resolve, and conquest advances.
+  //
+  // Both features are mostly *reading* fields that already existed, so this
+  // step is small — but it is not empty, and two of the three parts matter to
+  // a save that has been played.
+  //
+  // 1. `world.pendingRaid`. Any save from before this build can be carrying
+  //    one: `PENDING_RAID` has always written it and nothing has ever cleared
+  //    it, so a silo that was raided on day 12 of a 400-day campaign still has
+  //    that raid pending. Left alone, sim/raid.js would resolve it on the
+  //    first day after the load — a day-12 raiding party materialising in a
+  //    silo that has since built an army, or, worse, sacking a silo whose
+  //    squads are all out. It is stale, the player was never given the chance
+  //    to answer it, and the honest thing is to drop it.
+  //
+  // 2. The conquest counters. `conquestState` already falls back to a default
+  //    for a silo with no `conquest` field, so nothing crashes without this —
+  //    but `CONQUEST_PATCH` spreads onto whatever is there, and a silo that
+  //    somehow acquired a partial record would spread onto holes. Fill them.
+  //
+  // 3. The two raid counters, so the ending screen's figures do not start at
+  //    undefined for a campaign that predates them. `STAT_BUMP` creates keys
+  //    on demand, so this is about the *display*, not about the arithmetic.
+  16: (state) => {
+    if (state.world) state.world.pendingRaid = null;
+    for (const silo of Object.values(state.world?.silos || {})) {
+      if (!silo || typeof silo !== 'object') continue;
+      silo.conquest = {
+        stage: null,
+        scoutRuns: 0,
+        undermined: false,
+        defenseMult: 1,
+        ...(silo.conquest || {}),
+      };
+    }
+    if (state.stats) {
+      state.stats.raidsRepelled ??= 0;
+      state.stats.raidsLost ??= 0;
+      state.stats.silosTaken ??= 0;
     }
     return state;
   },

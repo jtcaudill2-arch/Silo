@@ -22,6 +22,7 @@ import { fullName, makeCitizen } from './population.js';
 import { effects as researchEffects } from './research.js';
 import { rollEnemyForce, resolve as resolveCombat, applyResolution } from './combat.js';
 import { squadMembers, readiness } from './military.js';
+import { isConquestRun, resolveRun as resolveConquestRun, canLaunchRun } from './conquest.js';
 
 export const BANDS = BAL.expedition.bands;
 
@@ -141,6 +142,28 @@ export function launch(state, squadId, bandKey, opts = {}) {
   ];
 }
 
+/**
+ * Send a squad against another silo, on whichever conquest stage is current.
+ *
+ * A conquest run is an ordinary expedition — same band, same suit tier, same
+ * supplies, same airlock capacity, same days out — so it goes through
+ * `launch` rather than around it. What makes it a conquest is the `target`
+ * and `purpose` it carries, which `resolveExpedition` reads at the top to
+ * send it to sim/conquest.js instead of into the salvage pipeline below.
+ *
+ * It lives here rather than in conquest.js because conquest.js is imported
+ * *by* this module; putting the launcher there would close the cycle.
+ *
+ * Returns actions, or [] if either gate refuses — conquest's, for whether the
+ * stage can be attempted at all, and `canLaunch`, for whether this squad can
+ * go outside.
+ */
+export function launchConquest(state, squadId, siloId) {
+  const gate = canLaunchRun(state, siloId);
+  if (!gate.ok) return [];
+  return launch(state, squadId, BAL.conquest.band, { target: siloId, purpose: gate.stage });
+}
+
 // -------------------------------------------------------------- resolution ---
 
 /**
@@ -148,6 +171,11 @@ export function launch(state, squadId, bandKey, opts = {}) {
  * time on or after the return day; the result never depends on when.
  */
 export function resolveExpedition(state, expedition) {
+  // A run with a target silo and a purpose that is not salvage is a conquest
+  // sortie, and none of what follows applies to it: no wasteland encounter
+  // table, no loot, no artifacts, no recruits. sim/conquest.js owns it.
+  if (isConquestRun(expedition)) return resolveConquestRun(state, expedition);
+
   const seed = state.meta.seed;
   const band = getBand(expedition.band);
   const bi = bandIndex(expedition.band);

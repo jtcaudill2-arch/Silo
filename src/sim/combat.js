@@ -145,7 +145,11 @@ export function resolve(state, memberIds, enemy, opts = {}) {
 
   const leader = opts.leaderId != null ? state.citizens[opts.leaderId] : members[0];
   const lb = leaderBonus(leader);
-  const af = ammoFactor(state, members.length);
+  // Normally what is in the armoury at home. `ammoFactorOverride` is for a
+  // fight where that is the wrong question: a squad five floors inside
+  // somebody else's silo is carrying what it carried in, and the stores back
+  // home are irrelevant to it. See sim/conquest.js, the hold stage.
+  const af = opts.ammoFactorOverride ?? ammoFactor(state, members.length);
 
   // ---- our effective power ----------------------------------------------
   const powers = members.map((c) => ({
@@ -389,6 +393,26 @@ function modifierLine(mod) {
  * Turn a resolution into actions. Kept separate from resolve() so the same
  * maths can be used for a preview the player sees before committing.
  */
+/**
+ * Where a death happened, by the context that produced the fight.
+ *
+ * This used to be a ternary on `context === 'uprising'`, with everything else
+ * falling through to "on the surface". That was true while the only two
+ * callers were expeditions and uprisings; it stopped being true the moment
+ * somebody could die defending the airlock, which is inside, or on the fifth
+ * floor of somebody else's silo, which is neither.
+ *
+ * A death log that says the wrong place is worse than one that says nothing:
+ * the log is the only record a player has of who this person was and what
+ * happened to them, and it is read long after the event.
+ */
+const DEATH_PLACE = {
+  expedition: 'was killed in action on the surface.',
+  uprising: 'was killed holding the admin floor.',
+  raid: 'was killed holding the airlock.',
+  conquest: 'was killed inside somebody else’s silo.',
+};
+
 export function applyResolution(state, res, { context = 'expedition', kiaKind = 'killed in action' } = {}) {
   const actions = [];
 
@@ -399,10 +423,7 @@ export function applyResolution(state, res, { context = 'expedition', kiaKind = 
       type: 'CITIZEN_DIE',
       id,
       cause: kiaKind,
-      text:
-        context === 'uprising'
-          ? `${fullName(c)}, ${Math.floor(c.age)}, was killed holding the admin floor.`
-          : `${fullName(c)}, ${Math.floor(c.age)}, was ${kiaKind} on the surface.`,
+      text: `${fullName(c)}, ${Math.floor(c.age)}, ${DEATH_PLACE[context] || DEATH_PLACE.expedition}`,
     });
   }
   if (res.casualties.length) {

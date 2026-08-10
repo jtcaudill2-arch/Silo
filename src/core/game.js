@@ -17,6 +17,7 @@ import * as build from '../sim/build.js';
 import * as military from '../sim/military.js';
 import * as expedition from '../sim/expedition.js';
 import * as world from '../sim/world.js';
+import * as raid from '../sim/raid.js';
 import * as diplomacy from '../sim/diplomacy.js';
 import * as order from '../sim/order.js';
 import * as events from '../sim/events.js';
@@ -97,6 +98,9 @@ export class Game {
     // watched it or slept through it (spec §3.4).
     store.dispatchAll(expedition.simulateDay(this.state));
     store.dispatchAll(world.simulateDay(this.state));
+    // After the world, so a raid queued today gets its grace day before this
+    // looks at it, and before events so the day's alert reads in order.
+    store.dispatchAll(raid.simulateDay(this.state));
     store.dispatchAll(diplomacy.simulateTick(this.state));
     this.resolveWorldEvents(dayNo);
     this.syncRadioTier();

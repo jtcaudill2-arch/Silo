@@ -13,6 +13,9 @@ import {
   availableActions, evaluate, perform, bundleValue, hasTreaty,
   conquestState, canAdvance, CONQUEST_STAGES,
 } from '../../sim/diplomacy.js';
+import { canLaunchRun } from '../../sim/conquest.js';
+import { launchConquest, canLaunch } from '../../sim/expedition.js';
+import { squadMembers } from '../../sim/military.js';
 import { inRange, playerPower } from '../../sim/world.js';
 import { lockReason } from '../../sim/unlocks.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmt } from '../dom.js';
@@ -284,10 +287,15 @@ function openSilo(state, shell, silo) {
         )
       );
     }
+    // The button this panel spent six phases describing and never had. Until
+    // it existed the four stages above were a status readout of a ladder with
+    // no rungs: `CONQUEST_PATCH` was dispatched from nowhere in src/, so no
+    // amount of playing could move a conquest off 'scout'.
+    body.appendChild(conquestLaunch(state, shell, silo));
     body.appendChild(
       el(
         'div.note',
-        'Four stages, each a separate expedition. Conquered silos contribute at ' +
+        'Four stages, each a separate expedition on the Silo approach band. Conquered silos contribute at ' +
           `${Math.round(BAL.conquest.satelliteEfficiency * 100)}% and cost you ` +
           `${Math.abs(BAL.conquest.satelliteOrderPerDay)} Order a day. Two is comfortable. Five will break you.`
       )
@@ -299,6 +307,46 @@ function openSilo(state, shell, silo) {
     body,
     wide: true,
     actions: [button('Close', { onclick: () => h.close() })],
+  });
+}
+
+/**
+ * Send a squad on the current stage, or say exactly why not.
+ *
+ * Two gates have to pass and they fail for different reasons, so both are
+ * reported rather than collapsed into one "cannot": `canLaunchRun` knows
+ * about the conquest ladder (charges unresearched, defences unmapped), and
+ * `canLaunch` knows about going outside at all (no suits, no supplies, the
+ * airlock is too small). A player told only "you cannot do this" goes looking
+ * in the wrong panel.
+ */
+function conquestLaunch(state, shell, silo) {
+  const gate = canLaunchRun(state, silo.id);
+  const stage = CONQUEST_STAGES.find((s) => s.id === gate.stage);
+  const label = stage ? `Send a squad — ${stage.name}` : 'Send a squad';
+
+  if (!gate.ok) return el('div.conquest-why', gate.reason);
+
+  const squads = state.military.squadIds
+    .map((id) => state.military.squads[id])
+    .filter((sq) => !sq.deployed && squadMembers(state, sq.id).length >= BAL.military.squadMin);
+
+  if (!squads.length) return el('div.conquest-why', 'No squad of ' + BAL.military.squadMin + '+ is standing by.');
+
+  // Every standing squad fails `canLaunch` for the same reason far more often
+  // than not — suits and supplies are silo-wide — so the first refusal is a
+  // fair thing to show, and it is the one the player has to fix.
+  const ready = squads.find((sq) => canLaunch(state, sq.id, BAL.conquest.band).ok);
+  if (!ready) {
+    return el('div.conquest-why', canLaunch(state, squads[0].id, BAL.conquest.band).reason);
+  }
+
+  return button(`${label} (${ready.name})`, {
+    onclick: () => {
+      shell.store.dispatchAll(launchConquest(shell.store.state, ready.id, silo.id));
+      toast(`${ready.name} is on its way to ${silo.name}.`);
+      shell.renderPanel(true);
+    },
   });
 }
 

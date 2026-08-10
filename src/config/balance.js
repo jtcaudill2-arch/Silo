@@ -1259,6 +1259,81 @@ export const BAL = {
     idleResearchDays: 4,
   },
 
+  // ------------------------------------------------------------ raid ---
+  //
+  // What happens when somebody comes to *you*. Until this existed the world
+  // could put a raiding party on the airlock, write a line in the log, and
+  // then do nothing at all: `PENDING_RAID` wrote `world.pendingRaid` and
+  // nothing in the game ever read it. The coaching line in shell.js said
+  // "Squads defend the silo; without one, the raid takes what it wants",
+  // which was the clearest statement of a mechanic this game did not have.
+  //
+  // It is the only fight the player does not choose. Everything else in the
+  // military layer is opt-in — you decide to open the airlock — so this is
+  // what makes an Armory worth building for a reason other than leaving.
+  raid: {
+    // The beat between the alert and the assault. One day, so the warning is
+    // a warning rather than a result: long enough to recall nobody (a squad
+    // outside is days away and stays outside, which is the point) and long
+    // enough for the player to see the alert before the outcome lands.
+    graceDays: 1,
+    // Defending ground you know, into combat's `terrainSwing`. +1 is the top
+    // of that scale, and a silo corridor against people who have never seen
+    // the inside of it is as one-sided as terrain gets in this game.
+    homeTerrain: 1,
+    // Raiders come as one of the four human bands in data/encounters.js,
+    // picked by the strength the world event carried. `strength` is the
+    // attacker's `power.military / 100`, so Silo 5 at military 88 sends a
+    // warband and a scavenger silo sends scrappers.
+    bandByStrength: [0.25, 0.45, 0.7],
+    // A raiding party is a detachment, not an army. This started at 1.4 — on
+    // the reasoning that a raid is everything a silo can spare — and that was
+    // backwards twice over: the wasteland bands are already sized as roving
+    // forces met in the open (a Warband is sixteen bodies with vehicles and
+    // 960 power), and scaling one *up* produced a fight with no answer.
+    // Measured at 1.4, a Warband raid was 0 wins in 40 at every squad size
+    // and gear tier tested, losing five people each time. A raid that cannot
+    // be defended is the same failure as a raid that does nothing; it just
+    // fails in the other direction, and it makes a liar of the coaching line
+    // that says squads defend the silo.
+    //
+    // 0.5, measured the same way — 40 seeds a cell, defenders on home ground:
+    //
+    //                    4 def T1   6 def T1   8 def T3   6 def T3
+    //   Scrappers          40W        40W        40W        40W
+    //   Dust Runners       23W        36W        40W        40W
+    //   The Slag Crews      2W         9W        40W        38W
+    //   Warband             0W         0W        27W        17W
+    //
+    // Every band has an answer and none of them has the same answer. Pipe
+    // guns turn back scrappers and nothing else; the Slag Crews are what
+    // makes the Armory's tier-3 kit worth building; a Warband off The Anvil
+    // is survivable only by a silo that kept a full, well-armed squad at home
+    // on purpose. Three of the twenty silos can send one — The Anvil (95),
+    // Pell (82) and Gallow Deep (74).
+    sizeScale: 0.5,
+    // What they carry off. Portable things only — nobody walks out with a
+    // reclaimer, and power and water are not in barrels. Ammunition is on the
+    // list on purpose: losing a raid makes the *next* one harder to fight,
+    // which is what stops a sacked silo from shrugging it off.
+    theftKeys: ['scrap', 'parts', 'food', 'meds', 'ammo', 'alloy', 'fuel'],
+    // With nobody standing in the way they take a third of the stores. Enough
+    // to hurt a silo that ignored the warning, not enough to end it — this is
+    // a setback, and a game that deletes a campaign for one missed alert
+    // teaches the player to distrust the alert rather than to act on it.
+    undefendedTheft: 0.34,
+    // Beaten defenders slow them down even when they lose.
+    defendedTheftOnLoss: 0.18,
+    // A repelled raid still costs the stores that burned in the corridor.
+    theftOnWin: 0.04,
+    // Nobody armed, nobody trained, and a door that opens. Deaths are drawn
+    // from whoever was nearest, which is not a squad and not a choice.
+    undefendedDeathChance: 0.55,
+    undefendedDeathsMax: 3,
+    orderOnRepelled: 6,
+    orderOnSacked: -14,
+  },
+
   // -------------------------------------------------------- conquest ---
   conquest: {
     scoutRunsRequired: 2,
@@ -1269,6 +1344,83 @@ export const BAL = {
     breachChargesRequired: 4,
     holdCombats: 5,
     holdGarrisonDays: 30,
+    // ---- what a stage costs to actually attempt ----
+    //
+    // The four stages were a status readout and nothing else: `canAdvance`
+    // was read only by the radio panel to draw a reason string, and
+    // `CONQUEST_PATCH` was dispatched from nowhere in src/ — only by
+    // test/conquest.mjs, driving the reducer by hand. The panel's own note
+    // said "Four stages, each a separate expedition", and the expedition
+    // record has carried unused `target` and `purpose` fields since Phase 5.
+    // These are the numbers that make that sentence true.
+    band: 'approach', // which expedition band a conquest run goes out on
+    // A scout run that goes badly tells them you were looking. That is the
+    // stated cost of failure in CONQUEST_STAGES, and `scoutFailAlertRep` is
+    // what it is worth; this is the ratio below which a run counts as seen.
+    scoutSpottedBelowRatio: 1,
+    // How hard the two non-combat stages are to pass, against the root of the
+    // target's military rating. See `contest` in sim/conquest.js for why it is
+    // the root and not the rating itself. Undermining is the harder of the
+    // two because it has to touch something rather than just look at it.
+    // Measured, 60 seeds a cell, against silo military ratings across the
+    // world table's real spread (20 / 48 / 66 / 95), with a party of four:
+    //
+    //                 tier-2 kit          tier-4 kit
+    //   scout         26 / 7 / 2 / 0      59 / 52 / 43 / 41  (of 60)
+    //   undermine      8 / 0 / 0 / 0      54 / 43 / 33 / 26
+    //
+    // 1.6 was the first value and it made the scout stage a formality for
+    // anyone holding good weapons — 53 of 60 against the hardest silo in the
+    // game — which quietly killed `scoutFailAlertRep`. A cost that never
+    // lands is not a cost, and "Failure alerts them" is the only thing the
+    // stage risks. At 2.6 a well-equipped party still scouts the soft targets
+    // almost every time and gets caught on The Anvil about a third of the
+    // time, which is what makes sending them a decision.
+    scoutDetection: 2.6,
+    undermineDetection: 3.6,
+    // What each body over `squadMin` costs an approach run. A stealth job is
+    // one a small team does better, which is the only thing making the size
+    // of a conquest party a decision rather than "always send everyone".
+    approachSizePenalty: 0.09,
+    // The garrison. `silo.power.military` is a 0-100 rating, so this converts
+    // it into something `combat.resolve` can be handed, scaled by whatever
+    // undermining has already done to `conquest.defenseMult`.
+    //
+    // This was 1.15 first, which was picked by eye and was wrong by about a
+    // factor of five. The tell was not that fights were easy, it was that the
+    // *target did not matter*: a four-person squad in tier-4 gear took Selby
+    // (military 20) and The Anvil (military 88) with the same zero
+    // casualties, so the world table's military column — the one number that
+    // says which silos are dangerous — decided nothing. For scale, at 1.15
+    // the hardest silo in the game fielded 76 power against a Warband of 960
+    // that the same squad meets on an ordinary deep run.
+    //
+    // 6 was measured, not guessed. Forty seeds per cell, a full squad of
+    // `squadMax`, tier-4 suits and mag rifles, defences undermined to 0.75:
+    //
+    //                 breach            hold (5 fights, one load-out)
+    //   military 20   40W / 0L          40/40 taken, 0.0 dead
+    //   military 40   39W / 1L          38/40 taken, 1.2 dead
+    //   military 60   30W / 10L         21/40 taken, 2.9 dead
+    //   military 88   14W / 26L          5/40 taken, 3.9 dead
+    //
+    // Which is the curve the design asks for: the agrarian silo is a
+    // formality once you can reach it, and the one whose hook is "the main
+    // military threat" is a campaign you will lose people over and may lose
+    // outright. Re-measure this cell if `combat.outcomes`, gear tiers or
+    // `squadMax` move — it is the only number holding the difficulty apart.
+    garrisonPowerPerMilitary: 6,
+    // The breach is one fight against everything they have at the door.
+    breachGarrisonScale: 1,
+    // Then five floors, with what is left of what you carried in. Each fight
+    // is against a smaller share of the garrison and each one costs you
+    // ammunition you cannot replace, which is the whole difficulty of the
+    // stage: `holdCombats` fights on one load-out.
+    holdGarrisonScale: 0.45,
+    holdAmmoDecayPerFight: 0.15,
+    // Losing the breach or the hold is not a reset to zero. The stage stands
+    // and can be tried again; what it costs is the squad that tried it.
+    holdFailuresAllowed: 1,
     conqueredStartOrder: 5,
     satelliteEfficiency: 0.4,
     satelliteOrderPerDay: -1, // what each satellite costs *your* order, daily
