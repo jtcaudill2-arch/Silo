@@ -13,9 +13,9 @@
  * schema version is a code fact, not a tuning knob.
  */
 
-import { TIME } from '../config/balance.js';
+import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -80,6 +80,31 @@ export const MIGRATIONS = {
     // current cycle are discarded, which costs at most one shift of progress.
     if (state.clock && Number.isFinite(state.clock.cycle)) {
       state.clock.tick = state.clock.cycle * TIME.ticksPerCycle;
+    }
+    return state;
+  },
+
+  // The silo is 144 levels, not 92. A save written before that has a floors
+  // array 52 entries short, and every consumer indexes it by floor number —
+  // the cross-section, the depth gauge, placement, the camera clamp — so a
+  // short array is not a smaller silo, it is out-of-range reads wherever the
+  // player looks below 92.
+  //
+  // The new levels arrive sealed and unshored, which is what they would have
+  // been had the save been created today. Nothing already dug is touched, and
+  // the descent still stops at `reachableFloors`, so this changes what a
+  // returning player can *see* and nothing about what they can do.
+  13: (state) => {
+    const floors = state.silo?.floors;
+    if (!Array.isArray(floors)) return state;
+    for (let n = floors.length + 1; n <= BAL.silo.totalFloors; n++) {
+      floors.push({
+        n,
+        excavated: false,
+        shored: n < BAL.silo.excavation.shoringRequiredBelowFloor,
+        slots: new Array(BAL.silo.slotsPerFloor).fill(null),
+        integrity: 100,
+      });
     }
     return state;
   },

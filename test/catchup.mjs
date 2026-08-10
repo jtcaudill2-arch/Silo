@@ -316,8 +316,19 @@ function comparable(state) {
     // Without the crisis map, every crisis whose hour had passed fires at
     // once the moment an old save is opened.
     fail('migration did not backfill the Phase 9 crisis and ending fields');
+  } else if (migrated.silo.floors.length !== BAL.silo.totalFloors) {
+    // The silo went from 92 levels to 144. Every consumer indexes floors by
+    // floor number — cross-section, depth gauge, placement, camera clamp — so
+    // an old save's short array is not a smaller silo, it is out-of-range
+    // reads everywhere the player looks below 92.
+    fail(
+      `migration left ${migrated.silo.floors.length} floors, expected ${BAL.silo.totalFloors}`
+    );
   } else {
-    ok(`a version-10 save migrates forward to ${SCHEMA_VERSION}`);
+    ok(
+      `a version-10 save migrates forward to ${SCHEMA_VERSION} ` +
+        `(and grows to ${migrated.silo.floors.length} floors)`
+    );
   }
 
   // A save does not only carry fields, it carries a clock — and `clock.tick`

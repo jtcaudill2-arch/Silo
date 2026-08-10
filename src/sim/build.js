@@ -55,7 +55,8 @@ export function excavationCost(state) {
 }
 
 export function nextFloorToExcavate(state) {
-  for (let i = 0; i < state.silo.floors.length; i++) {
+  const limit = Math.min(state.silo.floors.length, BAL.silo.reachableFloors);
+  for (let i = 0; i < limit; i++) {
     if (!state.silo.floors[i].excavated) return i + 1;
   }
   return null;
@@ -64,7 +65,22 @@ export function nextFloorToExcavate(state) {
 export function canExcavate(state) {
   if (state.silo.excavating) return { ok: false, reason: 'A dig is already under way.' };
   const n = nextFloorToExcavate(state);
-  if (n == null) return { ok: false, reason: 'Every floor is already open.' };
+  if (n == null) {
+    // Two different silences. One is a silo that has opened everything it can
+    // reach; the other is one that has run out of stair, with levels still
+    // drawn underneath it. Saying "every floor is already open" while a
+    // hundred and thirty dark doors are on screen is the game lying.
+    const opened = state.silo.floors.filter((f) => f.excavated).length;
+    if (opened >= BAL.silo.reachableFloors && BAL.silo.reachableFloors < BAL.silo.totalFloors) {
+      return {
+        ok: false,
+        reason:
+          `The stair ends at floor ${BAL.silo.reachableFloors}. Whatever is below it was ` +
+          'sealed from the other side, and nothing the silo currently has will open it.',
+      };
+    }
+    return { ok: false, reason: 'Every floor is already open.' };
+  }
 
   const tier = tierForFloor(n);
   if (!tierUnlocked(state, tier.key)) {

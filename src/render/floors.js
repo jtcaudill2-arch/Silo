@@ -52,9 +52,23 @@ export function drawFloor(ctx, floor, n, cam) {
   const y = (n - 1) * FLOOR_H;
 
   if (!floor.excavated) {
-    // Unexcavated rock. Nothing but a hairline to suggest the level exists.
-    ctx.fillStyle = withAlpha(PALETTE.concrete, 0.14);
+    // A sealed level, and it has to read as sealed rather than as nothing.
+    //
+    // This was a single hairline at 14% alpha, which was right when eight
+    // undug floors sat below the player. There are now a hundred and thirty
+    // eight, and at that count a hairline is not a closed door, it is void —
+    // the silo appeared to simply stop a few floors down. So: a face slightly
+    // above the black of the shaft, a lintel line, and the seam of the door
+    // itself down the middle. Quiet enough that a hundred of them stacked do
+    // not compete with the lit silo above; present enough to say there is
+    // something there and it is shut.
+    ctx.fillStyle = withAlpha(PALETTE.concrete, 0.09);
+    ctx.fillRect(0, y + 1, WORLD_W, FLOOR_H - 2);
+    ctx.fillStyle = withAlpha(PALETTE.concrete, 0.22);
     ctx.fillRect(0, y + FLOOR_H - 1, WORLD_W, 1);
+    const mid = Math.round(WORLD_W / 2);
+    ctx.fillStyle = withAlpha(PALETTE.concrete, 0.3);
+    ctx.fillRect(mid - 1, y + 6, 2, FLOOR_H - 13);
     return;
   }
 

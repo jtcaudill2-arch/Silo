@@ -41,7 +41,17 @@ export const BAL = {
 
   // ----------------------------------------------------------------- silo ---
   silo: {
-    totalFloors: 92,
+    // The silo is 144 levels. All of them exist from the first morning and all
+    // of them are drawn — the point of the number is the scale of what is under
+    // you, not how much of it you can currently open.
+    totalFloors: 144,
+    // How far down the stair currently goes. The tier table below covers 1-92,
+    // so 92 is where the descent ends until the bands are rebuilt across the
+    // full depth (phase B of the sealed-levels spec). Levels past this are
+    // drawn sealed and say so when asked, rather than silently costing Upper
+    // prices — `tierForFloor` falls back to the first tier out of range, which
+    // would have made level 140 look like a cheap dig.
+    reachableFloors: 92,
     slotsPerFloor: 6,
     // Six: the five the starting rooms occupy, and one spare to build the
     // first thing into. It was fourteen, which handed the player eight empty
