@@ -13,6 +13,8 @@
  * schema version is a code fact, not a tuning knob.
  */
 
+import { TIME } from '../config/balance.js';
+
 export const SCHEMA_VERSION = 13;
 
 export const MIGRATIONS = {
@@ -61,6 +63,23 @@ export const MIGRATIONS = {
     state.flags ??= {};
     if (state.flags.tutorialStep === undefined) {
       state.flags.tutorialStep = state.flags.tutorialSeen ? -1 : null;
+    }
+
+    // A cycle became 90 ticks, up from 60, to make a game day 12 real minutes
+    // instead of 8. `clock.tick` is an absolute counter and it is *saved*, and
+    // the loop is reseeded from it on load — so a save written under the old
+    // length has its age recomputed against the new one and travels backwards.
+    // A day-100 silo (tick 48000) reopens on day 66, and every deadline stored
+    // in cycles goes with it: a room three shifts from finished had 269 shifts
+    // left, pregnancies and expedition returns likewise, and the return report
+    // computes a negative day range.
+    //
+    // `cycle` is stored too, and every *UntilCycle field is already denominated
+    // in cycles, so recomputing the tick from the cycle puts the clock and all
+    // of those deadlines back in agreement in one line. Ticks within the
+    // current cycle are discarded, which costs at most one shift of progress.
+    if (state.clock && Number.isFinite(state.clock.cycle)) {
+      state.clock.tick = state.clock.cycle * TIME.ticksPerCycle;
     }
     return state;
   },

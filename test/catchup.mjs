@@ -320,6 +320,35 @@ function comparable(state) {
     ok(`a version-10 save migrates forward to ${SCHEMA_VERSION}`);
   }
 
+  // A save does not only carry fields, it carries a clock — and `clock.tick`
+  // is an absolute counter measured in a unit the build is free to redefine.
+  // It was redefined: a cycle went from 60 ticks to 90, and nothing rescaled
+  // the saved tick, so every existing silo reopened at two-thirds of its age.
+  // A day-100 save came back on day 66 with a room three shifts from finished
+  // now 269 shifts away. Nothing in the suite noticed, because no test had
+  // ever loaded an old save and then asked it what day it was.
+  {
+    const stale = JSON.parse(exportSave(original)).state;
+    const cycle = stale.clock.cycle;
+    const day = stale.clock.day;
+    stale.clock.tick = cycle * 60; // as an old build would have written it
+    const fixed = migrate(stale, 10);
+    const store = new Store(fixed);
+    store.silent = true;
+    new Game(store); // reseeds the loop from clock.tick
+    store.state.clock.tick += 0; // no play — just the reseed
+    if (fixed.clock.tick !== cycle * TIME.ticksPerCycle) {
+      fail(
+        `migrated tick is ${fixed.clock.tick}, expected ${cycle * TIME.ticksPerCycle} ` +
+          `(cycle ${cycle} x ${TIME.ticksPerCycle})`
+      );
+    } else if (Math.floor(fixed.clock.tick / TIME.ticksPerCycle) !== cycle) {
+      fail(`migrated tick ${fixed.clock.tick} does not recompute to cycle ${cycle}`);
+    } else {
+      ok(`an old save keeps its age across a cycle-length change (day ${day}, cycle ${cycle})`);
+    }
+  }
+
   const summary = summarise(original);
   if (!summary.population || summary.day === undefined) fail('slot summary is missing fields');
   else ok(`slot summary: ${summary.siloName}, day ${summary.day}, ${summary.population} residents`);
