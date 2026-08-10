@@ -32,7 +32,9 @@ import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
 import { topDirective } from '../src/sim/directives.js';
-import { canBuild, build, canExcavate, startExcavation, canRepair, repair } from '../src/sim/build.js';
+import {
+  canBuild, build, canExcavate, startExcavation, canRepair, repair, canShore, shoreFloor,
+} from '../src/sim/build.js';
 import { canStart } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { getRoom } from '../src/data/rooms.js';
@@ -116,6 +118,11 @@ function obey(state, d) {
       const check = canRepair(state, d.roomId);
       if (!check.ok) return `refused: ${check.reason}`;
       return { actions: repair(state, d.roomId), note: d.id === 'restore' ? 'restored' : 'repaired' };
+    }
+    case 'shore': {
+      const check = canShore(state, d.floor);
+      if (!check.ok) return `refused: ${check.reason}`;
+      return { actions: shoreFloor(state, d.floor), note: `shored floor ${d.floor}` };
     }
     case 'staff':
       return { actions: autoAssign(state), note: 'crewed empty posts' };

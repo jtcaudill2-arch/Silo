@@ -196,7 +196,13 @@ const siloReducers = {
     const floor = state.silo.floors[a.floor - 1];
     if (floor) {
       floor.excavated = true;
-      floor.shored = a.shored ?? floor.n < BAL.silo.excavation.shoringRequiredBelowFloor;
+      // A floor opens shored. Above the line it never needed it; below the
+      // line `excavationCost` charged alloy for it and would not let the dig
+      // start without it. This used to read `floor.n < shoringRequiredBelow`,
+      // which marked every deep floor unshored the moment it was paid for —
+      // the player bought shoring on all 110 of them and got none of it.
+      floor.shored = a.shored ?? true;
+      floor.integrity = 100;
     }
     state.silo.excavating = null;
 

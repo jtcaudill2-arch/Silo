@@ -23,7 +23,9 @@ import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
 import { readEnvironment } from './population.js';
 import { available as availableResearch } from './research.js';
-import { canBuild, canExcavate, canRepair, buildCostFor, describeCost } from './build.js';
+import {
+  canBuild, canExcavate, canRepair, canShore, strainedFloors, buildCostFor, describeCost,
+} from './build.js';
 import { staffSlots, inService } from './economy.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
@@ -453,6 +455,28 @@ export function directives(state) {
         'and if it is making power the rest of the silo stops with it.',
       panel: 'build',
       weight: 85 - worst.condition,
+    });
+  }
+
+  // ---- a floor the rock is taking back -----------------------------------
+  //
+  // Ranked on how far gone it is, the same way a failing room is, and for the
+  // same reason: a floor at fifty is worth doing before the next dig, and one
+  // at five is worth doing before almost anything. It is the more expensive
+  // failure of the two — a collapse breaches every room on the level and can
+  // kill the shift standing in them — so it tops out slightly above a repair.
+  const worstFloor = strainedFloors(state)[0];
+  if (worstFloor) {
+    add({
+      id: 'shore',
+      text: `Shore floor ${worstFloor.n}`,
+      floor: worstFloor.n,
+      why:
+        `The shoring is down to ${Math.round(worstFloor.integrity)} and the floor is carrying ` +
+        `${worstFloor.load} bays. At zero it comes down: every room on it is wrecked and some of ` +
+        'the crew do not get out.',
+      panel: 'build',
+      weight: BAL.directives.shoreTop - worstFloor.integrity,
     });
   }
 
@@ -932,6 +956,14 @@ export function directives(state) {
   // is written for "Build a …" orders and would produce "Save up for a Repair
   // the Generator Hall on floor 4".
   for (const d of out) {
+    if (d.id === 'shore' && d.floor) {
+      // Same treatment, same reason: a floor the silo cannot currently afford
+      // to shore still has to be said out loud, with the shortfall on it. This
+      // is the one order where going quiet costs the player a whole level.
+      const check = canShore(state, d.floor);
+      if (!check.ok && check.cost) d.blocked = shortOf(state, check.cost);
+      continue;
+    }
     if (d.id !== 'repair' || !d.roomId) continue;
     const check = canRepair(state, d.roomId);
     if (!check.ok && check.cost) d.blocked = shortOf(state, check.cost);

@@ -14,7 +14,10 @@
 import { BAL } from '../src/config/balance.js';
 import { getRoom } from '../src/data/rooms.js';
 import { autoAssign } from '../src/sim/jobs.js';
-import { canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade, canRepair, repair } from '../src/sim/build.js';
+import {
+  canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade, canRepair, repair,
+  canShore, shoreFloor, strainedFloors,
+} from '../src/sim/build.js';
 import { canStart, isComplete } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { readEnvironment } from '../src/sim/population.js';
@@ -124,6 +127,17 @@ export function autopilot(state) {
   if (damaged) {
     const fix = canRepair(state, damaged.id);
     if (fix.ok) actions.push(...repair(state, damaged.id));
+  }
+
+  // ---- 2b. hold the deep. A floor that runs out of shoring breaches every
+  //          room on it and kills part of the shift, which is a worse morning
+  //          than any single repair — but it announces itself fifty days out,
+  //          so a competent player deals with it well before it is urgent and
+  //          never at the expense of something that is. ---------------------
+  const failing = strainedFloors(state)[0];
+  if (failing) {
+    const prop = canShore(state, failing.n);
+    if (prop.ok) actions.push(...shoreFloor(state, failing.n));
   }
 
   // ---- 3. the build queue, in the order a player would panic ----------

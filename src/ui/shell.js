@@ -41,6 +41,8 @@ import {
   repair,
   canExcavate,
   startExcavation,
+  canShore,
+  shoreFloor,
 } from '../sim/build.js';
 import { autoAssign } from '../sim/jobs.js';
 import { liveResourceKeys, newlyUnlocked, unlockedIds } from '../sim/unlocks.js';
@@ -572,6 +574,7 @@ export class Shell {
     // repair path — it is the same bill — but "Repair" reads as fixing damage
     // the silo did, and this is the opposite: a room the silo never had.
     if (d.id === 'restore' && d.roomId) return { label: 'Restore', run: () => this.doRepair(d.roomId) };
+    if (d.id === 'shore' && d.floor) return { label: 'Shore', run: () => this.doShore(d.floor) };
     if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
     if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
     const panel = this.panels.get(d.panel);
@@ -584,6 +587,10 @@ export class Shell {
     const d = this._directive;
     const room = d?.roomId ? this.state.silo.rooms[d.roomId] : null;
     if (room) this.focusFloor(room.floor);
+    // An order about a floor rather than a room still names a place, and the
+    // cross-section should go there — "Shore floor 136" is a search task
+    // otherwise, and the silo is a hundred and forty-four levels deep.
+    else if (d?.floor) this.focusFloor(d.floor);
     if (d?.panel) this.open(d.panel);
   }
 
@@ -613,6 +620,17 @@ export class Shell {
     }
     this.store.dispatchAll(actions);
     toast(`${actions.length} resident${actions.length === 1 ? '' : 's'} posted.`);
+  }
+
+  doShore(n) {
+    const check = canShore(this.state, n);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      return;
+    }
+    this.store.dispatchAll(shoreFloor(this.state, n));
+    toast(`Floor ${n} shored. The supports are new.`);
+    this.focusFloor(n);
   }
 
   doExcavate() {

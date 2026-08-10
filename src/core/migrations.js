@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -123,6 +123,34 @@ export const MIGRATIONS = {
     if (!rooms) return state;
     for (const room of Object.values(rooms)) {
       if (room && typeof room === 'object') room.found ??= false;
+    }
+    return state;
+  },
+
+  // 15 -> 16: Phase D. `floor.integrity` and `floor.shored` stop being
+  // decoration and start being the thing that decides whether the deep stays
+  // the player's.
+  //
+  // This one gives something back rather than taking it. `excavationCost`
+  // has always charged alloy for shoring on every floor below the line, and
+  // `EXCAVATION_COMPLETE` has always marked those same floors unshored — so
+  // an existing save is carrying a hundred-odd deep floors the player bought
+  // supports for and never received. Under the old rules that cost them
+  // nothing, because the only thing reading `shored` wrote to a field nothing
+  // read. Under the new ones it would quadruple the decay on every deep floor
+  // in the silo the moment they reopened the game, for a bill they had already
+  // paid.
+  //
+  // So: every excavated floor is shored, and every floor starts sound. A
+  // returning silo is exactly as deep and exactly as safe as it was, and the
+  // clock on holding it starts now.
+  15: (state) => {
+    const floors = state.silo?.floors;
+    if (!Array.isArray(floors)) return state;
+    for (const floor of floors) {
+      if (!floor || typeof floor !== 'object') continue;
+      if (!Number.isFinite(floor.integrity)) floor.integrity = BAL.silo.condition.start;
+      if (floor.excavated) floor.shored = true;
     }
     return state;
   },

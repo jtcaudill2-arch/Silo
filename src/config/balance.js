@@ -106,6 +106,74 @@ export const BAL = {
       shoringAlloyPerFloor: 6,
       collapseChancePerDayUnshored: 0.02,
     },
+    // What it costs to keep the deep, rather than to reach it.
+    //
+    // Until this existed the bottom of the silo was dangerous for exactly one
+    // day — the day the seal came off — and safe for ever after. A player who
+    // survived the dig owned the floor outright, which made a hundred and
+    // forty-four levels a list of things you had done rather than a place you
+    // were holding.
+    //
+    // The rock does not stop. Below the shoring line every floor works against
+    // its own supports, and what it works against them with is the weight you
+    // put on it: an empty level holds itself indefinitely and is not tracked
+    // at all, and a level carrying six bays of machinery is the one that needs
+    // watching. That is deliberate — the danger should be proportional to what
+    // the player decided to put down there, so the Reactor on floor 136 is a
+    // commitment to floor 136 and not just a good afternoon.
+    strain: {
+      // Integrity points per day, per occupied slot, at the first strained
+      // tier and with the shoring intact. Everything else multiplies this.
+      //
+      // Sized against the levels it is meant to bite: a fully built floor in
+      // the Foundations runs down in about 155 days, one on the Shaft Floor in
+      // about 115, and one in the Mids in over 380 — so the top of the strained
+      // range is a formality and the bottom is a standing commitment. Two bays
+      // on a deep floor last four hundred days and change, which is the point:
+      // holding less costs less.
+      decayPerDayPerSlot: 0.13,
+      // A floor in use carries a burden of its own, before anything is counted
+      // by the bay: it is lit, it has people walking it, and it is being held
+      // open. Empty floors are still skipped entirely, so this is not a tax on
+      // depth — it is the difference between a level the silo uses and one it
+      // merely owns.
+      //
+      // It is here because the first cut was purely per-slot, and measured
+      // against a real campaign that made the whole system inert: a played
+      // silo does not build six bays on floor 108, it restores the one room
+      // the dig turned up there. Nine hundred days, twelve loaded deep floors,
+      // not one warning and not one collapse. A mechanic the player never
+      // meets is a mechanic that does not exist, so a lightly used deep floor
+      // now drifts to the warning line in a couple of hundred days rather than
+      // a couple of thousand, while a fully built one is unchanged.
+      occupiedFloorBase: 1.5,
+      perSlot: 0.85,
+      // The tier step, same shape as the dig price. Depth is the difficulty
+      // dial everywhere else in the descent; it would be strange here alone
+      // for the Foundations to strain like the Mids.
+      tierMultiplier: 1.35,
+      // What intact shoring buys. Large, because shoring is the whole lever:
+      // a floor whose supports have gone runs down four times as fast, which
+      // turns a collapse into a countdown rather than a coin toss.
+      shoredMultiplier: 0.25,
+      // The floor starts saying so. At the fastest strain in the game this is
+      // about fifty days of warning before anything is damaged, and a hundred
+      // and fifteen before the floor gives.
+      warnBelow: 55,
+      // Below this the structure starts working on the rooms themselves,
+      // scaling to `roomWearPerDay` as integrity reaches zero. A floor eating
+      // its own machinery is the last warning before it goes.
+      strainBelow: 30,
+      roomWearPerDay: 1.2,
+      // At zero the floor gives way: the shoring is gone, everything standing
+      // on it is breached, and some of the crew do not get clear.
+      crewLostChance: 0.35,
+      // Re-shoring an open floor. Alloy on top of the dig's own shoring bill,
+      // because this is the same job done again in a working silo with rooms
+      // in the way, plus the scrap for the timber and plate.
+      reshoreAlloyMultiplier: 1.5,
+      reshoreScrapPerFloor: 40,
+    },
     merge: {
       maxWidth: 3,
       efficiencyPerStep: 0.15, // +15% output per merge step
@@ -792,6 +860,11 @@ export const BAL = {
     // like an ordinary repair put it in the eighties and had obedient silos
     // buying schoolhouses instead of laboratories.
     restoreFound: 40,
+    // The top of the shoring band, minus the floor's remaining integrity. A
+    // fresh warning at 55 lands on 33 — just above digging, which is exactly
+    // the trade being offered: hold what you have before you open more. A
+    // floor at 5 lands on 83, above everything but life support.
+    shoreTop: 88,
   },
 
   // ---------------------------------------------------------- military ---

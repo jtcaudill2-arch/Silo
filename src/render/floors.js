@@ -83,10 +83,24 @@ export function drawFloor(ctx, floor, n, cam) {
     ctx.fillRect(s * SLOT_W + GAP, y + GAP, SLOT_W - GAP * 2, FLOOR_H - 3 - GAP * 2);
   }
 
-  // Structural warning on an unshored deep floor.
-  if (!floor.shored && n >= BAL.silo.excavation.shoringRequiredBelowFloor) {
-    ctx.fillStyle = PALETTE.rust;
-    for (let x = 4; x < WORLD_W; x += 24) ctx.fillRect(x, y + 1, 8, 1);
+  // What the rock is doing to this floor, read straight off its integrity.
+  //
+  // It used to be one bit — shored or not — which drew the same mark on a
+  // floor with two hundred days in it as on one about to come down. The
+  // standing order names a floor number; this is what makes that number
+  // findable by scrolling, so the hatching thickens as the floor runs down and
+  // goes solid once the shoring has actually failed.
+  if (n >= BAL.silo.excavation.shoringRequiredBelowFloor) {
+    const S = BAL.silo.strain;
+    const integrity = Number.isFinite(floor.integrity) ? floor.integrity : 100;
+    const gone = !floor.shored;
+    if (gone || integrity < S.warnBelow) {
+      const t = gone ? 1 : Math.min(1, (S.warnBelow - integrity) / S.warnBelow);
+      ctx.fillStyle = withAlpha(PALETTE.rust, 0.4 + 0.6 * t);
+      const step = gone ? 12 : 24;
+      const dash = gone ? 10 : 8;
+      for (let x = 4; x < WORLD_W; x += step) ctx.fillRect(x, y + 1, dash, gone ? 2 : 1);
+    }
   }
 }
 

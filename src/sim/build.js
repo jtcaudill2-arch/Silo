@@ -563,11 +563,143 @@ export function demolish(state, roomId) {
   ];
 }
 
+// ------------------------------------------------------------ holding it ---
+
+/** Rooms standing on a floor. */
+function roomsOn(state, n) {
+  return Object.values(state.silo.rooms).filter((r) => r.floor === n);
+}
+
+/** How much of a floor is carrying something. Empty floors hold themselves. */
+function occupiedSlots(state, n) {
+  return roomsOn(state, n).reduce((sum, r) => sum + r.width, 0);
+}
+
+/** Is this a floor the rock is still working on? */
+function strains(floor) {
+  return !!floor?.excavated && floor.n >= BAL.silo.excavation.shoringRequiredBelowFloor;
+}
+
+/** Integrity a floor loses in a day, before research resistance. */
+function strainPerDay(state, floor, load) {
+  const S = BAL.silo.strain;
+  const tierIdx = BAL.silo.tiers.findIndex((t) => t.key === tierForFloor(floor.n).key);
+  return (
+    S.decayPerDayPerSlot *
+    Math.pow(S.tierMultiplier, Math.max(0, tierIdx)) *
+    (S.occupiedFloorBase + load * S.perSlot) *
+    (floor.shored ? S.shoredMultiplier : 1)
+  );
+}
+
+/**
+ * The floor goes.
+ *
+ * Deliberately survivable. Everything standing on it is breached rather than
+ * deleted — `breached` is a state the repair machinery already understands, so
+ * a lost floor is an expensive morning and not a save the player has to walk
+ * away from. What does not come back is the crew who were standing in it, and
+ * the shoring, which has to be bought again before the floor is worth anything.
+ */
+function collapse(state, floor, rng) {
+  const S = BAL.silo.strain;
+  const actions = [
+    { type: 'FLOOR_PATCH', n: floor.n, patch: { shored: false, integrity: 0 } },
+    {
+      type: 'LOG',
+      entry: {
+        kind: 'warn',
+        text:
+          `The shoring on floor ${floor.n} has failed and the floor has come down on itself. ` +
+          'Everything on it is wrecked, and it will hold nothing until it is shored again.',
+      },
+    },
+  ];
+
+  for (const room of roomsOn(state, floor.n)) {
+    const def = getRoom(room.type);
+    actions.push({ type: 'ROOM_PATCH', id: room.id, patch: { condition: 0, breached: true } });
+    actions.push({
+      type: 'LOG',
+      entry: { kind: 'alert', text: `${def?.name || room.type} on floor ${floor.n} was crushed. It can be rebuilt from what is left.` },
+    });
+    // Every death in this game is named and has a cause, so this rolls per
+    // person rather than taking a shift wholesale.
+    for (const cid of room.staff) {
+      const c = state.citizens[cid];
+      if (!c || c.status === 'dead') continue;
+      if (!rng.chance(S.crewLostChance)) continue;
+      actions.push({ type: 'CITIZEN_DIE', id: cid, cause: 'crushed in the collapse of floor ' + floor.n, day: state.clock.day });
+    }
+  }
+  return actions;
+}
+
+/** What it costs to put the shoring back on an open floor. */
+export function shoreCost(state, n) {
+  const S = BAL.silo.strain;
+  const tierIdx = BAL.silo.tiers.findIndex((t) => t.key === tierForFloor(n).key);
+  const step = Math.pow(BAL.silo.excavation.tierMultiplier, Math.max(0, tierIdx));
+  const discount = 1 + (effects(state).shoringCost || 0);
+  return {
+    alloy: Math.max(1, Math.round(BAL.silo.excavation.shoringAlloyPerFloor * step * S.reshoreAlloyMultiplier * discount)),
+    scrap: Math.round(S.reshoreScrapPerFloor * step),
+  };
+}
+
+export function canShore(state, n) {
+  const floor = state.silo.floors[n - 1];
+  if (!floor) return { ok: false, reason: 'No such floor.' };
+  if (!floor.excavated) return { ok: false, reason: `Floor ${n} has not been opened.` };
+  if (!strains(floor)) {
+    return { ok: false, reason: `Floor ${n} is above the shoring line. The rock holds itself up here.` };
+  }
+  if (floor.shored && (floor.integrity ?? 100) >= BAL.silo.condition.start) {
+    return { ok: false, reason: `The shoring on floor ${n} is sound.` };
+  }
+  const cost = shoreCost(state, n);
+  const short = shortfall(state, cost);
+  if (short) return { ok: false, reason: `Not enough ${short}. Shoring floor ${n} needs ${describeCost(cost)}.`, cost };
+  return { ok: true, cost };
+}
+
+export function shoreFloor(state, n) {
+  const check = canShore(state, n);
+  if (!check.ok) return [];
+  const deltas = {};
+  for (const [k, v] of Object.entries(check.cost)) deltas[k] = -v;
+  return [
+    { type: 'RESOURCE_DELTA', deltas },
+    { type: 'FLOOR_PATCH', n, patch: { shored: true, integrity: BAL.silo.condition.start } },
+    {
+      type: 'LOG',
+      entry: { kind: 'alert', text: `Floor ${n} has been shored again. The supports are new and the floor is sound.` },
+    },
+  ];
+}
+
+/**
+ * Floors the rock is winning against, worst first. The standing orders and the
+ * cross-section both read this, so "which floor" only has one answer.
+ */
+export function strainedFloors(state) {
+  const out = [];
+  for (const floor of state.silo.floors) {
+    if (!strains(floor)) continue;
+    const load = occupiedSlots(state, floor.n);
+    if (load === 0) continue;
+    const integrity = Number.isFinite(floor.integrity) ? floor.integrity : 100;
+    if (integrity >= BAL.silo.strain.warnBelow) continue;
+    out.push({ n: floor.n, integrity, load, shored: !!floor.shored });
+  }
+  return out.sort((a, b) => a.integrity - b.integrity);
+}
+
 // ---------------------------------------------------------------- daily ---
 
 /**
- * Structural risk. Unshored deep floors can collapse; rooms at zero
- * condition can breach. Both are per-day rolls (spec §4).
+ * Structural risk. Deep floors carrying rooms wear their own shoring down;
+ * rooms at zero condition can breach. Both are per-day (spec §4).
  */
 export function simulateDay(state, rng) {
   const actions = [];
@@ -575,19 +707,48 @@ export function simulateDay(state, rng) {
   const resist = 1 - (e.collapseResist || 0);
 
   for (const floor of state.silo.floors) {
-    if (!floor.excavated || floor.shored) continue;
-    if (floor.n < BAL.silo.excavation.shoringRequiredBelowFloor) continue;
-    const load = Object.values(state.silo.rooms).filter((r) => r.floor === floor.n).length;
-    if (load === 0) continue;
-    if (rng.chance(BAL.silo.excavation.collapseChancePerDayUnshored * resist * load)) {
-      actions.push({ type: 'FLOOR_PATCH', n: floor.n, patch: { integrity: Math.max(0, floor.integrity - 35) } });
-      actions.push({
-        type: 'LOG',
-        entry: {
-          kind: 'alert',
-          text: `Partial collapse on floor ${floor.n}. It was never shored, and it is carrying ${load} rooms.`,
-        },
-      });
+    const load = occupiedSlots(state, floor.n);
+    if (!strains(floor) || load === 0) continue;
+
+    const before = Number.isFinite(floor.integrity) ? floor.integrity : 100;
+    const after = Math.max(0, before - strainPerDay(state, floor, load) * resist);
+    actions.push({ type: 'FLOOR_PATCH', n: floor.n, patch: { integrity: after } });
+
+    // ---- the floor gives way --------------------------------------------
+    if (after <= 0 && before > 0) {
+      actions.push(...collapse(state, floor, rng));
+      continue;
+    }
+
+    // ---- it starts working on what is standing on it ---------------------
+    const S = BAL.silo.strain;
+    if (after < S.strainBelow) {
+      const bite = S.roomWearPerDay * (1 - after / S.strainBelow);
+      for (const room of roomsOn(state, floor.n)) {
+        actions.push({
+          type: 'ROOM_PATCH',
+          id: room.id,
+          patch: { condition: Math.max(0, room.condition - bite) },
+        });
+      }
+    }
+
+    // ---- and it says so, once, on the way past each line ------------------
+    for (const line of [S.strainBelow, S.warnBelow]) {
+      if (before >= line && after < line) {
+        actions.push({
+          type: 'LOG',
+          entry: {
+            kind: 'warn',
+            text:
+              line === S.warnBelow
+                ? `The shoring on floor ${floor.n} is working. It is carrying ${load} bays and the rock is taking them back — ` +
+                  'shore it again before it starts pulling the rooms apart.'
+                : `Floor ${floor.n} is coming apart around its own machinery. Everything on it is taking damage every day ` +
+                  'until it is shored.',
+          },
+        });
+      }
     }
   }
 
