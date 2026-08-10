@@ -157,7 +157,17 @@ export function painter(px, atlasW, at) {
       if (w > 2) p.vline(x + 1, y + 1, h - 2, shade(c, lit));
       if (h > 2) p.hline(x + 1, y + h - 2, w - 2, shade(c, shaded));
       if (w > 2) p.vline(x + w - 2, y + 1, h - 2, shade(c, shaded));
-      if (outline) p.frame(x, y, w, h, outline);
+      // A 1px keyline on every side needs 3px to have anything left in the
+      // middle. Below that the outline eats the whole shape and the colour
+      // argument is silently discarded — a 2x5 box came out as ten pixels of
+      // solid ink, which is what every union collar in the game was. Outline
+      // only the long sides of a thin shape, so it still reads as a raised
+      // band and still keeps its metal.
+      if (outline) {
+        if (w >= 3 && h >= 3) p.frame(x, y, w, h, outline);
+        else if (w < 3 && h >= 3) { p.hline(x, y, w, outline); p.hline(x, y + h - 1, w, outline); }
+        else if (h < 3 && w >= 3) { p.vline(x, y, h, outline); p.vline(x + w - 1, y, h, outline); }
+      }
       return p;
     },
 
@@ -214,8 +224,21 @@ export function painter(px, atlasW, at) {
      * that stops a pipe reading as a painted stripe.
      */
     collar(x, y, thick = 3, horizontal = true, c = PAL.steelLit) {
-      if (horizontal) p.box(x, y - 1, 2, thick + 2, c, { lit: 0.25, shaded: -0.25 });
-      else p.box(x - 1, y, thick + 2, 2, c, { lit: 0.25, shaded: -0.25 });
+      // Three across the run, not two: a collar wants a lit face, a body and
+      // a shaded face, and at two pixels there is no room for a body at all.
+      if (horizontal) {
+        p.rect(x, y - 1, 3, thick + 2, c);
+        p.vline(x, y - 1, thick + 2, shade(c, 0.34));
+        p.vline(x + 2, y - 1, thick + 2, shade(c, -0.3));
+        p.hline(x, y - 2, 3, PAL.ink);
+        p.hline(x, y + thick + 1, 3, PAL.ink);
+      } else {
+        p.rect(x - 1, y, thick + 2, 3, c);
+        p.hline(x - 1, y, thick + 2, shade(c, 0.34));
+        p.hline(x - 1, y + 2, thick + 2, shade(c, -0.3));
+        p.vline(x - 2, y, 3, PAL.ink);
+        p.vline(x + thick + 1, y, 3, PAL.ink);
+      }
       return p;
     },
 

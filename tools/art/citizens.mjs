@@ -2024,7 +2024,7 @@ async function selfTest() {
   const total = frames + ROLES.length;
   if (fails.length) {
     console.error(`citizens: ${fails.length} failure(s) across ${total} renders`);
-    for (const f of fails.slice(0, 30)) console.error(`  - ${f}`);
+    for (const f of fails.slice(0, 300)) console.error(`  - ${f}`);
     process.exitCode = 1;
   } else {
     console.log(`citizens: ok — ${frames} sprite frames + ${ROLES.length} portraits, `
