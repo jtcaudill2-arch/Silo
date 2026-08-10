@@ -81,6 +81,11 @@ function obey(state, d) {
     return { actions: build(state, spot.floor, spot.slot, d.room), note: `built ${d.room}` };
   }
 
+  // An order that says to wait is an order, and obeying it means doing
+  // nothing today. Flagged on the directive rather than matched by id so a
+  // new hold-style order doesn't read as advice the player cannot follow.
+  if (d.wait) return 'nothing to do';
+
   switch (d.id) {
     case 'repair': {
       const check = canRepair(state, d.roomId);

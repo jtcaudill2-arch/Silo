@@ -41,7 +41,14 @@ const note = (m) => notes.push(m);
 registerCoreReducers();
 
 /** §16, converted to game days. One real minute is one cycle; eight is a day. */
-const minutesToDays = (m) => m / TIME.cyclesPerDay;
+// Crises are scheduled in real elapsed minutes, so converting to game days
+// needs the real length of a day. This used to divide by cyclesPerDay alone,
+// which is only the same number while a cycle happens to last exactly one real
+// minute — true at 60 ticks per cycle, and quietly wrong at 90, where it put
+// every scheduled beat a third late and read as the game firing crises early.
+const REAL_MINUTES_PER_DAY =
+  (BAL.time.TICK_MS * TIME.ticksPerCycle * TIME.cyclesPerDay) / 60_000;
+const minutesToDays = (m) => m / REAL_MINUTES_PER_DAY;
 const STAGES = [
   { name: 'Opening', toMinutes: 45, pop: [180, 200], want: ['first Workshop'] },
   { name: 'Early', toMinutes: 240, pop: [200, 260], want: ['Radio Room online', 'Mids excavated'] },

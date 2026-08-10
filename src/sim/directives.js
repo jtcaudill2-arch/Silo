@@ -59,6 +59,12 @@ import { canStart } from './research.js';
  */
 const LIFE_SUPPORT_TOP = 95;
 const RUNWAY_HORIZON = 15;
+// A life-support surplus thinner than this fraction of current draw is treated
+// as a problem you can still build your way out of, rather than one you can't.
+const THIN_MARGIN = 0.35;
+// Above the "no income" band (76–79) — running out of food outranks being
+// poor — and below a line that is already falling (80–95).
+const MARGIN_TOP = 79;
 
 /**
  * How far an order sinks when the silo cannot currently pay for it.
@@ -93,6 +99,9 @@ const has = (state, type) =>
   Object.values(state.silo.rooms).some((r) => r.type === type && r.buildingUntilCycle === 0);
 const count = (state, type) =>
   Object.values(state.silo.rooms).filter((r) => r.type === type).length;
+
+/** "a Generator Hall" / "an Airlock", for naming a room mid-sentence. */
+const aOrAn = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
 
 /**
  * How far short of affording a room the silo is, as readable text, or null if
@@ -157,6 +166,40 @@ export function directives(state) {
         : `${noun} is falling — it runs out ${when} at the current rate.`,
       panel: 'build',
       weight: LIFE_SUPPORT_TOP - Math.min(days, RUNWAY_HORIZON),
+    });
+  }
+
+  // ---- about to *start* killing somebody --------------------------------
+  // The block above only speaks once net flow has gone negative, which for a
+  // growing silo is already too late. A bay produces a fixed amount and people
+  // eat per head, so food sits comfortably positive right up until the
+  // population crosses what one bay can carry and then flips — with the tank
+  // still full, so the runway reads as years and nothing sounds urgent until
+  // the tank drains. Obedient players starved through that gap: they were told
+  // to build a fourth Laboratory on day 15 and never told to build a second
+  // hydroponics at all.
+  //
+  // So watch the *margin*, not the level: when a bay's surplus falls under a
+  // third of what the silo is already drawing, the next dozen births eat it.
+  for (const key of ['water', 'food']) {
+    if (runway(state, key) !== Infinity) continue; // already falling — handled above
+    const f = state.flows?.[key];
+    const draw = f?.out ?? 0;
+    if (draw <= 0) continue;
+    const margin = (f.in - draw) / draw;
+    if (margin >= THIN_MARGIN) continue;
+    const type = key === 'water' ? 'water_reclaimer' : 'hydroponics';
+    const def = getRoom(type);
+    const noun = key === 'water' ? 'Water' : 'Food';
+    add({
+      id: `margin_${key}`,
+      text: `Build another ${def.name}`,
+      room: type,
+      why:
+        `${noun} production is only ${Math.round(margin * 100)}% ahead of what the silo drinks. ` +
+        'A bay makes a fixed amount and people eat per head, so the next few births take it negative.',
+      panel: 'build',
+      weight: MARGIN_TOP - Math.round(margin * 10),
     });
   }
 
@@ -244,11 +287,19 @@ export function directives(state) {
   if (count(state, 'laboratory') === 0) {
     add({
       id: 'laboratory',
+      // Above the income orders (75), not below them. Salvage throughput can
+      // always be argued to be a little short, so a first Laboratory ranked
+      // under it never comes up at all: an obedient silo ran 200 days and 46
+      // rooms and never researched anything, because "build another Recycling
+      // plant" was always one place higher. Ranking it above is safe because
+      // an unaffordable order is demoted by UNAFFORDABLE_PENALTY anyway — so a
+      // silo too poor for a Laboratory still gets told to fix its income
+      // first, and a silo that can pay for one is told to go and do it.
       text: 'Build a Laboratory',
       room: 'laboratory',
       why: 'Nothing else in the silo produces research points, and every deeper floor, every suit and every treaty is behind one. It costs 220 scrap, so it waits until nothing is running out.',
       panel: 'build',
-      weight: 65,
+      weight: 76,
     });
   }
 
@@ -261,8 +312,10 @@ export function directives(state) {
   // afford let a hundred and eighty people die of thirst. Repairs are priced
   // in scrap too, so a worn silo with thin income spirals.
   const pop = Math.max(1, state.citizenIds.length);
-  const wantScrap = (BAL.alerts.scrapPerCyclePerHundred * pop) / 100;
-  const wantParts = (BAL.alerts.partsPerCyclePerHundred * pop) / 100;
+  // A floor plus a per-head rate: room prices are flat, so a small silo needs
+  // roughly as much income as a large one before it can afford anything.
+  const wantScrap = BAL.alerts.scrapBasePerCycle + (BAL.alerts.scrapPerCyclePerHundred * pop) / 100;
+  const wantParts = BAL.alerts.partsBasePerCycle + (BAL.alerts.partsPerCyclePerHundred * pop) / 100;
   if (count(state, 'recycling') > 0 && flow(state, 'scrap') < wantScrap) {
     add({
       id: 'scrap_income',
@@ -411,6 +464,7 @@ export function directives(state) {
     } else {
       add({
         id: 'steady',
+        wait: true,
         text: 'The silo is steady',
         why: 'Nothing is failing and nothing is running out. A good time to dig, or to look at what is outside.',
         panel: 'build',
@@ -429,6 +483,70 @@ export function directives(state) {
     d.weight -= UNAFFORDABLE_PENALTY;
     if (!/short/.test(d.why)) {
       d.why = `${d.why} The silo is ${short} short of one.`;
+    }
+  }
+
+  // If the best remaining order is still one the silo cannot pay for, saying
+  // it again tomorrow is not advice. An obedient player was told to build a
+  // Generator Hall on 36 separate days and could never once afford it, while
+  // the thing that would have made it affordable was never mentioned — the
+  // income orders sit at 75 and go quiet the moment throughput is nominally
+  // adequate, which it can be while the treasury is still empty.
+  //
+  // So when the top order is blocked on money, and there is somewhere to put a
+  // salvage plant the silo *can* pay for today, that becomes the order. Guarded
+  // on affordability and placement, because swapping one impossible instruction
+  // for another is the same failure wearing a different hat.
+  const best = out.reduce((a, b) => (b.weight > (a?.weight ?? -Infinity) ? b : a), null);
+  if (best?.blocked && /scrap/.test(best.blocked)) {
+    const canSalvage =
+      count(state, 'recycling') > 0 && !shortfall(state, 'recycling') && placeable(state, 'recycling');
+    if (canSalvage) {
+      // Promote rather than add — the income order is usually already in the
+      // list, sitting at 75 and demoted for being unaffordable itself.
+      const existing = out.find((d) => d.id === 'scrap_income');
+      const why =
+        `The silo is ${best.blocked} short of what it most needs — ${best.text.toLowerCase()} — ` +
+        'and salvage is the only thing that closes that gap. A plant it can afford today buys the one it cannot.';
+      if (existing) {
+        existing.weight = best.weight + 1;
+        existing.blocked = null;
+        existing.why = why;
+      } else {
+        add({
+          id: 'scrap_income',
+          text: 'Build another Recycling plant',
+          room: 'recycling',
+          why,
+          panel: 'build',
+          weight: best.weight + 1,
+        });
+      }
+    } else {
+      // Nothing affordable would improve income either: the silo is simply
+      // poor, and the honest order is to save up. Say that, with the number
+      // and how long it will take, instead of repeating an instruction it
+      // cannot follow — that repetition was the standing order on 36 days out
+      // of 200 in a silo that was otherwise doing fine.
+      const income = flow(state, 'scrap');
+      const need = Math.max(0, (getRoom(best.room)?.buildCost?.scrap ?? 0) - (state.resources.scrap ?? 0));
+      const days = income > 0 ? Math.ceil(need / (income * BAL.time.CYCLES_PER_DAY)) : null;
+      add({
+        id: 'hold_for_scrap',
+        // Deliberately carries no room: obeying this order means doing
+        // nothing today, and anything that reads directives — the panel, the
+        // obedient-player test — needs to be able to tell "wait" apart from
+        // "we have no advice".
+        wait: true,
+        text: `Save up for ${aOrAn(best.text.replace(/^Build (a|an|another) /, ''))}`,
+        why:
+          `${best.why} Salvage is running at ${income.toFixed(1)} a shift, so the silo is ` +
+          (days === null
+            ? 'not earning anything towards it — nothing is being salvaged at all.'
+            : `about ${days} day${days === 1 ? '' : 's'} away from affording it. Nothing else needs doing first.`),
+        panel: 'build',
+        weight: best.weight + 1,
+      });
     }
   }
 

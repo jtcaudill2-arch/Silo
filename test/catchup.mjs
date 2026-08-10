@@ -92,12 +92,23 @@ function comparable(state) {
 // 1. DETERMINISM — the fine path must reproduce live play exactly
 // ---------------------------------------------------------------------------
 {
-  const AWAY_MS = 4 * MINUTE; // under the 5-minute full-fidelity threshold
-  if (classify(AWAY_MS) !== 'fine') fail(`4 minutes should classify as "fine", got "${classify(AWAY_MS)}"`);
+  // Must be a whole number of cycles, or this compares different amounts of
+  // simulation: catch-up floors the elapsed time to complete cycles while
+  // runCycles() rounds a fractional count up, so a stray half-cycle shows up
+  // as "the fine path is non-deterministic" when it is nothing of the kind.
+  // Derived rather than written as minutes for that reason — it was 4 minutes,
+  // exact at a 60-second cycle and 2⅔ cycles once a cycle became 90.
+  const CYCLE_MS = BAL.time.TICK_MS * TIME.ticksPerCycle;
+  const AWAY_CYCLES = 3;
+  const AWAY_MS = AWAY_CYCLES * CYCLE_MS;
+  if (AWAY_MS > BAL.catchup.fullFidelityMs) {
+    fail(`${AWAY_CYCLES} cycles is ${AWAY_MS}ms, past the ${BAL.catchup.fullFidelityMs}ms fine threshold`);
+  }
+  if (classify(AWAY_MS) !== 'fine') fail(`${AWAY_MS}ms should classify as "fine", got "${classify(AWAY_MS)}"`);
 
   // (a) watched it happen
   const live = freshSilo();
-  live.game.runCycles(AWAY_MS / (BAL.time.TICK_MS * TIME.ticksPerCycle));
+  live.game.runCycles(AWAY_CYCLES);
 
   // (b) walked away for the same length of time
   const away = freshSilo();
@@ -171,13 +182,30 @@ function comparable(state) {
 // 3. THE REPORT — an hour away, on a silo that is actually in trouble
 // ---------------------------------------------------------------------------
 {
-  // Use the real six-room opening: it starves, so there are deaths to report.
+  // What is under test is that the return report *surfaces* deaths, with a
+  // name and a cause, after an absence. It used to get those deaths for free
+  // by leaning on the opening being lethal — "the real six-room opening: it
+  // starves". The opening was then deliberately made survivable, so this was
+  // asserting on a balance accident it did not control, and it broke the day
+  // the accident was fixed. Empty the larder explicitly instead: now the
+  // deaths are the fixture rather than a side effect of the current balance.
   const store = new Store(createNewGame({ seed: SEED, now: T0 }));
   store.silent = true;
   const game = new Game(store);
   store.dispatchAll(autoAssign(store.state));
 
-  // Two hours in, this silo is well past its food buffer.
+  // Emptying the stores alone achieves nothing — hydroponics makes eleven food
+  // a cycle against a draw of five, so the larder refills before the next
+  // shift. The bays have to stop producing: at zero condition roomCapability
+  // returns 0, which is the same silo a player would come back to after a
+  // catastrophic failure, and the stores then actually drain.
+  for (const room of Object.values(store.state.silo.rooms)) {
+    if (room.type === 'hydroponics' || room.type === 'water_reclaimer') room.condition = 0;
+  }
+  store.state.resources.food = 0;
+  store.state.resources.water = 0;
+
+  // Two hours in, this silo has been without food or water throughout.
   store.state.meta.lastSaveTs = T0;
   const r = runCatchup(store, game, { now: T0 + 2 * HOUR });
 

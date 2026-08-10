@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BAL } from '../src/config/balance.js';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = 8137;
@@ -140,12 +141,17 @@ try {
       seed: s.meta.seed,
     };
   });
-  if (snap.pop !== 180) fail(`expected 180 residents, got ${snap.pop}`);
-  // The opening was six rooms and ran a deliberate food deficit from the first
-  // shift. It now feeds and waters itself — see newgame.js for why — so this
-  // reads the count from the game rather than pinning a number that is really
-  // a balance decision.
-  if (snap.rooms < 6) fail(`expected the starting silo to have rooms, got ${snap.rooms}`);
+  // Read from the balance config rather than pinned: the starting population
+  // is a design decision that has already moved once (180 -> 44), and a test
+  // that hardcodes it fails for the change rather than for a defect.
+  if (snap.pop !== BAL.citizens.startPopulation) {
+    fail(`expected ${BAL.citizens.startPopulation} residents, got ${snap.pop}`);
+  }
+  // The opening has been cut down twice — six rooms running a food deficit,
+  // then eight that fed themselves, now five that also fit in a player's head.
+  // What matters here is that the silo booted with a life-support spine, not
+  // what this month's count is, so assert the floor rather than the number.
+  if (snap.rooms < 4) fail(`expected the starting silo to have rooms, got ${snap.rooms}`);
   if (snap.working < 10) fail(`expected the silo to be staffed, only ${snap.working} working`);
   ok(`state live: ${snap.pop} residents, ${snap.rooms} rooms, ${snap.working} posted`);
 
@@ -542,7 +548,7 @@ try {
     const s = store.state;
     return { pop: s.citizenIds.length, cycle: s.clock.cycle, rooms: Object.keys(s.silo.rooms).length };
   });
-  if (offlineSnap.pop !== 180 || offlineSnap.cycle < 5) {
+  if (offlineSnap.pop !== BAL.citizens.startPopulation || offlineSnap.cycle < 5) {
     fail(`offline boot degraded: ${JSON.stringify(offlineSnap)}`);
   } else {
     ok(`loads and plays with the network disabled (${offlineSnap.cycle} cycles run offline)`);

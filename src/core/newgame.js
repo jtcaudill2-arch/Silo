@@ -24,38 +24,50 @@ import { RES_KEYS } from '../sim/economy.js';
 /**
  * The rooms Silo 12 starts with.
  *
- * These used to be six, sized so that food ran a deliberate deficit from the
- * first shift — the opening problem the player had to notice and fix. It is a
- * good hook and it made the game unplayable casually, which is what it was
- * measured doing: food negative from day one, empty on day thirteen, and then
- * a cascade nobody can stop. Starvation drops health, health drops the work
- * factor, the work factor drops power generation from 110 to 4, and once the
- * generators are down the water reclaimers stop too. Everybody is dead by day
- * twenty-five. Checking in every single real day was not enough to prevent it,
- * because the grace period between the first warning and the first death is
- * ten game days — eighty real minutes.
+ * Four life-support bays and somewhere to sleep. That is the whole silo.
  *
- * So the silo you inherit now feeds itself, breathes with a little room to
- * spare, and has somewhere to put the scrap. It is not comfortable: there is
- * no income of any kind, nothing is being researched, and the moment the
- * population grows the margins close again. The first hour is a place to
- * stand rather than a fire to put out — the fires come later, and they still
- * come.
+ * This has been cut down twice. It was six rooms running a deliberate food
+ * deficit from the first shift, which read well and killed everyone by day
+ * twenty-five. It was then eight rooms that fed and watered themselves, which
+ * survived — and put eight staffed rooms, six resource counters and most of a
+ * production chain in front of someone who had not yet been told what a bay
+ * is. Surviving the opening and understanding it are different problems, and
+ * the second one was still failing.
+ *
+ * So: five rooms at level one, twenty-eight people. One of each thing, which
+ * means each room can be pointed at and explained in a sentence, and the
+ * chain between them is short enough to see whole — fuel burns to make power,
+ * power runs the reclaimer, the reclaimer waters the crop, the crop feeds the
+ * people who work the generator.
+ *
+ * The margins are deliberately loose at this size: one hydroponics bay makes
+ * eleven food a cycle and twenty-eight people eat three and a half. That is
+ * not an oversight. Production here is per-room and consumption is per-head,
+ * so the surplus closes on its own as the population grows, and the silo
+ * starts asking for a second bay exactly when the player has had time to
+ * learn what the first one does.
  */
 const STARTING_ROOMS = [
-  { type: 'residences', floor: 3, slot: 0, width: 3, level: 3 },
-  { type: 'cafeteria', floor: 5, slot: 1, width: 3, level: 2 },
-  { type: 'air_filtration', floor: 7, slot: 0, width: 2, level: 3 },
-  // Two bays, not one. A single bay staffed to its four posts feeds about
-  // half of the hundred and eighty people upstairs.
-  { type: 'hydroponics', floor: 8, slot: 0, width: 2, level: 3 },
-  { type: 'hydroponics', floor: 8, slot: 2, width: 2, level: 2 },
-  // Two reclaimers, because the second hydroponics bay drinks six water a
-  // cycle to grow the food — closing the food gap on its own just moved the
-  // countdown onto the water tank.
-  { type: 'water_reclaimer', floor: 9, slot: 0, width: 2, level: 3 },
-  { type: 'water_reclaimer', floor: 9, slot: 2, width: 2, level: 2 },
-  { type: 'generator_hall', floor: 11, slot: 0, width: 3, level: 3 },
+  // Kept on consecutive floors so the whole silo is one screen — the player
+  // never has to go looking for a room during the first session.
+  // Widths are chosen from posts, not floor space. Staffing is `slotsPerLevel
+  // × width` and output scales by the fraction of posts crewed, so a wide bay
+  // in a small silo is a half-crewed bay: at width 2 across the board the
+  // generator ran at 35 of a possible 73 power and browned out everything the
+  // player then built. These are sized so all twelve posts are filled with
+  // people to spare, and so the ceilings each room provides — 63 beds, 90 air
+  // — sit far enough above 44 to leave somewhere to grow into.
+  { type: 'residences', floor: 3, slot: 0, width: 3, level: 1 }, // 63 beds
+  { type: 'air_filtration', floor: 4, slot: 0, width: 2, level: 1 }, // 90 air cap
+  { type: 'hydroponics', floor: 5, slot: 0, width: 1, level: 1 }, // 11 food/cycle
+  { type: 'water_reclaimer', floor: 6, slot: 0, width: 1, level: 1 }, // 22 water/cycle
+  // Deliberately oversized. A green crew works at roughly sixty per cent of a
+  // bay's rated output, so "enough generation for today" is a silo that
+  // browns out the moment the player builds anything — and the power priority
+  // correctly sheds the Laboratory first, which quietly removes research from
+  // the game. Three slots is about 125 rated, ~75 real, against a starting
+  // draw of 31: room to build three or four rooms before power is the lesson.
+  { type: 'generator_hall', floor: 7, slot: 0, width: 3, level: 1 },
 ];
 
 /**
@@ -63,19 +75,31 @@ const STARTING_ROOMS = [
  * this exists so the headless harness can fast-forward a *stable* economy for
  * 100 days and catch divergence, which a starving silo can't test.
  */
+/**
+ * Layered on top of STARTING_ROOMS for the `sufficient` scenario — a silo
+ * with slack in every direction, used by the harness as the stable control to
+ * measure divergence against.
+ *
+ * These slots are chosen to sit beside the starting rooms rather than on top
+ * of them. That is load-bearing: `placeRoom` refuses an occupied slot and
+ * says nothing, so a collision here does not fail loudly, it just quietly
+ * deletes a room from the control silo. When the opening shrank, this list
+ * still described the old layout, and the two it lost were the second
+ * filtration bay and the clinic — the control silo suffocated.
+ */
 const SUFFICIENT_EXTRA = [
-  { type: 'residences', floor: 4, slot: 0, width: 3, level: 3 },
-  { type: 'hydroponics', floor: 8, slot: 2, width: 2, level: 3 },
-  { type: 'water_reclaimer', floor: 9, slot: 2, width: 2, level: 2 },
-  { type: 'recycling', floor: 12, slot: 0, width: 2, level: 2 },
-  { type: 'recycling', floor: 13, slot: 1, width: 2, level: 2 },
-  { type: 'workshop', floor: 12, slot: 2, width: 2, level: 2 },
-  { type: 'clinic', floor: 6, slot: 0, width: 2, level: 2 },
-  { type: 'maintenance_bay', floor: 12, slot: 4, width: 1, level: 2 },
-  { type: 'storage_depot', floor: 13, slot: 0, width: 1, level: 2 },
-  { type: 'air_filtration', floor: 7, slot: 2, width: 2, level: 2 },
-  // Every room added above draws power, so the generation has to follow.
-  { type: 'generator_hall', floor: 11, slot: 3, width: 3, level: 3 },
+  { type: 'residences', floor: 3, slot: 3, width: 3, level: 3 },
+  { type: 'air_filtration', floor: 4, slot: 2, width: 2, level: 2 },
+  { type: 'hydroponics', floor: 5, slot: 2, width: 2, level: 3 },
+  { type: 'water_reclaimer', floor: 6, slot: 2, width: 2, level: 2 },
+  // Every room added here draws power, so the generation has to follow.
+  { type: 'generator_hall', floor: 7, slot: 3, width: 3, level: 3 },
+  { type: 'recycling', floor: 8, slot: 0, width: 2, level: 2 },
+  { type: 'recycling', floor: 8, slot: 2, width: 2, level: 2 },
+  { type: 'workshop', floor: 9, slot: 0, width: 2, level: 2 },
+  { type: 'clinic', floor: 9, slot: 2, width: 2, level: 2 },
+  { type: 'maintenance_bay', floor: 10, slot: 0, width: 1, level: 2 },
+  { type: 'storage_depot', floor: 10, slot: 1, width: 1, level: 2 },
 ];
 
 export function createNewGame(opts = {}) {
@@ -176,13 +200,17 @@ export function createNewGame(opts = {}) {
   for (const k of RES_KEYS) state.resources[k] = BAL.resources.start[k] ?? 0;
 
   // ---- rooms --------------------------------------------------------------
-  for (const spec of STARTING_ROOMS) placeRoom(state, spec);
+  for (const spec of STARTING_ROOMS) placeRoom(state, { ...spec, strict: true });
   if (opts.scenario === 'sufficient') {
-    for (const spec of SUFFICIENT_EXTRA) placeRoom(state, spec);
+    for (const spec of SUFFICIENT_EXTRA) placeRoom(state, { ...spec, strict: true });
   }
 
   // ---- people -------------------------------------------------------------
-  const pop = opts.population ?? BAL.citizens.startPopulation;
+  const defaultPop =
+    opts.scenario === 'sufficient'
+      ? BAL.citizens.sufficientPopulation
+      : BAL.citizens.startPopulation;
+  const pop = opts.population ?? defaultPop;
   for (let i = 0; i < pop; i++) {
     const c = makeCitizen(rng, { age: rollStartingAge(rng) });
     c.history.push({ day: 0, text: 'Already here when you took the office.' });
@@ -255,15 +283,27 @@ function buildFloors() {
 
 /** Place a room and claim its slots. Returns the room, or null if blocked. */
 export function placeRoom(state, spec) {
+  // Returning null on a bad spec is right for runtime callers, which offer
+  // the player only placements they have already validated. It is wrong for
+  // the hand-written starting layouts above: a typo'd floor or an overlapping
+  // slot there silently removes a room from a silo that is supposed to be
+  // complete, and the game only tells you about it fifty game days later when
+  // the air runs out. `strict` is set for those, and only those.
+  const reject = (why) => {
+    if (spec.strict) throw new Error(`placeRoom: ${spec.type} on floor ${spec.floor} slot ${spec.slot} — ${why}`);
+    return null;
+  };
+
   const def = getRoom(spec.type);
-  if (!def) return null;
+  if (!def) return reject('no such room type');
   const floor = state.silo.floors[spec.floor - 1];
-  if (!floor || !floor.excavated) return null;
+  if (!floor) return reject('floor out of range');
+  if (!floor.excavated) return reject('floor is not excavated');
 
   const width = spec.width ?? def.width;
-  if (spec.slot + width > BAL.silo.slotsPerFloor) return null;
+  if (spec.slot + width > BAL.silo.slotsPerFloor) return reject(`width ${width} overruns the floor`);
   for (let i = 0; i < width; i++) {
-    if (floor.slots[spec.slot + i] != null) return null;
+    if (floor.slots[spec.slot + i] != null) return reject(`slot ${spec.slot + i} is already occupied`);
   }
 
   const id = String(state.silo.nextRoomId++);

@@ -93,7 +93,8 @@ function run(label, { days, seed, scenario, expectSurvival, play }) {
 
   const t0 = Date.now();
   const samples = [];
-  let peakPop = store.state.citizenIds.length;
+  const startPop = store.state.citizenIds.length;
+  let peakPop = startPop;
   let minPop = peakPop;
 
   for (let d = 0; d < days; d++) {
@@ -147,7 +148,11 @@ function run(label, { days, seed, scenario, expectSurvival, play }) {
     fail(`${tag} actions dispatched with no reducer: ${[...store.unknownActionTypes].join(', ')}`);
   }
 
-  if (peakPop > BAL.citizens.startPopulation * 4) {
+  // Against the population this run actually started with, not the default
+  // one. The control silo deliberately starts larger so it can crew itself,
+  // and measuring its growth against the *player's* opening reported a silo
+  // that had barely grown as one that had exploded.
+  if (peakPop > startPop * 4) {
     fail(`${tag} population exploded: peaked at ${peakPop}`);
   }
 

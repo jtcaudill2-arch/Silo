@@ -20,9 +20,13 @@ export const BAL = {
   // ---------------------------------------------------------------- time ---
   time: {
     TICK_MS: 1000, // 1 real second
-    TICKS_PER_CYCLE: 60, // 1 cycle  = 1 shift  = 1 minute real
-    CYCLES_PER_DAY: 8, // 1 day    = 8 minutes real
-    DAYS_PER_YEAR: 12, // 1 year   = ~96 minutes real
+    // Every production and consumption rate in this file is per *day*, divided
+    // down by CYCLES_PER_DAY — so this number sets how much real time you get
+    // to react in, and changes no balance at all. It was 60 (an 8-minute day),
+    // which meant a shift resolved while you were still reading the last one.
+    TICKS_PER_CYCLE: 90, // 1 cycle  = 1 shift  = 90 seconds real
+    CYCLES_PER_DAY: 8, // 1 day    = 12 minutes real
+    DAYS_PER_YEAR: 12, // 1 year   = ~2.4 hours real
     maxCyclesPerFrame: 300, // accumulator drain cap before spilling to catch-up
     worldTickEveryDays: 1,
     diplomacyTickEveryDays: 3,
@@ -176,16 +180,24 @@ export const BAL = {
     batteryDischargePerCycle: 12,
     batteryChargePerCycle: 8,
     defaultPriority: [
+      // Life support, then generation, then *income*. Recycling and the
+      // Workshop sit this high because they are the way out of a brownout,
+      // not a luxury to be shed during one: they were tenth and ninth, below
+      // the residences and the cafeteria, which produced a spiral with no
+      // exit — demand passes generation, the salvage plants are the first
+      // things cut, scrap income stops, and the Generator Hall that would end
+      // it can never be afforded. An obedient player sat on "Build a Generator
+      // Hall" for 49 days and starved with the answer written on the screen.
       'water_reclaimer',
       'air_filtration',
       'hydroponics',
       'generator_hall',
       'reactor',
+      'recycling',
+      'workshop',
       'residences',
       'clinic',
       'cafeteria',
-      'workshop',
-      'recycling',
       'chem_lab',
       'foundry',
       'munitions',
@@ -208,7 +220,26 @@ export const BAL = {
 
   // ------------------------------------------------------------ citizens ---
   citizens: {
-    startPopulation: 180,
+    // A silo you can hold in your head. 180 was the full-strength population
+    // and it needed eight staffed rooms on the first morning just to stand
+    // still, which is most of the game's systems running before the player has
+    // met any of them. Starting small turns the climb back to a full silo into
+    // the arc rather than the prologue.
+    //
+    // Not *too* small, though. Room output scales by the fraction of its posts
+    // that are crewed, so a population that cannot staff the rooms it builds
+    // browns out rather than growing: at 28 the generator ran half-crewed at
+    // 35 of a possible 70 power, which unpowered the recycling, which stopped
+    // the scrap income, which meant no second generator could ever be
+    // afforded. 44 crews the opening five rooms and the three a player adds
+    // next, with people spare.
+    startPopulation: 44,
+    // The harness's control silo has slack in every direction and about thirty
+    // staff posts to fill. Crewing that from a 28-person opening is what a
+    // *failing* silo looks like, not a sufficient one — every room runs part-
+    // staffed, output scales by the staffed fraction, and generation falls
+    // under the draw. The control keeps a workforce that can actually run it.
+    sufficientPopulation: 120,
     statMin: 1,
     statMax: 10,
     birthStatRoll: { min: 2, max: 6 },
@@ -289,7 +320,16 @@ export const BAL = {
       // a silo slows as it fills instead of running flat into the wall.
       roomyBeds: 14,
       gestationDays: 12, // ~1 game year
-      chancePerDayPerCouple: 0.022,
+      // Growth is the arc now. The opening is a quarter of the silo it used
+      // to be, and everything downstream — labs staffed, squads fielded, the
+      // research tree, the surface — is priced in absolute numbers, so at the
+      // old rate a 44-person silo reached 92 in 300 days and simply never got
+      // there: 7 nodes of a 61-node tree and no expedition ever launched.
+      // Doubling it turns the climb back to full strength into something that
+      // happens over a campaign rather than beyond one. The food-days rule and
+      // the bed taper above still throttle it, so this is a ceiling on pace,
+      // not a guarantee of it.
+      chancePerDayPerCouple: 0.045,
       housingRequired: true,
     },
     relationships: {
@@ -341,7 +381,15 @@ export const BAL = {
 
   // ---------------------------------------------------------- research ---
   research: {
-    pointsPerLabPerCycleBase: 1.0,
+    // Research throughput is per *lab*, and the number of labs a silo can
+    // staff is a function of its population — so cutting the opening from 180
+    // people to 44 cut research by roughly the same factor, against a 61-node
+    // tree whose costs were set against the large silo. A broadly-played silo
+    // reached 6 nodes in 300 days, which makes most of the tree scenery. This
+    // buys that back per bench rather than by re-pricing 61 hand-tuned nodes;
+    // the expensive nodes at the bottom of the tree (2100–3200) are what
+    // absorb the throughput of a silo that has grown back to full strength.
+    pointsPerLabPerCycleBase: 1.5,
     scientistSkillWeight: 0.9,
     archiveBonus: 0.25,
     openArchivesBonus: 0.2,
@@ -618,8 +666,19 @@ export const BAL = {
     // Scrap is the universal currency — rooms, repairs and excavation are all
     // priced in it — so a silo whose income is below this cannot act on its
     // own advice, and every order it is given is one it cannot pay for.
-    scrapPerCyclePerHundred: 4.5,
-    partsPerCyclePerHundred: 1.2,
+    // There is a floor as well as a rate. Costs are not proportional to
+    // population — a Generator Hall is 180 scrap whether forty people or four
+    // hundred need it — so a purely per-head target reads "income is fine" in
+    // a small silo that in fact cannot afford a single room. At forty-four
+    // residents the old figure asked for 2 scrap a shift, which is eleven days
+    // of total income per generator; the standing order sat on "Build a
+    // Generator Hall" for 49 days running and never once became payable. These
+    // match the thresholds the autopilot uses, which is the heuristic that
+    // survives 200 days.
+    scrapBasePerCycle: 5,
+    scrapPerCyclePerHundred: 3.3,
+    partsBasePerCycle: 1.5,
+    partsPerCyclePerHundred: 0.6,
     // Labs bank points whether or not anything is being researched, and the
     // only signal was a badge on a nav button that looks the same on day one
     // as on day two hundred. A silo can run a staffed laboratory for most of
