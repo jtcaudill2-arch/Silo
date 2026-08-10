@@ -466,7 +466,7 @@ export class Shell {
   //
   // The standing order used to be a sentence that opened a panel. A panel is
   // not the action: the player still had to find the room in a catalogue of
-  // twenty-eight, or the resident in a roster of four hundred. The order now
+  // twenty-nine, or the resident in a roster of four hundred. The order now
   // carries the action itself — one tap places the building, orders the
   // repair, crews the empty post — with two deliberate exceptions. An order
   // flagged `wait` means "do nothing today" and must not offer a button, or

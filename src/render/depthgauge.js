@@ -52,8 +52,8 @@ export class DepthGauge {
    * it fires when a tap on a line of text — an alert, a log entry, a standing
    * order, a room in the resource breakdown — sends the camera somewhere. The
    * cross-section eases toward the floor over several frames, and without a
-   * mark on the rail there is nothing to tell you where in ninety-two floors
-   * you have just been sent. It is drawn as a bracket rather than a wash, and
+   * mark on the rail there is nothing to tell you where in a hundred and
+   * forty-four floors you have just been sent. It is drawn as a bracket rather than a wash, and
    * it is deliberately short: it is a pointer, not a warning.
    */
   flag(floor, kind = 'alert', ms) {
@@ -61,7 +61,7 @@ export class DepthGauge {
     this.alerts.set(floor, { kind, until: this.time + life, life });
   }
 
-  /** Pixel geometry: the rail always shows all 92 floors, scaled to fit. */
+  /** Pixel geometry: the rail always shows the whole shaft, scaled to fit. */
   layout() {
     const total = BAL.silo.totalFloors;
     const pad = 6;
@@ -78,7 +78,7 @@ export class DepthGauge {
   /**
    * The same thing without the snap, for dragging.
    *
-   * The gauge is 92 floors in about 590 pixels — six pixels a floor — so
+   * The gauge is 144 floors in about 590 pixels — four pixels a floor — so
    * rounding to a whole floor while the finger is still down means the silo
    * lurches a floor at a time under a gesture that is moving smoothly. The
    * integer is right for a tap, for the arrow keys and for the aria value; it
@@ -216,7 +216,7 @@ export class DepthGauge {
      * `live` is a finger still on the glass: the camera goes exactly where the
      * gauge says, immediately and unrounded. A tap is the other case — there
      * the eased glide is the point, because the eye needs to see which way it
-     * travelled to keep its bearings over ninety-two floors.
+     * travelled to keep its bearings over a hundred and forty-four floors.
      */
     const jump = (e, live) => {
       const rect = this.canvas.getBoundingClientRect();

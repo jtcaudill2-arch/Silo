@@ -675,7 +675,7 @@ export function directives(state) {
       // Which room, not just how many. An order that names a place can be
       // pointed at one: the shell puts the floor on the bar and takes the
       // cross-section there. "Crew 4 empty rooms" with no floor on it is a
-      // search task, and the silo is ninety-two floors deep.
+      // search task, and the silo is a hundred and forty-four floors deep.
       roomId: empty[0].id,
       why: 'A room with nobody in it produces nothing at all. Auto-assign on the Residents panel will fill them.',
       panel: 'population',
@@ -840,7 +840,7 @@ export function directives(state) {
       add({
         id: 'excavate',
         text: 'Excavate the next floor',
-        why: 'There is scrap spare and the silo is ninety-two floors deep. Bays are the constraint on everything else.',
+        why: `There is scrap spare and the silo is ${BAL.silo.totalFloors} floors deep. Bays are the constraint on everything else.`,
         panel: 'build',
         weight: 30,
       });

@@ -231,8 +231,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 
 /* ---------------------------------------------------------- directive --- */
-/* One line saying what to do next. The silo has twenty-eight rooms and
-   forty-six research nodes and no thread through them; this is the thread.
+/* One line saying what to do next. The silo has twenty-nine rooms and
+   forty-eight research nodes and no thread through them; this is the thread.
    It sits above the fold because a thing you have to go looking for is a
    thing nobody looks for. */
 .directive {

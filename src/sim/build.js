@@ -40,7 +40,7 @@ export function excavationCost(state) {
   // Compounding on absolute depth cannot do that: every floor costs more than
   // the one above it, and a tier boundary is a step on top rather than a
   // reset. The growth rate is correspondingly gentler, because it now applies
-  // over ninety-two floors instead of restarting five times.
+  // over a hundred and forty-four floors instead of restarting five times.
   const growth =
     Math.pow(BAL.silo.excavation.growth, next - 1) *
     Math.pow(BAL.silo.excavation.tierMultiplier, tierIdx);

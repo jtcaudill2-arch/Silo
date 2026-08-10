@@ -284,8 +284,13 @@ export function createNewGame(opts = {}) {
     day: 0,
     kind: 'alert',
     text:
-      'Handover complete. Silo 12 is yours: ninety-two floors, fourteen of them dug, ' +
-      `${pop} residents, and a radio nobody has been allowed to use.`,
+      // Read off the constants rather than written out, because this sentence
+      // has been wrong twice: it still said ninety-two floors after the silo
+      // became 144, and fourteen dug after the opening was cut to six. It is
+      // the first thing a new player reads.
+      `Handover complete. Silo 12 is yours: ${BAL.silo.totalFloors} floors, ` +
+      `${BAL.silo.startExcavatedFloors} of them dug, ${pop} residents, and a radio ` +
+      'nobody has been allowed to use.',
   });
   state.log.push({
     day: 0,

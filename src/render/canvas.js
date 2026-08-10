@@ -8,7 +8,7 @@
  *
  * Draw order is back-to-front: shaft void, floor shells, room interiors,
  * room contents, citizens, overlays. Anything outside the viewport is culled
- * before it reaches a draw call — at 92 floors that matters.
+ * before it reaches a draw call — at 144 floors that matters.
  */
 
 import { BAL } from '../config/balance.js';
