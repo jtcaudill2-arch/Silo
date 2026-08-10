@@ -87,7 +87,6 @@ export function autoAssign(state, opts = {}) {
   if (!slots.length) return actions;
 
   const pool = employableCitizens(state).filter((c) => (opts.reassignAll ? true : !c.job));
-  if (!pool.length) return actions;
 
   // One entry per empty post, scored by where its room sits in the crewing
   // order plus how deep into that room the post is.
@@ -119,8 +118,83 @@ export function autoAssign(state, opts = {}) {
     if (!best) break;
     taken.add(best.id);
     actions.push({ type: 'CITIZEN_ASSIGN', citizenId: best.id, roomId });
+    post.filled = true;
   }
+
+  // Nobody spare, and a room the silo ranks higher is still standing short.
+  //
+  // Until this existed the priority list only ever governed *new* hires: the
+  // pool is people with no job, so once somebody is posted they stay posted
+  // whatever the silo later builds. That makes build order, not priority, the
+  // thing that decides crewing for ever — and it is not a corner case.
+  // Measured over 300 days: the Clinic goes up on day 36 and takes the
+  // medics; the Chem Lab goes up on day 54 and needs the same skill; and the
+  // Chem Lab — the only source of meds in the game, including the meds the
+  // Clinic itself burns and the ones an expedition has to carry — ran on 24
+  // of the 247 days it existed. Reordering the list did nothing, because the
+  // list was never the thing that was wrong.
+  const short = posts.find((p) => !p.filled);
+  if (short) actions.push(...promoteOne(state, short, actions));
   return actions;
+}
+
+/**
+ * Move one person up: from the least important room holding the right skill
+ * into a post the silo needs more.
+ *
+ * Deliberately the narrowest rule that fixes the measured problem, because a
+ * looser one is worse than none. The first version transferred whenever a
+ * higher-ranked post outscored a lower-ranked one, which is defensible on
+ * paper and churned in practice: `autoAssign` runs several times a day, the
+ * silo always has some post standing open, and so people were shuffled
+ * continuously and no room ever settled. It moved the Surface panel — the
+ * hinge of the early game — from day 50 to day 67.
+ *
+ * So: only to light a room that is completely dark, and never by taking the
+ * last person out of another. A room producing nothing at all is the only
+ * case where moving somebody is unambiguously worth more than leaving them,
+ * and refusing to empty the source means a transfer can never create the
+ * problem it is trying to solve.
+ */
+function promoteOne(state, post, pending) {
+  const { skill } = post.slot;
+  const moving = new Set(pending.map((a) => a.citizenId));
+
+  // Only ever to a room standing completely idle.
+  const target = state.silo.rooms[post.slot.roomId];
+  const live = (room) => room.staff.filter((cid) => {
+    const c = state.citizens[cid];
+    return c && c.status !== 'dead' && !moving.has(cid);
+  });
+  if (!target || live(target).length > 0) return [];
+
+  let bestCitizen = null;
+  let bestScore = staffingRank(target.type);
+
+  for (const id of Object.keys(state.silo.rooms)) {
+    const room = state.silo.rooms[id];
+    if (room.id === post.slot.roomId) continue;
+    const def = getRoom(room.type);
+    if (!def?.staff || def.staff.skill !== skill) continue;
+    if (!inService(room)) continue;
+    const crew = live(room);
+    // Never strip the source: it would just move the dark room somewhere else.
+    if (crew.length < 2) continue;
+    const score = staffingRank(room.type);
+    if (score <= bestScore) continue;
+    // Of that room's crew, give up whoever is worst at the job.
+    let worst = null;
+    let worstScore = Infinity;
+    for (const cid of crew) {
+      const c = state.citizens[cid];
+      const s = workFactor(c, skill) * (c.skills[skill] || 0);
+      if (s < worstScore) { worstScore = s; worst = c; }
+    }
+    if (worst) { bestScore = score; bestCitizen = worst; }
+  }
+
+  if (!bestCitizen) return [];
+  return [{ type: 'CITIZEN_ASSIGN', citizenId: bestCitizen.id, roomId: post.slot.roomId }];
 }
 
 function compareRoomIds(a, b) {
