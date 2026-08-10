@@ -187,6 +187,7 @@ console.log('');
 
 // ---- 5. a floor that goes takes what is on it, and can be had back ----------
 {
+  const failuresBefore = failures.length;
   const store = siloWith(110, 6);
   // Put people in it. Without this every room on the floor has `staff: []`, so
   // the crew-death loop inside collapse() iterates an empty list and the whole
@@ -231,8 +232,12 @@ console.log('');
   if (!back.ok && !/Not enough/.test(back.reason)) {
     fail(`a collapsed floor cannot be shored again: ${back.reason}`);
   }
-  if (!failures.length || said) {
-    ok(`floor 110 gave way on day ${day}: shoring gone, all ${on.length} rooms breached, and it can be shored again`);
+  // Only if *this section* recorded nothing. `!failures.length || said` printed
+  // the tick over the section's own failures — it read the global list, which an
+  // earlier section may have filled, and `said` alone is not a pass.
+  if (failures.length === failuresBefore) {
+    ok(`floor 110 gave way on day ${day}: shoring gone, all ${on.length} rooms breached, ` +
+      `${died} of the crew did not get out, and it can be shored again`);
   }
 }
 

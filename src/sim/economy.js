@@ -605,10 +605,17 @@ function crewWearFactor(state, room) {
  */
 export function orderedRoomIds(state, roomIds) {
   const explicit = state.silo.powerPriority || [];
+  // Only rooms the caller is actually walking. This returned every id in the
+  // priority list that resolved to a room, ignoring `roomIds` entirely — which
+  // was harmless while seized rooms were absent from the list and stopped being
+  // harmless the moment they were added to it. The resources panel walks this
+  // to draw the brownout cut line, so it started charging power for rooms the
+  // simulation does not run and drawing the line in the wrong place.
+  const allowed = roomIds ? new Set(roomIds) : null;
   const seen = new Set();
   const out = [];
   for (const id of explicit) {
-    if (state.silo.rooms[id]) {
+    if (state.silo.rooms[id] && (!allowed || allowed.has(id))) {
       out.push(id);
       seen.add(id);
     }

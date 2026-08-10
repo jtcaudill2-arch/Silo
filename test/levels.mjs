@@ -197,6 +197,20 @@ if (!failures.length) ok(`all ${floors.length} named levels name a real room tha
       if (r > ratio) { ratio = r; drove = k; }
     }
     worst = Math.max(worst, ratio);
+    // Two-sided, on scrap, where the numbers are big enough that rounding does
+    // not blur it. A one-sided "is it under 80%" check cannot see the pricing
+    // helper being reverted, because that makes repairs *cheaper* and reads as
+    // greener — a reviewer put the bug back and this section got greener.
+    const missingShare = missing / BAL.silo.condition.start;
+    const expected = missingShare * BAL.silo.repair.fractionOfBuildCost;
+    const scrapRatio = (fix.scrap || 0) / Math.max(1, build.scrap || 0);
+    if (Math.abs(scrapRatio - expected) > 0.02) {
+      fail(
+        `${spec.name}: restoring costs ${(scrapRatio * 100).toFixed(1)}% of a measured build, but ` +
+          `${(missingShare * 100).toFixed(0)}% missing at fractionOfBuildCost ` +
+          `${BAL.silo.repair.fractionOfBuildCost} should be ${(expected * 100).toFixed(1)}%`
+      );
+    }
     rows.push({ f, name: spec.name, drove, fix: fix[drove] || 0, build: build[drove] || 0, ratio });
   }
   rows.sort((a, b) => b.ratio - a.ratio);

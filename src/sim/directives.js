@@ -412,7 +412,14 @@ export function directives(state) {
   let genCrew = 0;
   for (const room of Object.values(state.silo.rooms)) {
     const def = getRoom(room.type);
-    if (!def?.produces?.power || !def.staff) continue;
+    // Seized halls are not part of the plant. This census is the gate on the
+    // whole order, and fixing `running()` above without fixing it here left
+    // the reported bug exactly where it was: a found Generator Hall on floor
+    // 103 is level 2 and three wide, so it contributes nine posts and no crew,
+    // `genCrew >= genPosts` is false for ever, and "Build a Generator Hall" —
+    // weight 92, the highest build order in the game — silently stops being
+    // offered the moment the floor is opened.
+    if (!def?.produces?.power || !def.staff || !inService(room)) continue;
     genPosts += staffSlots(def, room);
     genCrew += room.staff.filter((cid) => cid != null && state.citizens[cid]?.status !== 'dead').length;
   }

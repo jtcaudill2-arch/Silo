@@ -523,6 +523,12 @@ export function readEnvironment(state) {
     const room = state.silo.rooms[id];
     const def = ctxRoomDef(room);
     if (!def) continue;
+    // A seized room provides nothing at all — it has never been commissioned.
+    // The Long Gallery on floor 68 is a three-wide level-2 Residences, so
+    // opening it used to hand the silo 126 bunks for no scrap and silence the
+    // housing order, which is the same "capacity it had never paid for" this
+    // pass removed from the economy.
+    if (room.found) continue;
     // Bunks are bunks. A browned-out residence is dark, not demolished — so
     // housing is counted regardless of power, unlike everything else here.
     if (def.provides.housing) housing += def.provides.housing * room.level * room.width;

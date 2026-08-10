@@ -29,10 +29,19 @@ import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
+import { directives } from '../src/sim/directives.js';
+import { readEnvironment } from '../src/sim/population.js';
+import { gearStorageCap } from '../src/sim/military.js';
+import { computeCaps, staffSlots } from '../src/sim/economy.js';
+import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
+import { RESEARCH_LIST } from '../src/data/research.js';
+import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { streamFor } from '../src/core/rng.js';
-import { canRepair, repair, strainedFloors } from '../src/sim/build.js';
+import { canRepair, repair, strainedFloors, canDemolish, canUpgrade } from '../src/sim/build.js';
+import { resolveExpedition, supplyCost, BANDS } from '../src/sim/expedition.js';
 import { inService } from '../src/sim/economy.js';
+import { tierUnlocked } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { BAL, TIME } from '../src/config/balance.js';
@@ -42,6 +51,26 @@ const fail = (m) => failures.push(m);
 const ok = (m) => console.log(`  ✓ ${m}`);
 
 registerCoreReducers();
+
+/** What the game really charges for `type` at `width` slots, by doing it. */
+function measuredBuild(type, width) {
+  const store = newStore(5150);
+  const s = store.state;
+  s.research.completed = RESEARCH_LIST.map((n) => n.id);
+  for (const f of s.silo.floors) f.excavated = true;
+  for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
+  for (const k of Object.keys(s.caps || {})) s.caps[k] = 1e6;
+  const spent = {};
+  for (let slot = 0; slot < width; slot++) {
+    for (const a of buildRoom(s, BAL.silo.totalFloors, slot, type)) {
+      if (a.type === 'RESOURCE_DELTA') {
+        for (const [k, v] of Object.entries(a.deltas || {})) if (v < 0) spent[k] = (spent[k] || 0) - v;
+      }
+      store.dispatch(a);
+    }
+  }
+  return spent;
+}
 
 const newStore = (seed = 11) => {
   const store = new Store(createNewGame({ seed, now: 1_700_000_000_000 }));
@@ -86,7 +115,12 @@ console.log('');
   // And it reaches the player: keep going until it is worth saying out loud.
   game.runDays(120);
   const named = strainedFloors(store.state).some((f) => f.n === floorN);
-  const said = (store.state.log || []).some((e) => new RegExp(`floor ${floorN}`).test(e.text || ''));
+  // The strain sentence specifically. Matching /floor 136/ matched an ordinary
+  // room-condition alert from a different system, so deleting the warning
+  // entirely left this green.
+  const said = (store.state.log || []).some(
+    (e) => new RegExp(`shoring on floor ${floorN} is working|floor ${floorN} is coming apart`).test(e.text || '')
+  );
   if (!named) fail(`floor ${floorN} wore down but never appeared in strainedFloors()`);
   else if (!said) fail(`floor ${floorN} passed the warning line and the log never mentioned it`);
   else ok('it crosses the warning line in play and the silo says so');
@@ -134,30 +168,64 @@ console.log('');
 }
 
 // ---- 3. unfired ammunition, and only for people who came home ---------------
+//
+// This section used to assert against a lambda defined four lines above it and
+// then regex the source of expedition.js. A reviewer put the refund back the
+// way it was, left the sentence the regex wanted as a *comment*, and the check
+// stayed green; deleting the payout entirely (`if (false && unfired > 0)`) also
+// stayed green. So it resolves real expeditions now and reads the ammunition
+// out of the actions, which is the only thing that cannot be faked.
 {
-  const dayCount = 4;
-  const carried = 32;
-  // The rule the resolution applies, stated independently of it.
-  const refund = (fightDays, survivors) =>
-    survivors ? Math.floor(carried * (1 - fightDays / dayCount)) : 0;
+  const band = BANDS[1];
+  const days = band.travelDays;
 
-  const cases = [
-    { fightDays: 0, survivors: 4, want: 32, what: 'a quiet patrol returns everything' },
-    { fightDays: 4, survivors: 4, want: 0, what: 'fighting every day returns nothing' },
-    { fightDays: 1, survivors: 4, want: 24, what: 'one firefight in four days returns three quarters' },
-    { fightDays: 1, survivors: 0, want: 0, what: 'a squad that was wiped out returns nothing' },
-  ];
-  let bad = 0;
-  for (const c of cases) {
-    const got = refund(c.fightDays, c.survivors);
-    if (got !== c.want) { fail(`${c.what}: expected ${c.want}, got ${got}`); bad++; }
+  // Find one expedition that comes home and one where nobody does, by asking.
+  const run = (seed, size, weak) => {
+    const store = newStore(seed);
+    const s = store.state;
+    const roster = s.citizenIds.slice(0, size);
+    if (weak) {
+      for (const id of roster) {
+        s.citizens[id].health = 12;
+        s.citizens[id].skills.combat = 0;
+        s.citizens[id].gear = { weapon: null, armor: null, suit: null };
+      }
+    }
+    const exp = {
+      id: 1, squadId: 0, band: band.key, target: null, purpose: 'salvage',
+      launchDay: 1, returnDay: 1 + days, roster, leaderId: roster[0], resolved: false,
+    };
+    const res = resolveExpedition(s, exp);
+    const ammo = res.actions
+      .filter((a) => a.type === 'RESOURCE_DELTA' && a.deltas?.ammo > 0)
+      .reduce((n, a) => n + a.deltas.ammo, 0);
+    return { ammo, survivors: res.survivors.length, size, carried: supplyCost(band, size).ammo };
+  };
+
+  let lived = null;
+  let wiped = null;
+  for (let seed = 1; seed <= 400 && (!lived || !wiped); seed++) {
+    const r = run(seed, 4, true);
+    if (!wiped && r.survivors === 0) wiped = { ...r, seed };
+    if (!lived && r.survivors > 0 && r.ammo > 0) lived = { ...r, seed };
   }
-  // And the shipped code has to agree with that table.
-  const src = readSource('../src/sim/expedition.js');
-  if (!/survivors\.length \? Math\.floor\(carried \* \(1 - fightDays \/ dayCount\)\) : 0/.test(src)) {
-    fail('expedition.js no longer computes the refund the way this section describes');
-  } else if (!bad) {
-    ok('unfired rounds come home, in proportion to the quiet days, and only if somebody does');
+
+  if (!wiped) {
+    fail('could not produce a wiped-out expedition in 400 seeds — this section is not testing anything');
+  } else if (wiped.ammo !== 0) {
+    fail(
+      `a squad annihilated on the way out still posted ${wiped.ammo} of ${wiped.carried} rounds home ` +
+        `(seed ${wiped.seed})`
+    );
+  } else if (!lived) {
+    fail('no surviving expedition ever refunded a round — the payout is not reaching the silo');
+  } else if (lived.ammo > lived.carried) {
+    fail(`a returning squad refunded ${lived.ammo} rounds of the ${lived.carried} it carried`);
+  } else {
+    ok(
+      `resolved live expeditions: a wipe returns 0 of ${wiped.carried} rounds, a survivor returns ` +
+        `${lived.ammo} of ${lived.carried}`
+    );
   }
 }
 
@@ -195,6 +263,179 @@ console.log('');
       if (!foundry.staff.length) fail('the transfer was proposed and the Foundry is still empty');
       else if (!mine.staff.length) fail('the transfer emptied the room it took from');
       else ok(`a dark Foundry takes one of the Deep Mine's two engineers, and the mine keeps one`);
+    }
+  }
+}
+
+// ---- 4b. the transfer's two safety rules ------------------------------------
+//
+// Both were measured into existence and neither was asserted: a reviewer
+// removed the dark-room-only rule and the never-strip-the-source rule and the
+// whole suite stayed green. The first is what stops crews churning every call
+// (it moved the Surface panel from day 50 to 67); the second is what stops a
+// transfer creating the dark room it is trying to fill.
+{
+  const mk = (seed) => {
+    const store = newStore(seed);
+    const s = store.state;
+    const place = (type, floor, staff) => {
+      const id = String(s.silo.nextRoomId++);
+      s.silo.rooms[id] = {
+        id, type, floor, slot: 0, width: 2, level: 1, condition: 100,
+        staff, powered: true, found: false, buildingUntilCycle: 0, upgradingUntilCycle: 0,
+      };
+      for (const cid of staff) s.citizens[cid].job = { roomId: id };
+      return id;
+    };
+    return { store, s, place };
+  };
+
+  // (a) never move into a room that already has somebody.
+  {
+    const { s, place } = mk(77);
+    const eng = s.citizenIds.filter((id) => (s.citizens[id].skills.engineering || 0) > 0).slice(0, 3);
+    for (const id of s.citizenIds) if (!eng.includes(id)) s.citizens[id].job = { roomId: 'parked' };
+    const partly = place('foundry', 3, [eng[0]]);       // rank 9, one of its posts filled
+    place('deep_mine', 4, [eng[1], eng[2]]);            // rank 22, two to spare
+    const moved = autoAssign(s).some((a) => a.type === 'CITIZEN_ASSIGN' && a.roomId === partly);
+    if (moved) fail('a transfer fired into a room that was already running — that is the churn rule gone');
+    else ok('no transfer into a room that already has crew');
+  }
+
+  // (b) never take the last person out of the source.
+  {
+    const { s, place } = mk(77);
+    const eng = s.citizenIds.filter((id) => (s.citizens[id].skills.engineering || 0) > 0).slice(0, 1);
+    for (const id of s.citizenIds) if (!eng.includes(id)) s.citizens[id].job = { roomId: 'parked' };
+    place('foundry', 3, []);                            // dark, ranks higher
+    const mine = place('deep_mine', 4, [eng[0]]);       // exactly one engineer
+    const acts = autoAssign(s);
+    if (acts.some((a) => a.type === 'CITIZEN_ASSIGN' && a.citizenId === eng[0])) {
+      fail('the transfer stripped a room down to nobody to fill another — it just moved the dark room');
+    } else if (s.silo.rooms[mine].staff.length !== 1) {
+      fail('the source room lost its last worker');
+    } else ok('a source room with one worker is left alone');
+  }
+}
+
+// ---- 4c. the origin route is a route, not a formality -----------------------
+{
+  const withNodes = (...ids) => ({ research: { completed: ids }, silo: {} });
+  const recordOnly = tierUnlocked(withNodes('origin_record'), 'foundations');
+  const both = tierUnlocked(withNodes('origin_record', 'origin_systems'), 'foundations');
+  const ladder = tierUnlocked(withNodes('deep_excavation_4'), 'foundations');
+  if (recordOnly) {
+    fail('The Origin Record alone opens the Foundations, which makes Origin Systems — 2,600 points behind it — a no-op');
+  } else if (!both || !ladder) {
+    fail(`the Foundations are unreachable: origin route ${both}, excavation route ${ladder}`);
+  } else ok('two roads to the Foundations, and neither one is redundant');
+}
+
+// ---- 5. a seized room provides nothing, anywhere --------------------------
+//
+// This is the bug class that kept coming back. Every system that sums what the
+// silo has was written before found rooms existed, and each one had to be
+// taught separately: `has`, `count`, `running`, `openSlots`, the caps, the
+// housing, the gear store, the demolish guard, the upgrade button. Patching
+// them one at a time is how the headline defect survived its own fix — the
+// power order was gated by a *second* census a hundred lines below the one that
+// got the filter. So this sweeps the lot in one place, and any new consumer
+// that forgets will fail here rather than in a campaign.
+{
+  const openFloor = (store, n) => {
+    const s = store.state;
+    for (const f of s.silo.floors) f.excavated = true;
+    store.dispatch({
+      type: 'EXCAVATION_COMPLETE', floor: n,
+      outcome: digOutcome(s, n, streamFor(1, 'dig', n)),
+    });
+    return Object.values(s.silo.rooms).find((r) => r.found);
+  };
+
+  // (a) the power order: a seized Generator Hall must not silence it.
+  {
+    const store = newStore(31);
+    const s = store.state;
+    for (const f of s.silo.floors) f.excavated = true;
+    let pool = s.citizenIds.slice();
+    for (const r of Object.values(s.silo.rooms)) {
+      const def = getRoom(r.type);
+      if (def?.produces?.power && def.staff) {
+        const n = staffSlots(def, r);
+        r.staff = pool.splice(0, n);
+        for (const c of r.staff) s.citizens[c].job = { roomId: r.id };
+      }
+    }
+    const tight = () => { s.power = { generation: 60, demand: 59 }; };
+    tight();
+    const before = directives(s).some((d) => d.id === 'power');
+    openFloor(store, 103); // Second Plant — a seized generator_hall
+    tight();
+    const after = directives(s).some((d) => d.id === 'power');
+    if (!before) fail('fixture problem: the power order was not offered even before the seized hall');
+    else if (!after) {
+      fail('opening floor 103 silenced "Build a Generator Hall" — a seized hall is being counted as plant');
+    } else ok('a seized Generator Hall does not silence the power order');
+  }
+
+  // (b) housing, gear storage and the caps.
+  {
+    const store = newStore(31);
+    const s = store.state;
+    const housed = () => readEnvironment(s).housingFree;
+    const before = { housing: housed(), gear: gearStorageCap(s), caps: computeCaps(s).scrap };
+    openFloor(store, 68); // The Long Gallery — a 3-wide level-2 Residences
+    if (housed() !== before.housing) {
+      fail(`opening floor 68 changed housing by ${housed() - before.housing} bunks for no scrap`);
+    } else {
+      const s2 = newStore(31);
+      openFloor(s2, 96); // The Armoury
+      if (gearStorageCap(s2.state) !== before.gear) fail('a seized Armoury raised gear storage');
+      else ok('a seized Residences houses nobody and a seized Armoury stores nothing');
+    }
+  }
+
+  // (c) it cannot stand in for a working room, and cannot be upgraded.
+  {
+    const store = newStore(31);
+    const seized = openFloor(store, 103);
+    const s = store.state;
+    const working = Object.values(s.silo.rooms).find((r) => r.type === 'generator_hall' && !r.found);
+    const dem = canDemolish(s, working.id);
+    const up = canUpgrade(s, seized.id);
+    if (dem.ok) fail('a seized Generator Hall let the silo strip out its only working one');
+    else if (up.ok) fail('a seized room can be upgraded before it has ever been commissioned');
+    else ok('a seized room is not a spare, and cannot be upgraded before it is restored');
+  }
+}
+
+// ---- 6. salvage, which nothing in this project had ever executed ------------
+{
+  const store = newStore(31);
+  const s = store.state;
+  for (const f of s.silo.floors) f.excavated = true;
+  store.dispatch({
+    type: 'EXCAVATION_COMPLETE', floor: 74,
+    outcome: digOutcome(s, 74, streamFor(1, 'dig', 74)),
+  });
+  const seized = Object.values(s.silo.rooms).find((r) => r.found);
+  const free = canDemolish(s, seized.id).refund || {};
+
+  const built = Object.values(s.silo.rooms).find((r) => r.type === 'workshop' && !r.found);
+  const healthy = built ? canDemolish(s, built.id).refund || {} : null;
+
+  if (!Object.keys(free).length && !healthy) {
+    fail('could not measure a refund at all — this section proves nothing');
+  } else {
+    // A room nobody paid for, at 17 condition, must not pay like a new one.
+    const paidFor = measuredBuild('recycling', seized.width).scrap || 1;
+    const ratio = (free.scrap || 0) / paidFor;
+    if (ratio > 0.15) {
+      fail(`stripping a seized Recycling Plant returns ${Math.round(ratio * 100)}% of its build cost, unpaid`);
+    } else if (healthy && !(healthy.scrap > 0)) {
+      fail('demolishing a healthy room refunds nothing — salvage has been nerfed into uselessness');
+    } else {
+      ok(`salvage tracks condition: a seized plant returns ${Math.round(ratio * 100)}% of build, a healthy one pays out`);
     }
   }
 }

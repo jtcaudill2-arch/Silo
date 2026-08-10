@@ -17,6 +17,7 @@ import { BAL } from '../config/balance.js';
 import { getRoom, ROOM_LIST } from '../data/rooms.js';
 import { roomUnlocked, tierUnlocked, tierForFloor, effects } from './research.js';
 import { fullName } from './population.js';
+import { inService } from './economy.js';
 
 // ------------------------------------------------------------ excavation ---
 
@@ -356,6 +357,12 @@ export function upgradeCost(room) {
 export function canUpgrade(state, roomId) {
   const room = state.silo.rooms[roomId];
   if (!room) return { ok: false, reason: 'No such room.' };
+  // Restoring comes first. Upgrading a seized room sells the player a level on
+  // something that has never run and cannot be crewed — the same trap as the
+  // Assign button the room panel used to offer beside it.
+  if (room.found) {
+    return { ok: false, reason: 'It has never been commissioned. Restore it before adding to it.' };
+  }
   if (room.level >= BAL.silo.upgrade.maxLevel) {
     return { ok: false, reason: 'Already at maximum level.' };
   }
@@ -540,11 +547,14 @@ export function canDemolish(state, roomId) {
   // Refuse to remove the last of anything the silo cannot live without.
   const critical = { water_reclaimer: 'water', air_filtration: 'air', generator_hall: 'power' };
   if (critical[room.type]) {
+    // Seized rooms do not count as a spare. A found Generator Hall on floor 103
+    // is dark and uncrewable, and letting it stand in for a working one meant
+    // the guard cheerfully allowed stripping the silo's only real power plant.
     const others = Object.values(state.silo.rooms).filter(
-      (r) => r.type === room.type && r.id !== roomId
+      (r) => r.type === room.type && r.id !== roomId && inService(r)
     );
     const hasReactor = room.type === 'generator_hall' &&
-      Object.values(state.silo.rooms).some((r) => r.type === 'reactor');
+      Object.values(state.silo.rooms).some((r) => r.type === 'reactor' && inService(r));
     if (!others.length && !hasReactor) {
       return {
         ok: false,

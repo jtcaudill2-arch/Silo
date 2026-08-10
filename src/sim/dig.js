@@ -196,7 +196,6 @@ export function digOutcome(state, floorN, rng) {
   }
 
   const ti = tierIndex(floorN);
-  const floor = state.silo.floors[floorN - 1];
   // Every dig is behind supports, so the discount is unconditional.
   //
   // Above the shoring line `buildFloors` sets `shored: true`; below it,

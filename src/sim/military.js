@@ -68,6 +68,8 @@ export function gearStorageCap(state) {
   let cap = 0;
   for (const room of Object.values(state.silo.rooms)) {
     const def = getRoom(room.type);
+    // Not until it has been restored — a seized Armoury has no shelves in use.
+    if (room.found) continue;
     if (def?.provides?.gearStorage) cap += def.provides.gearStorage * room.level * room.width;
   }
   return cap;
