@@ -335,7 +335,67 @@ export function autopilot(state) {
   actions.push(...runSurface(state));
 
   // ---- 6. keep everyone posted ----------------------------------------
+  // Normally that means filling open posts from whoever is idle. But a silo
+  // with nobody idle and an empty post in the water plant is not fully
+  // staffed, it is *mis*-staffed, and plain auto-assign cannot see the
+  // difference: it only ever moves people who have no job, so the empty post
+  // stays empty for as long as the roster is full. The reclaimers then run at
+  // the fraction they are crewed for while somebody stands in a training
+  // yard, and the build queue cannot fix it either — another reclaimer built
+  // into a silo with no spare hands opens just as empty as the last one.
+  //
+  // Measured on seed 84934674: a squad on continuous expeditions holds four
+  // to eight of a forty-five-person workforce off the roster permanently, the
+  // water plant ran a post short from day 60, the tanks fell 800 → 0 over
+  // fifty days and the silo died of thirst on day 128 with the answer being
+  // "move one person". So move one person — which is what a player does when
+  // the water goes red.
+  //
+  // Two things had to be narrowed to make that safe, and both were measured
+  // the hard way:
+  //
+  //  - One move a pass, not a wholesale re-shuffle. Re-running the full
+  //    assignment over every open post pulls the best hand out of one
+  //    reclaimer to fill the next one, leaves a hole behind it, and does it
+  //    again three times a day. Tried: it killed four silos out of five,
+  //    which is worse than the problem.
+  //  - Only when a tank is actually falling. An empty post is not by itself
+  //    an emergency — this silo runs two or three posts short of a full
+  //    roster permanently — and a rule that fires on that alone bleeds the
+  //    benches one person at a time for ever. Tried: it saved every silo and
+  //    cut research from fourteen nodes to five, which is trading the game
+  //    for the silo.
+  const CRITICAL_POSTS = ['water_reclaimer', 'air_filtration', 'hydroponics', 'generator_hall', 'recycling'];
+  const emergency =
+    waterDays < 12 || foodDays < 12 || fuelDays < 12 || (gen > 0 && demand > gen * 0.95);
   actions.push(...autoAssign(state));
+  if (spareCrew <= 0 && emergency) {
+    const short = CRITICAL_POSTS.filter((t) => emptyPosts(t) > 0)[0];
+    if (short) {
+      const rank = (r) => {
+        const i = state.silo.powerPriority.indexOf(r.id);
+        return i < 0 ? 999 : i;
+      };
+      const shortRoom = Object.values(state.silo.rooms)
+        .filter((r) => r.type === short)
+        .sort((a, b) => rank(a) - rank(b))[0];
+      // Anything but the benches. The Laboratory and the Chem Lab are two
+      // posts each and they are the only source of, respectively, every
+      // research point and every filter and dose of medicine in the silo —
+      // rob them to patch a water leak and the silo never reaches the node
+      // that stops the leaks. There is always something further down the
+      // list to take the shift from: an armoury, a training yard, a radio
+      // room, a maintenance bay.
+      const SPARE_LAST = new Set(['laboratory', 'chem_lab']);
+      const donor = Object.values(state.silo.rooms)
+        .filter((r) => rank(r) > rank(shortRoom) && !SPARE_LAST.has(r.type) && r.staff.some((id) => id != null))
+        .sort((a, b) => rank(b) - rank(a))[0];
+      if (donor && shortRoom) {
+        const who = donor.staff.filter((id) => id != null && state.citizens[id]?.status === 'working')[0];
+        if (who) actions.push({ type: 'CITIZEN_ASSIGN', citizenId: who, roomId: shortRoom.id });
+      }
+    }
+  }
 
   return actions;
 }

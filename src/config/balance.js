@@ -201,28 +201,30 @@ export const BAL = {
       // it can never be afforded. An obedient player sat on "Build a Generator
       // Hall" for 49 days and starved with the answer written on the screen.
       //
-      // The Laboratory and the Chem Lab join them for the same reason, and it
-      // is worth being explicit about why they were wrong where they were.
-      // This list does two jobs: it is the order rooms are shed in during a
-      // brownout, and (via jobs.js) it is the order posts are *crewed* in.
-      // The second job is the one that bites in a small silo. Auto-assign
-      // only ever posts people who have no job, and a 44-person opening that
-      // has grown to two hundred is still two-thirds children — so the silo
-      // runs at zero spare labour permanently and simply never reaches the
-      // bottom of this list. At twenty-second the Laboratory was below the
-      // holding cells and the training yard: measured, its two benches held
-      // one scientist at day 275 and none at all through most of the two
-      // hundreds, and research stopped dead for a hundred days. The Chem Lab
-      // at eleventh, under the residences and the cafeteria, went a hundred
-      // and fifty-five days with nobody in it — and it is the only source of
-      // filters and meds in the game, so the clinic ran dry and the airlock
-      // could not decontaminate anybody who went outside.
+      // The Laboratory moves for a related reason, and it is worth being
+      // explicit that this list does two jobs: it is the order rooms are shed
+      // in during a brownout, and (via jobs.js) it is the order posts are
+      // *crewed* in. The second job is the one that bites in a small silo.
+      // Auto-assign only ever posts people who have no job, and a 44-person
+      // opening that has grown to two hundred is still well over half
+      // children — so the silo runs at zero spare labour for most of a
+      // campaign and simply never reaches the bottom of this list. At
+      // twenty-second the Laboratory sat below the holding cells, the
+      // barracks and the training yard: measured, its two benches held one
+      // scientist at day 275 and nobody at all through most of the two
+      // hundreds, and the research tree did not move for a hundred days.
+      // Nothing else in the game makes a research point, and power_efficiency
+      // is itself a research node — a silo that never crews a lab can never
+      // reach the thing that ends its brownouts.
       //
-      // Both belong with recycling and the workshop, above the comforts, on
-      // exactly the argument the paragraph above makes: they are how a silo
-      // gets *out* of the state it is in. power_efficiency is a research
-      // node — a silo that sheds its labs in a brownout can never research
-      // the thing that ends brownouts.
+      // Twelfth, immediately under the Chem Lab, is as far as it goes, and
+      // the stopping point was measured rather than chosen. Above the
+      // residences, the clinic and the cafeteria it takes two of the pool
+      // ahead of them — the cafeteria is what holds morale up, and morale is
+      // 35% of the swing in every citizen's work output — and the obedient
+      // player, who keeps no reserve and only does what the standing order
+      // says, went into a morale-and-output spiral and lost the whole silo to
+      // starvation on day 101. The comforts stay where they are.
       'water_reclaimer',
       'air_filtration',
       'hydroponics',
@@ -230,11 +232,11 @@ export const BAL = {
       'reactor',
       'recycling',
       'workshop',
-      'laboratory',
-      'chem_lab',
       'residences',
       'clinic',
       'cafeteria',
+      'chem_lab',
+      'laboratory',
       'foundry',
       'munitions',
       'storage_depot',
