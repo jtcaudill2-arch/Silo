@@ -75,6 +75,20 @@ export class DepthGauge {
     return Math.max(1, Math.min(total, Math.floor((y - pad) / step) + 1));
   }
 
+  /**
+   * The same thing without the snap, for dragging.
+   *
+   * The gauge is 92 floors in about 590 pixels — six pixels a floor — so
+   * rounding to a whole floor while the finger is still down means the silo
+   * lurches a floor at a time under a gesture that is moving smoothly. The
+   * integer is right for a tap, for the arrow keys and for the aria value; it
+   * is wrong for the thing following your thumb.
+   */
+  exactFloorAtY(y) {
+    const { pad, step, total } = this.layout();
+    return Math.max(1, Math.min(total, (y - pad) / step + 1));
+  }
+
   render(dt) {
     const ctx = this.ctx;
     const state = this.state;
@@ -198,18 +212,25 @@ export class DepthGauge {
 
   _bind() {
     let dragging = false;
-    const jump = (e) => {
+    /**
+     * `live` is a finger still on the glass: the camera goes exactly where the
+     * gauge says, immediately and unrounded. A tap is the other case — there
+     * the eased glide is the point, because the eye needs to see which way it
+     * travelled to keep its bearings over ninety-two floors.
+     */
+    const jump = (e, live) => {
       const rect = this.canvas.getBoundingClientRect();
-      const floor = this.floorAtY(e.clientY - rect.top);
-      this.silo.focusFloor(floor);
-      this.canvas.parentElement?.setAttribute('aria-valuenow', String(floor));
+      const y = e.clientY - rect.top;
+      const exact = this.exactFloorAtY(y);
+      this.silo.focusFloor(live ? exact : this.floorAtY(y), live);
+      this.canvas.parentElement?.setAttribute('aria-valuenow', String(Math.round(exact)));
     };
     this.canvas.addEventListener('pointerdown', (e) => {
       dragging = true;
       this.canvas.setPointerCapture?.(e.pointerId);
-      jump(e);
+      jump(e, true);
     });
-    this.canvas.addEventListener('pointermove', (e) => dragging && jump(e));
+    this.canvas.addEventListener('pointermove', (e) => dragging && jump(e, true));
     this.canvas.addEventListener('pointerup', (e) => {
       dragging = false;
       this.canvas.releasePointerCapture?.(e.pointerId);

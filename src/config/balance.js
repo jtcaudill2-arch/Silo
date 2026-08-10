@@ -1004,6 +1004,22 @@ export const BAL = {
     citizenFloorsRendered: 3,
     depthGaugeBarHeight: 3,
     cameraLerp: 0.18,
+    // ---- flick to scroll ----
+    // Letting go mid-drag used to stop the silo dead under the finger, which
+    // reads as the gesture having been dropped rather than finished. These
+    // give it a coast, in world units per millisecond.
+    //
+    // Velocity is smoothed across recent moves so one stray sample at the end
+    // of a slow drag cannot launch the view; 0.35 keeps roughly the last three
+    // moves. A release more than flingStaleMs after the last movement is a
+    // finger that came to rest before lifting, and coasts nothing.
+    flingVelocitySmoothing: 0.35,
+    flingStaleMs: 90,
+    flingMinVelocity: 0.02,
+    // Per millisecond, so the coast lasts the same wall-clock time whatever
+    // the frame rate: 0.995 sheds half the speed every ~140ms and settles in
+    // about half a second, which is a coast rather than a slide.
+    flingDecayPerMs: 0.995,
     flickerAmplitude: 0.06,
     flickerSpeed: 0.9,
 

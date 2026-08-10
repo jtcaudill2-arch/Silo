@@ -453,6 +453,71 @@ try {
     fail(`the finger drag did not move the depth gauge (camera stuck at ${before})`);
   } else ok(`finger drag moves the depth gauge (camera ${before} → ${after.camera})`);
 
+  // ---- 8b. it has to slide, not step ---------------------------------------
+  // "Moves" is not the same question as "moves smoothly", and the test only
+  // ever asked the first one. The camera was snapped to a whole *world* unit
+  // before the transform scaled it, so the smallest movement the screen could
+  // make was two or three device pixels and a slow drag advanced in visible
+  // jumps — every drawn position an integer. Sample what is actually drawn.
+  const glide = await page.evaluate(async () => {
+    const r = window.DEEPWATER.renderer;
+    const seen = [];
+    const orig = r.render.bind(r);
+    r.render = (dt) => {
+      orig(dt);
+      seen.push(r._drawnCamY ?? Math.round(r.camY));
+    };
+    // Move the camera by fractions of a world unit and see if it follows.
+    const base = r.targetY;
+    for (let i = 1; i <= 12; i++) {
+      r.targetY = base + i * 0.3;
+      r.camY = r.targetY;
+      await new Promise((res) => requestAnimationFrame(res));
+    }
+    r.render = orig;
+    return { seen, integers: seen.every((v) => Number.isInteger(v)) };
+  });
+  const distinct = new Set(glide.seen.map((v) => v.toFixed(3))).size;
+  if (glide.integers) {
+    fail('the drawn camera only ever lands on whole world units — a slow drag steps instead of sliding');
+  } else if (distinct < 6) {
+    fail(`twelve sub-unit camera moves produced only ${distinct} distinct drawn positions`);
+  } else {
+    ok(`the camera slides between world units (${distinct} distinct positions from 12 nudges)`);
+  }
+
+  // A flick should coast. Stopping dead the instant the finger leaves reads as
+  // the gesture having been dropped rather than finished.
+  const canvasBox = await page.evaluate(() => {
+    const r = document.getElementById('silo-canvas').getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.7) };
+  });
+  // Park mid-silo first. The gauge drag above left the camera pinned at the
+  // bottom of its travel, and a flick into a clamp correctly coasts nowhere —
+  // which would have this assert the opposite of what it means to.
+  await page.evaluate(() => {
+    const r = window.DEEPWATER.renderer;
+    r.fling = 0;
+    r.focusFloor(40, true);
+  });
+  await page.waitForTimeout(60);
+  for (let i = 0; i <= 5; i++) {
+    const y = canvasBox.y - i * 40;
+    const type = i === 0 ? 'touchStart' : 'touchMove';
+    await cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: [{ x: canvasBox.x, y, radiusX: 12, radiusY: 12, force: 1 }],
+    });
+    await page.waitForTimeout(8);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const atRelease = await page.evaluate(() => window.DEEPWATER.renderer.camY);
+  await page.waitForTimeout(500);
+  const afterCoast = await page.evaluate(() => window.DEEPWATER.renderer.camY);
+  const coasted = Math.abs(afterCoast - atRelease);
+  if (coasted < 1) fail('a flick did not coast — the cross-section stops dead when the finger lifts');
+  else ok(`a flick coasts after the finger lifts (${coasted.toFixed(0)} world units)`);
+
   // ---- 9. tapping the cross-section ----------------------------------------
   const canvas = await page.evaluate(() => {
     const r = document.getElementById('silo-canvas').getBoundingClientRect();

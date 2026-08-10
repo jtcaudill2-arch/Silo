@@ -65,6 +65,7 @@ export class SiloRenderer {
     // Camera is expressed in world Y (pixels down from the top of floor 1).
     this.camY = 0;
     this.targetY = 0;
+    this.fling = 0; // world units per ms of coast left after a flick
     this.time = 0;
     this.spriteBudget = BAL.render.maxSpritesPerFrame;
     this.drawn = 0;
@@ -94,6 +95,11 @@ export class SiloRenderer {
   focusFloor(n, immediate = false) {
     const target = (n - 1) * FLOOR_H - this.viewWorldH() / 2 + FLOOR_H / 2;
     this.targetY = this.clampCamera(target);
+    // Any coast in progress is over: something has asked for a specific
+    // floor, and a fling still decaying underneath it would slide the view
+    // back off the room the player was just sent to. `n` may be fractional —
+    // the depth gauge passes an exact position while a finger is on it.
+    this.fling = 0;
     if (immediate) this.camY = this.targetY;
   }
 
@@ -125,6 +131,25 @@ export class SiloRenderer {
     this.time += dt;
     this.drawn = 0;
 
+    // Coast from a flick, before the easing — the fling moves the *target*, so
+    // a jump ordered mid-coast (an alert, the depth gauge) still wins and the
+    // two never fight over camY. Reduced motion means no coast at all: it is
+    // motion the player did not ask for once their finger has left the glass.
+    if (this.fling && !state.settings.reducedMotion) {
+      const before = this.targetY;
+      this.targetY = this.clampCamera(this.targetY + this.fling * dt);
+      // Decay per millisecond, so the coast is the same length whatever the
+      // frame rate. Stop at the floor, and stop dead against the ends rather
+      // than grinding there.
+      this.fling *= Math.pow(BAL.render.flingDecayPerMs, dt);
+      if (Math.abs(this.fling) < BAL.render.flingMinVelocity || this.targetY === before) {
+        this.fling = 0;
+      }
+      this.camY = this.targetY;
+    } else if (this.fling) {
+      this.fling = 0;
+    }
+
     // Camera easing. Killed under reduced-motion so nothing glides.
     const lerp = state.settings.reducedMotion ? 1 : BAL.render.cameraLerp;
     this.camY += (this.targetY - this.camY) * lerp;
@@ -134,9 +159,27 @@ export class SiloRenderer {
     ctx.fillStyle = PALETTE.concreteDeep;
     ctx.fillRect(0, 0, this.w, this.h);
 
+    // Snap the camera to a whole *device* pixel, not a whole world unit.
+    //
+    // Pixel art has to land on pixel boundaries or it shimmers, which is why
+    // this rounded at all. But it rounded `camY`, which is in world units, and
+    // the transform then multiplies that by scale and dpr — so the smallest
+    // move the screen could make was one world unit, two or three device
+    // pixels depending on zoom. A finger travelling one CSS pixel moved the
+    // camera by a fraction of a world unit, `Math.round` threw it away, and
+    // the screen stayed still until enough movement accumulated to cross a
+    // half-unit and jump. Measured mid-drag: the drawn position only ever took
+    // integer values, so a slow drag advanced in visible steps of 5, 6 and 7
+    // units rather than sliding.
+    //
+    // Dividing back out by the same factor keeps the drawn edge on a device
+    // pixel — the crispness the rounding was for — while letting the camera
+    // hold any position in between.
+    const k = this.scale * this.dpr;
+    this._drawnCamY = k > 0 ? Math.round(this.camY * k) / k : this.camY;
     ctx.translate(Math.round(this.w / 2), 0);
     ctx.scale(this.scale, this.scale);
-    ctx.translate(-WORLD_W / 2, -Math.round(this.camY));
+    ctx.translate(-WORLD_W / 2, -this._drawnCamY);
 
     const range = this.visibleFloorRange();
     const flicker = this.flicker(state);
@@ -237,12 +280,17 @@ export class SiloRenderer {
     let lastY = 0;
     let moved = 0;
     let downAt = 0;
+    let lastT = 0;
+    let velocity = 0; // world units per ms, smoothed across recent moves
 
     const down = (e) => {
       dragging = true;
       moved = 0;
       lastY = e.clientY;
       downAt = performance.now();
+      lastT = downAt;
+      velocity = 0;
+      this.fling = 0; // catching a coasting silo stops it, as it should
       this.canvas.setPointerCapture?.(e.pointerId);
     };
     const move = (e) => {
@@ -250,13 +298,28 @@ export class SiloRenderer {
       const dy = e.clientY - lastY;
       lastY = e.clientY;
       moved += Math.abs(dy);
+      // Velocity in world units per millisecond, smoothed, so a flick can be
+      // told from a slow drag that happens to end while still moving.
+      const t = performance.now();
+      const dtMs = Math.max(1, t - lastT);
+      lastT = t;
+      const v = -dy / this.scale / dtMs;
+      const a = BAL.render.flingVelocitySmoothing;
+      velocity = velocity * (1 - a) + v * a;
       this.targetY = this.clampCamera(this.targetY - dy / this.scale);
       this.camY = this.targetY; // dragging is 1:1, no easing
+      this.fling = 0; // a new touch kills any coast in progress
     };
     const up = (e) => {
       if (!dragging) return;
       dragging = false;
       this.canvas.releasePointerCapture?.(e.pointerId);
+      // Let go mid-flick and the silo keeps going, the way every scrollable
+      // surface on a phone does. Without this the cross-section stopped dead
+      // under the finger, which reads as the drag having been dropped.
+      const idle = performance.now() - lastT > BAL.render.flingStaleMs;
+      this.fling = idle || Math.abs(velocity) < BAL.render.flingMinVelocity ? 0 : velocity;
+      velocity = 0;
       // A tap, not a drag. Dragging still pans while placing — reaching a bay
       // eleven floors down is the whole reason the cross-section is scrollable.
       if (moved >= 6 || performance.now() - downAt >= 600) return;
