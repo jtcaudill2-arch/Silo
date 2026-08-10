@@ -71,8 +71,15 @@ export function openRoom(store, roomId, shell) {
 
     // ---- why it isn't at 100% --------------------------------------------
     const reasons = [];
-    if (!r.powered) reasons.push('No power — it is below the cut line in the priority list.');
-    if (def.staff && r.staff.length === 0) reasons.push('Nobody is assigned to it.');
+    // A seized room is dark because it has never been commissioned, not because
+    // the power list cut it — it is not in the power list at all until it is
+    // restored. Saying "no power" there sends the player to the wrong panel.
+    if (r.found) {
+      reasons.push('Seized. It came with the level and has never run — restoring it is what turns it on.');
+    } else if (!r.powered) {
+      reasons.push('No power — it is below the cut line in the priority list.');
+    }
+    if (!r.found && def.staff && r.staff.length === 0) reasons.push('Nobody is assigned to it.');
     else if (def.staff && r.staff.length < slots) {
       reasons.push(`Crewed ${r.staff.length} of ${slots}. Empty seats mean proportionally less output.`);
     }
@@ -151,7 +158,15 @@ export function openRoom(store, roomId, shell) {
     if (def.staff) {
       body.appendChild(sectionLabel(`Crew — ${humanise(def.staff.skill)} (${r.staff.length}/${slots})`));
       if (!r.staff.length) {
-        body.appendChild(emptyState('Unstaffed. This room is producing nothing.'));
+        // Crewing a seized room is a trap: `openSlots` skips it, so auto-assign
+        // will never take the person back, and the restore order drops off the
+        // board the moment somebody is standing in it. The panel used to offer
+        // an Assign button here regardless.
+        body.appendChild(emptyState(
+          r.found
+            ? 'No crew, and none can be posted until it is restored. Nothing works in here yet.'
+            : 'Unstaffed. This room is producing nothing.'
+        ));
       }
       for (const cid of r.staff) {
         const c = s.citizens[cid];
@@ -180,7 +195,8 @@ export function openRoom(store, roomId, shell) {
           )
         );
       }
-      if (r.staff.length < slots) {
+      // Not while it is seized — see the note above the empty state.
+      if (r.staff.length < slots && !r.found) {
         const best = bestCandidateFor(s, roomId);
         body.appendChild(
           el(

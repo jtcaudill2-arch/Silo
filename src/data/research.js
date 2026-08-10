@@ -354,7 +354,11 @@ export const RESEARCH = {
     id: 'origin_record', branch: 'surface', name: 'The Origin Record',
     cost: 3200, minCycles: 80, requires: ['env_suit_4', 'pre_collapse_archives'],
     artifacts: { origin_shard: 2, compact_seal: 1 },
-    effects: { originRecord: 1, unlockTier: ['foundations'] },
+    // The Record tells the silo the Foundations are there; Origin Systems is
+    // what opens them. Granting the unlock here as well made the node below a
+    // 2,600-point no-op — it requires this one, so its only effect was already
+    // in hand before it could ever be started.
+    effects: { originRecord: 1 },
     endgame: true,
     desc: 'Why the silos were built, who built them, and what the Compact was actually protecting.',
   }),

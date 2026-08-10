@@ -255,6 +255,11 @@ const siloReducers = {
         upgradingUntilCycle: 0,
       };
       for (let i = 0; i < width; i++) floor.slots[i] = id;
+      // Same as ROOM_BUILD does. Without it a found room is never in
+      // `powerPriority` at all, and `orderedRoomIds` appends unlisted rooms
+      // after every listed one — so a restored Recycling Plant, whose default
+      // rank is sixth, browns out before the residences.
+      insertByDefaultPriority(state, state.silo.rooms[id]);
     }
     if (o?.condition) {
       // The floor above is the one a seal gives way into. Worst-conditioned

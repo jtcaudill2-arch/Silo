@@ -408,18 +408,32 @@ export function upgrade(state, roomId) {
 /**
  * What a room of a given width actually cost to put up.
  *
- * Building charges `buildCost` once for the room at its natural width, and
- * once more for each merge step past it. So a three-wide Storage Depot (base
- * one) was paid for three times, while a three-wide Reactor (base three) was
- * paid for once. Width on its own does not tell you the price, which is the
- * trap the repair and salvage prices below both fell into.
+ * `buildCost` per slot, because that is literally what the player paid. `build()`
+ * always emits `ROOM_BUILD` with `width: 1` and charges the full `buildCost`;
+ * widening happens by building the same room again next door, which charges it
+ * again. Measured on a live state, a three-wide Reactor costs 2,700 scrap, 660
+ * alloy and 270 parts against a `buildCost` of 900/220/90.
+ *
+ * This function previously returned `buildCost x (width - def.width + 1)`, on
+ * the belief that a room arrives at its natural width for one payment and only
+ * merges cost extra. `def.width` is never read at build time, so that was
+ * wrong, and wrong in a way that mattered: it made this understate a wide
+ * room's price by up to 3x, and `repairCost` below is a fraction of it.
+ *
+ * The bug it was introduced to fix did not exist. The old `repairCost` charged
+ * `buildCost x width x share`, which against the real price of `buildCost x
+ * width` is exactly `share` — 49.5% for a full restore, precisely what
+ * `fractionOfBuildCost` advertises. Reading the denominator as 900 instead of
+ * 2,700 made that look like 149%, and the "fix" cut wide-room repairs to a
+ * sixth of what they should be. Caught by a reviewer mutating the helper and
+ * finding that test/levels.mjs could not tell: it compared `repairCost`, which
+ * is defined in terms of this function, against this function.
  */
 export function buildCostFor(def, width) {
   const base = def?.buildCost || { scrap: 50 };
-  const natural = def?.width || 1;
-  const steps = Math.max(1, (width || natural) - natural + 1);
+  const slots = Math.max(1, width || def?.width || 1);
   const out = {};
-  for (const [k, v] of Object.entries(base)) out[k] = v * steps;
+  for (const [k, v] of Object.entries(base)) out[k] = v * slots;
   return out;
 }
 
@@ -538,14 +552,19 @@ export function canDemolish(state, roomId) {
       };
     }
   }
-  return { ok: true, refund: refundFor(def, room.width) };
+  return { ok: true, refund: refundFor(def, room.width, room.condition) };
 }
 
-function refundFor(def, width) {
+function refundFor(def, width, condition) {
   const out = {};
-  // Salvage returns a share of what was spent, merges included — stripping out
-  // a room somebody paid for three times should not refund a third of it.
-  for (const [k, v] of Object.entries(buildCostFor(def, width))) out[k] = Math.round(v * 0.4);
+  // A share of what was spent, scaled by what is left standing. Salvage used to
+  // ignore condition entirely, which made demolition a way to *earn*: a level
+  // the dig turned up at twelve per cent had cost the player nothing at all and
+  // paid out 40% of a three-wide Reactor. Across the eighteen named levels that
+  // was a little over 2,000 scrap of free money for never restoring one — the
+  // exact opposite of what those levels are for.
+  const left = Math.max(0, Math.min(1, (condition ?? BAL.silo.condition.start) / BAL.silo.condition.start));
+  for (const [k, v] of Object.entries(buildCostFor(def, width))) out[k] = Math.round(v * 0.4 * left);
   return out;
 }
 

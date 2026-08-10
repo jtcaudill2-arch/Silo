@@ -122,7 +122,6 @@ export const BAL = {
       // for the bottom at the same time, which is the decision the descent was
       // missing.
       shoringAlloyPerFloor: 6,
-      collapseChancePerDayUnshored: 0.02,
     },
     // What it costs to keep the deep, rather than to reach it.
     //
@@ -140,15 +139,14 @@ export const BAL = {
     // the player decided to put down there, so the Reactor on floor 136 is a
     // commitment to floor 136 and not just a good afternoon.
     strain: {
-      // Integrity points per day, per occupied slot, at the first strained
+      // The base rate the load factor below multiplies, at the first strained
       // tier and with the shoring intact. Everything else multiplies this.
       //
-      // Sized against the levels it is meant to bite: a fully built floor in
-      // the Foundations runs down in about 155 days, one on the Shaft Floor in
-      // about 115, and one in the Mids in over 380 — so the top of the strained
-      // range is a formality and the bottom is a standing commitment. Two bays
-      // on a deep floor last four hundred days and change, which is the point:
-      // holding less costs less.
+      // Sized against the levels it is meant to bite. A fully built floor runs
+      // down in about 140 days in the Foundations, 104 on the Shaft Floor and
+      // 345 in the Mids — so the top of the strained range is a formality and
+      // the bottom is a standing commitment. Two bays on a deep floor last
+      // about 390 days, which is the point: holding less costs less.
       decayPerDayPerSlot: 0.13,
       // A floor in use carries a burden of its own, before anything is counted
       // by the bay: it is lit, it has people walking it, and it is being held
@@ -163,7 +161,8 @@ export const BAL = {
       // not one warning and not one collapse. A mechanic the player never
       // meets is a mechanic that does not exist, so a lightly used deep floor
       // now drifts to the warning line in a couple of hundred days rather than
-      // a couple of thousand, while a fully built one is unchanged.
+      // a couple of thousand. A fully built one moves too, but barely: its load
+      // factor goes from 6.0 to 1.5 + 6x0.85 = 6.6, a tenth faster.
       occupiedFloorBase: 1.5,
       perSlot: 0.85,
       // The tier step, same shape as the dig price. Depth is the difficulty
@@ -174,9 +173,12 @@ export const BAL = {
       // a floor whose supports have gone runs down four times as fast, which
       // turns a collapse into a countdown rather than a coin toss.
       shoredMultiplier: 0.25,
-      // The floor starts saying so. At the fastest strain in the game this is
-      // about fifty days of warning before anything is damaged, and a hundred
-      // and fifteen before the floor gives.
+      // The floor starts saying so. At the fastest strain in the game — six
+      // bays on the Shaft Floor, shoring intact — a sound floor reaches this
+      // line after about 47 days, and from here the player has 26 days before
+      // the structure starts eating the rooms and 57 before the floor gives.
+      // If the shoring has already failed those become 6 and 14: that is what
+      // makes re-shoring urgent rather than merely advisable.
       warnBelow: 55,
       // Below this the structure starts working on the rooms themselves,
       // scaling to `roomWearPerDay` as integrity reaches zero. A floor eating
@@ -378,7 +380,8 @@ export const BAL = {
       // it can never be afforded. An obedient player sat on "Build a Generator
       // Hall" for 49 days and starved with the answer written on the screen.
       //
-      // So the Laboratory moves back down, to seventeenth: below the surface
+      // So the Laboratory moves back down the shed order — nineteenth as the
+      // list now stands: below the surface
       // chain, above the sheriff, the barracks, the yard and the archive.
       // That is where it belongs on the only question this list still answers.
       // A shift of lost bench time costs points; everything above it costs
@@ -407,7 +410,7 @@ export const BAL = {
       'heat_exchange',
       'recycling',
       'workshop',
-      // Eighth, and it was nowhere at all: `maintenance_bay` was the one room
+      // Ninth, and it was nowhere at all: `maintenance_bay` was the one room
       // type of twenty-eight missing from this list, and `defaultRank()` gives
       // anything unlisted 999 against a list that sorts ascending — so the only
       // room in the silo that restores condition was the *first* thing shed in
@@ -452,32 +455,37 @@ export const BAL = {
     // How likely each skill is to be somebody's speciality.
     //
     // It used to be a flat `rng.sample(SKILLS, 1..2)` — every skill equally
-    // likely — against demand that is nothing like flat. Counted off the room
-    // catalogue: engineering is wanted by eight room types, mechanics by five,
-    // admin four, farming three, medicine and science two each, combat one.
-    // The opening forty-four came out with three engineers and two mechanics
-    // against fifteen farmers and nine soldiers.
+    // likely — against demand that is nothing like flat. When this table was
+    // written, engineering was wanted by eight room types and combat by one,
+    // and the opening forty-four came out with three engineers and two
+    // mechanics against fifteen farmers and nine soldiers. Recycling, the
+    // Workshop, the Foundry, the Heat Exchange, the Suit Bay, the Armory,
+    // Munitions and the Deep Mine were all in one queue and it simply ran out
+    // of people: over 300 days the Suit Bay was built on day 79 and ran on
+    // none of the 222 days it stood there, and the Armory was dark for 225 of
+    // 265. Promoting either up the crewing order moved nothing, because there
+    // was nobody to promote — which is the tell that a shortage is in the
+    // population and not in the ordering.
     //
-    // That single mismatch is behind most of the crewing failures measured in
-    // this pass. Recycling, the Workshop, the Foundry, the Heat Exchange, the
-    // Suit Bay, the Armory, Munitions and the Deep Mine all want engineers, in
-    // that order, and the list simply ran out of people: over 300 days the
-    // Suit Bay was built on day 79 and ran on none of the 222 days it stood
-    // there, and the Armory was dark for 225 of 265. Promoting either of them
-    // up the crewing order moved nothing, because there was nobody to promote
-    // — which is the tell that the shortage is in the population, not the
-    // ordering.
+    // The catalogue has moved since, and these weights have not been re-derived
+    // from it, so what the counts are *now* is worth writing down: engineering
+    // 5 and mechanics 5, admin 4, combat 3, farming 3, medicine 2, science 2.
+    // Engineering shed three — both weapons benches went to combat crews and
+    // the Suit Bay turned out to need no crew at all — which is why engineering
+    // is weighted well above its five rooms and combat above its three. Both
+    // are still where the demand is; if the catalogue moves again, re-measure
+    // before trusting the ratio.
     //
-    // Weighted to the demand, with two deliberate departures from it, both of
-    // which are about what a skill unlocks rather than how many rooms want it.
+    // Two deliberate departures from a straight room count, both about what a
+    // skill unlocks rather than how many rooms want it.
     //
-    // Combat is wanted by exactly one room, but every squad and every
-    // expedition is made of people who can fight, so it keeps the share a flat
-    // roll gave it — about one in seven. Also measured: at 3.5 it dropped to
-    // one in nine, squads went into the same fights meaningfully weaker, and
-    // battles ran nine rounds where the readable limit is eight. The point of
-    // this table is to stop starving engineering, not to start starving
-    // anything else.
+    // Combat staffs three rooms, but it also fills every squad and every
+    // expedition, and the people outside are not available to work — so it is
+    // weighted to a fifth of the population rather than the seventh a flat roll
+    // gave it. Measured on the way down: at 3.5 it fell to a ninth, squads went
+    // into the same fights weaker, and battles ran nine rounds against a
+    // readable limit of eight. The point of this table is to stop starving
+    // engineering, not to start starving anything else.
     //
     // Science is wanted by two, and sits level with mechanics anyway, because
     // the Laboratory is the one bench the entire research tree runs through.
@@ -704,8 +712,10 @@ export const BAL = {
       'workshop',
       'laboratory',
       // The Foundry, on exactly the argument that put the Laboratory above it.
-      // Nothing else in the game makes alloy — it is the one material a silo
-      // cannot scavenge, salvage or dig for — and two whole progressions run
+      // Nothing else in the game *makes* alloy. Sealed caches and surface
+      // salvage turn some up, which is what carries a silo before the first
+      // Foundry, but neither is something a player can plan around: the
+      // Foundry is the only tap you can open. Two whole progressions run
       // through it: every floor below the shoring line is bought with it, and
       // so is every tier of env-suit. It sat thirteenth, below the canteen and
       // the maintenance bench, which meant the one room that unlocks both
@@ -714,7 +724,8 @@ export const BAL = {
       //
       // Measured over a 900-day campaign: the Foundry existed for 821 days and
       // was uncrewed for 277 of them — a third of its life — while the silo
-      // spent 221 days unable to afford the six alloy a floor costs to shore.
+      // spent 221 days unable to afford the alloy a floor costs to shore — 8
+      // in the Mids rising to 27 on the Shaft Floor.
       // Not a supply problem. The same run finished with 3,119 alloy banked
       // and 9,309 smelted; it was starved in the middle and drowning at the
       // end, because the bench only got people once everything else had them.
@@ -726,8 +737,9 @@ export const BAL = {
       'chem_lab',
       // Ammunition, on the same argument as the three rooms above it: nothing
       // else in the game makes any at a rate that matters, and every
-      // expedition the silo will ever run is two rounds per person per day
-      // with none coming back. At sixteenth it was built on day 134 and then
+      // expedition the silo will ever run carries two rounds per person per
+      // day. Only what is fired is spent — the rest comes home — but a squad
+      // that meets something spends it all. At sixteenth it was built on day 134 and then
       // crewed on two of the next 167 days, which is a room the silo paid 280
       // scrap and 16 alloy for and never once used.
       'munitions',

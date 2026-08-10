@@ -232,7 +232,8 @@ export const ROOMS = {
     // programme. It bought three suits, one short of a squad, and the
     // airlock stayed shut for ninety days waiting on a foundry that was
     // three research nodes and twenty floors away. The research is gate
-    // enough; the Lowers keep the barracks and the deep mine.
+    // enough; the Lowers keep the barracks, the training yard and the archive,
+    // and the Deep Mine sits a band lower still.
     //
     // Munitions used to be on that list and has since come off it, for the
     // same reason and off the same kind of measurement — see the note there.
@@ -272,10 +273,11 @@ export const ROOMS = {
     // Lowers could keep. That was wrong, and by the same measurement.
     //
     // A squad carries two rounds per person per day, so a four-day trip is
-    // thirty-two. The only other source of ammunition is the Armory's trickle
-    // of 0.35 a shift, from a bench that competes for engineers with Recycling,
-    // the Workshop, the Foundry and the Heat Exchange and therefore stands dark
-    // most of the time — measured at 77 running days out of 265. Put the real
+    // thirty-two, and only what is fired comes off the books. The other source
+    // is the Armory's trickle of 0.35 a shift, from a bench that stands dark
+    // most of the time — measured at 77 running days out of 265. It competed
+    // for engineers when this was written and competes for soldiers now, with
+    // the squad and the Training Yard, which is no easier. Put the real
     // line behind the Lowers and the surface programme spends its first two
     // hundred days rationing: 211 of the first 300 days had an expedition
     // ready to leave and stopped at the ammunition locker.

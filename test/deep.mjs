@@ -188,8 +188,35 @@ console.log('');
 // ---- 5. a floor that goes takes what is on it, and can be had back ----------
 {
   const store = siloWith(110, 6);
+  // Put people in it. Without this every room on the floor has `staff: []`, so
+  // the crew-death loop inside collapse() iterates an empty list and the whole
+  // CITIZEN_DIE path — the rng draw, `crewLostChance`, the named log line —
+  // never runs anywhere in the suite.
+  {
+    const st = store.state;
+    const crew = st.citizenIds.slice(0, 6);
+    let i = 0;
+    for (const r of Object.values(st.silo.rooms).filter((x) => x.floor === 110)) {
+      r.staff = crew.slice(i, i + 3);
+      for (const cid of r.staff) st.citizens[cid].job = { roomId: r.id };
+      i += 3;
+    }
+  }
+  const before = store.state.citizenIds.length;
   const day = runUntil(store, (s) => s.silo.floors[109].integrity <= 0);
   const s = store.state;
+  const died = before - s.citizenIds.length;
+  if (died === 0) {
+    fail('floor 110 came down on a crewed floor and killed nobody — the crew-loss roll never ran');
+  } else {
+    const named = (s.log || []).filter((e) => /when it came down/.test(e.text || ''));
+    if (named.length !== died) {
+      fail(`${died} people died in the collapse and ${named.length} were named in the log`);
+    }
+    if (Object.keys(s.stats.causes || {}).some((k) => /floor \d/.test(k))) {
+      fail('a death cause carries a floor number, which shatters the causes tally one key per floor');
+    }
+  }
   const floor = s.silo.floors[109];
   const on = Object.values(s.silo.rooms).filter((r) => r.floor === 110);
   if (floor.shored) fail('the floor came down and the shoring is somehow still standing');
@@ -262,12 +289,18 @@ console.log('');
 
 // ---- 9. same silo, same day ------------------------------------------------
 {
-  const days = [1, 2, 3].map(() => {
-    const store = siloWith(120, 6, { seed: 99 });
+  // Different seeds, deliberately. This ran the same seed three times, against
+  // decay that consumes no rng at all — `x === x === x`, which stays green even
+  // if strain is made a function of the seed, the exact thing it forbids.
+  const seeds = [1, 2, 3, 99, 31337];
+  const days = seeds.map((seed) => {
+    const store = siloWith(120, 6, { seed });
     return runUntil(store, (s) => s.silo.floors[119].integrity <= 0);
   });
-  if (new Set(days).size !== 1) fail(`floor 120 gave way on days ${days.join(', ')} — not deterministic`);
-  else ok(`floor 120 gives way on day ${days[0]} every time — the shaft, not the roll`);
+  if (days.some((d) => d == null)) fail(`floor 120 never gave way on seeds ${seeds.join(', ')}`);
+  else if (new Set(days).size !== 1) {
+    fail(`floor 120 gave way on days ${days.join(', ')} across seeds ${seeds.join(', ')} — the roll, not the shaft`);
+  } else ok(`floor 120 gives way on day ${days[0]} on all ${seeds.length} seeds — the shaft, not the roll`);
 }
 
 console.log('');

@@ -133,8 +133,20 @@ export function autoAssign(state, opts = {}) {
   // Clinic itself burns and the ones an expedition has to carry — ran on 24
   // of the 247 days it existed. Reordering the list did nothing, because the
   // list was never the thing that was wrong.
-  const short = posts.find((p) => !p.filled);
-  if (short) actions.push(...promoteOne(state, short, actions));
+  // Walk every post that went unfilled, not just the first one.
+  //
+  // Taking only `posts.find(...)` looked equivalent and was not: the top of
+  // that list is always life support, and a Water Reclaimer short of mechanics
+  // can rarely be relieved by anything ranked below it. So the search gave up
+  // on the highest post every time and the transfer never reached the rooms it
+  // was written for — a dark Foundry with two spare engineers standing in a
+  // Deep Mine two ranks down was left dark. Still one move per call; this only
+  // changes which post gets it.
+  for (const post of posts) {
+    if (post.filled) continue;
+    const move = promoteOne(state, post, actions);
+    if (move.length) { actions.push(...move); break; }
+  }
   return actions;
 }
 

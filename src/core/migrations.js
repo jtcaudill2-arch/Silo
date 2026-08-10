@@ -144,12 +144,22 @@ export const MIGRATIONS = {
   // So: every excavated floor is shored, and every floor starts sound. A
   // returning silo is exactly as deep and exactly as safe as it was, and the
   // clock on holding it starts now.
+  // The reset is unconditional, and that is the whole point of the step.
+  // Writing it only `if (!Number.isFinite(floor.integrity))` did nothing at
+  // all: `buildFloors` has always written `integrity: 100` and the old
+  // partial-collapse roll always wrote a finite number back, so the guard was
+  // never true for any real save. A v15 silo that had taken two of those old
+  // collapse rolls on a deep floor therefore loaded at integrity 30 and went
+  // straight past the strain warning; one that had taken three loaded at 0,
+  // where neither the warning nor the collapse can fire — `before >= line` and
+  // `before > 0` are both false — and quietly ate 1.2 condition a day off every
+  // room on that floor for the rest of the game.
   15: (state) => {
     const floors = state.silo?.floors;
     if (!Array.isArray(floors)) return state;
     for (const floor of floors) {
       if (!floor || typeof floor !== 'object') continue;
-      if (!Number.isFinite(floor.integrity)) floor.integrity = BAL.silo.condition.start;
+      floor.integrity = BAL.silo.condition.start;
       if (floor.excavated) floor.shored = true;
     }
     return state;

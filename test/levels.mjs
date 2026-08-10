@@ -2,7 +2,7 @@
 /**
  * levels.mjs — the levels that were built for something.
  *
- * Roughly one floor in seven of the 144 is standing there seized rather than
+ * Roughly one floor in eight of the 144 is standing there seized rather than
  * empty. The claim those levels make to the player is specific and checkable:
  * finding one hands you a room you would otherwise have to buy, at the price of
  * putting it back into service. If restoring costs as much as building, the
@@ -24,10 +24,38 @@ import { streamFor } from '../src/core/rng.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { getRoom } from '../src/data/rooms.js';
-import { repairCost, buildCostFor } from '../src/sim/build.js';
+import { repairCost, build } from '../src/sim/build.js';
 import { tierForFloor } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { BAL } from '../src/config/balance.js';
+
+/**
+ * What the game really charges to put `def` up at `width` slots, found by
+ * doing it: build into a scratch silo with the stores filled and sum every
+ * resource the transaction takes. `build()` always places at width 1 and
+ * charges the full `buildCost`, and widening means building again next door,
+ * so the answer is per slot — but this asks rather than assumes.
+ */
+function measuredBuildCost(def, width) {
+  const store = createStore(createNewGame({ seed: 5150, now: 1 }));
+  store.silent = true;
+  const s = store.state;
+  s.research.completed = RESEARCH_LIST.map((n) => n.id); // tier gates too, or canBuild refuses
+  for (const f of s.silo.floors) f.excavated = true;
+  for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
+  for (const k of Object.keys(s.caps || {})) s.caps[k] = 1e6;
+  const spent = {};
+  const floorN = BAL.silo.totalFloors;
+  for (let slot = 0; slot < width; slot++) {
+    for (const a of build(s, floorN, slot, def.id)) {
+      if (a.type === 'RESOURCE_DELTA') {
+        for (const [k, v] of Object.entries(a.deltas || {})) if (v < 0) spent[k] = (spent[k] || 0) - v;
+      }
+      store.dispatch(a);
+    }
+  }
+  return spent;
+}
 
 const failures = [];
 const fail = (m) => failures.push(m);
@@ -148,14 +176,20 @@ if (!failures.length) ok(`all ${floors.length} named levels name a real room tha
     };
     const missing = BAL.silo.condition.start - spec.condition;
     const fix = repairCost(room, missing);
-    // Against what the game would actually charge to put this room up at this
-    // width — base price once, plus one more for each merge step. The first
-    // version of this multiplied by slot count instead, which is not a price
-    // the game ever quotes: it flattered the comparison by up to 3x and passed
-    // a reactor whose real repair bill was 149% of a new one.
-    const build = buildCostFor(def, spec.width);
+    // Against what the game *actually charges*, measured by building the room
+    // in a live silo and totting up the resource deltas — not by calling a
+    // helper. This compared `repairCost` against `buildCostFor`, and
+    // `repairCost` is defined as a fraction of `buildCostFor`, so the ratio was
+    // algebraically `share` and the section could not fail: a reviewer tripled
+    // the helper's output and every line still printed green. Measuring the
+    // real transaction is the only version of this check that is worth having.
+    const build = measuredBuildCost(def, spec.width);
     // Worst resource, not just scrap. A cheap-in-scrap repair that demands
     // alloy the silo cannot yet smelt is not a bargain.
+    if (!Object.keys(build).length) {
+      fail(`could not measure the build cost of a ${def.name} — the fixture cannot put one up, so this row proves nothing`);
+      continue;
+    }
     let ratio = 0;
     let drove = 'scrap';
     for (const k of new Set([...Object.keys(fix), ...Object.keys(build)])) {

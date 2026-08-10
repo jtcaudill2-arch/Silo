@@ -164,7 +164,7 @@ const OUTCOMES = [
  */
 export function digOutcome(state, floorN, rng) {
   // A level that was built for something is not rolled for. Roughly one in
-  // seven of the 144 is standing there seized rather than empty, and which one
+  // eight of the 144 is standing there seized rather than empty, and which one
   // is a fact about the silo, not about the seed — two players who reach floor
   // 136 find the same reactor.
   const named = namedLevel(floorN);
@@ -197,14 +197,16 @@ export function digOutcome(state, floorN, rng) {
 
   const ti = tierIndex(floorN);
   const floor = state.silo.floors[floorN - 1];
-  // A dig below the shoring line is always paid-for shoring — `canExcavate`
-  // will not start one the silo cannot afford the alloy for — so the crew are
-  // working behind supports either way. Reading `floor.shored` alone said
-  // otherwise, because the field is not set until the floor opens, and the
-  // premium the player had already paid bought them nothing at the one moment
-  // it was supposed to matter.
-  const shored =
-    floor?.shored || floorN >= BAL.silo.excavation.shoringRequiredBelowFloor;
+  // Every dig is behind supports, so the discount is unconditional.
+  //
+  // Above the shoring line `buildFloors` sets `shored: true`; below it,
+  // `canExcavate` refuses to start a dig the silo cannot pay the alloy for. The
+  // two together cover all 144 floors, which makes the old `floor?.shored ||
+  // floorN >= line` expression a constant `true` and the unshored branch dead.
+  // It is written as a constant rather than left looking like a decision — if
+  // the premium is ever meant to be optional, this is where the choice would
+  // have to be read back, and there is currently nothing to read.
+  const shored = true;
 
   const table = OUTCOMES.map((o) => {
     if (o.id !== 'collapse' || !shored) return o;

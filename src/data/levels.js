@@ -6,7 +6,7 @@
  * a descent where every door opens onto the same kind of surprise is a slot
  * machine, and the reason to go down should sometimes be a *specific* reason.
  *
- * So roughly one level in seven was built for something, and is still standing
+ * So roughly one level in eight was built for something, and is still standing
  * there — seized, unlit, and repairable. Finding one hands the silo a room it
  * would otherwise have to buy, at the price of putting it back into service:
  * `silo.repair.fractionOfBuildCost` of the build cost, spent through the
@@ -156,12 +156,14 @@ export const NAMED_LEVELS = {
   // The three levels that carry the endgame, and why they carry it.
   //
   // Every one of the three endings is behind The Origin Record, and that node
-  // wants two origin shards and a compact seal. Shards drop only from band-4
-  // expeditions and seals only from band 3, so whether a campaign could be
-  // finished at all came down to three rolls on two loot tables. Measured on
-  // two seeds of the project's own autopilot: one drew the seal and won on day
-  // 713; the other dug all 144 floors, finished 45 of 48 research nodes, and
-  // could not finish the game, because in 900 days the seal never dropped.
+  // wants two origin shards and a compact seal. Both are rollable — deep
+  // expeditions and the sealed caches a dig turns up can each produce either —
+  // but rollable is the whole problem: whether a campaign could be finished at
+  // all came down to those tables being kind. Measured on two seeds of the
+  // project's own autopilot: one drew the seal and won on day 713; the other
+  // dug all 144 floors, finished 45 of 48 research nodes, kept 2,000 people
+  // alive for 900 days, and could not finish the game, because it never turned
+  // one up.
   //
   // The surface is still the faster road when the rolls are kind. This is the
   // other one: dig to the bottom of the shaft and the silo finds the same

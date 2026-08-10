@@ -303,8 +303,17 @@ export function directives(state) {
   // crew half of the question is what `crewed` above already answers. It also
   // covers the case that used to produce three Generator Halls in three
   // consecutive shifts: one still in the bay is not a running one.
+  //
+  // Seized rooms are excluded, and leaving them in was the worst bug this pass
+  // produced. A found room is created dark and the economy never recomputes
+  // `powered` for it, so `running()` was false for ever — and `add()` drops an
+  // order silently when it is, with no `blocked` and nothing on the bar. Open
+  // floor 103 and "Build a Generator Hall", the highest-weighted build order in
+  // the game, simply stops existing. Eight room types have a named level and
+  // were all affected: the power order, the scrap, parts and alloy reliefs, the
+  // bootstrap and the housing order.
   const running = (type) => {
-    const rooms = Object.values(state.silo.rooms).filter((r) => r.type === type);
+    const rooms = Object.values(state.silo.rooms).filter((r) => r.type === type && inService(r));
     if (!rooms.length) return true;
     return rooms.every((r) => r.buildingUntilCycle === 0 && r.powered);
   };
@@ -480,9 +489,11 @@ export function directives(state) {
   // and no need of. Measured: it cost the campaign five research nodes and
   // every expedition it would otherwise have run. Getting crewed makes a found
   // room ordinary again, and so does a full repair.
-  const inService = (r) => !(r.found && (r.staff?.length || 0) === 0);
+  // Not `inService`: this is a looser question than the imported one, and
+  // naming it the same shadowed the import for the rest of the function.
+  const notAnEmergency = (r) => !(r.found && (r.staff?.length || 0) === 0);
   const worst = Object.values(state.silo.rooms)
-    .filter((r) => r.buildingUntilCycle === 0 && inService(r))
+    .filter((r) => r.buildingUntilCycle === 0 && notAnEmergency(r))
     .sort((a, b) => a.condition - b.condition)[0];
   if (worst && worst.condition <= BAL.alerts.conditionWarnAt) {
     const def = getRoom(worst.type);
@@ -767,11 +778,10 @@ export function directives(state) {
   // The last link in the chain, and the one nothing ever mentioned.
   //
   // The surface programme runs on rounds — two per person per day, so a
-  // four-day trip is thirty-two, and none of it comes home. The only other
-  // source is the Armory's hand-loading bench at 0.35 a shift, from a room
-  // that competes for engineers with Recycling, the Workshop, the Foundry and
-  // the Heat Exchange and therefore stands dark most of the time: measured at
-  // 77 running days out of 265.
+  // four-day trip is thirty-two carried. Unfired rounds come home, but a squad
+  // that meets something spends them. The only other source is the Armory's
+  // hand-loading bench at 0.35 a shift, from a room that stands dark most of
+  // the time: measured at 77 running days out of 265.
   //
   // So a silo that has built the whole chain — suits, door, armoury, squad —
   // then sits behind it. Measured over the first 300 days, 211 of them had a
@@ -779,7 +789,7 @@ export function directives(state) {
   // standing order in the game so much as named the room that fixes it.
   if (has(state, 'armory') && has(state, 'airlock') && count(state, 'munitions') === 0 && flow(state, 'ammo') <= 0) {
     const why =
-      'A squad carries two rounds a person a day and brings none back. The Armory hand-loads ' +
+      'A squad carries two rounds a person a day and fires most of them. The Armory hand-loads ' +
       'a fraction of that, so the silo can equip an expedition it cannot supply.';
     const gate = getRoom('munitions')?.unlock;
     if (placeable(state, 'munitions')) {

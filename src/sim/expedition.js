@@ -288,8 +288,12 @@ export function resolveExpedition(state, expedition) {
   //
   // Charged by the day, from the same frozen roster the supply was bought for,
   // so re-resolving the same expedition always returns the same number.
+  // Nobody left means nothing comes back: the refund used to read only the
+  // fight count, so a squad annihilated on day one of four still posted 75% of
+  // its ammunition home, one line after the journal said there was nobody left
+  // to carry anything.
   const carried = supplyCost(band, expedition.roster.length).ammo;
-  const unfired = Math.floor(carried * (1 - fightDays / dayCount));
+  const unfired = survivors.length ? Math.floor(carried * (1 - fightDays / dayCount)) : 0;
   if (unfired > 0) {
     actions.push({ type: 'RESOURCE_DELTA', deltas: { ammo: unfired } });
     journal.push(
