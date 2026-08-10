@@ -650,11 +650,26 @@ export const BAL = {
       'air_filtration',
       'workshop',
       'laboratory',
+      // The Foundry, on exactly the argument that put the Laboratory above it.
+      // Nothing else in the game makes alloy — it is the one material a silo
+      // cannot scavenge, salvage or dig for — and two whole progressions run
+      // through it: every floor below the shoring line is bought with it, and
+      // so is every tier of env-suit. It sat thirteenth, below the canteen and
+      // the maintenance bench, which meant the one room that unlocks both
+      // halves of the late game was the first bench to stand empty whenever
+      // people were short.
+      //
+      // Measured over a 900-day campaign: the Foundry existed for 821 days and
+      // was uncrewed for 277 of them — a third of its life — while the silo
+      // spent 221 days unable to afford the six alloy a floor costs to shore.
+      // Not a supply problem. The same run finished with 3,119 alloy banked
+      // and 9,309 smelted; it was starved in the middle and drowning at the
+      // end, because the bench only got people once everything else had them.
+      'foundry',
       'chem_lab',
       'clinic',
       'maintenance_bay',
       'cafeteria',
-      'foundry',
       'suit_bay',
       'armory',
       'munitions',
