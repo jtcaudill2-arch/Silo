@@ -1,9 +1,10 @@
 /**
- * combat.js — auto-resolve. One function, called from two places:
- * expeditions (expedition.js) and uprisings (order.js). The spec's §13 also
- * lists sieges and silo defence; neither resolves a fight today — conquest
- * advances its breach stage on a gate check, and `world.pendingRaid` is
- * written and never read.
+ * combat.js — auto-resolve. One function, called from four places:
+ * expeditions (expedition.js), uprisings (order.js), silo defence (raid.js)
+ * and the breach and hold stages of a conquest (conquest.js). That is the
+ * spec's §13 list, less the siege — `diplomacy.js` still advances a conquest
+ * through its gates rather than besieging anybody, which is by design: the
+ * fighting happens on the approach runs.
  *
  * The maths is exactly the spec's. What earns auto-resolve its keep is the
  * log: round-by-round, four to eight lines, naming citizens. "Deputy Marra
@@ -406,6 +407,13 @@ function modifierLine(mod) {
  * the log is the only record a player has of who this person was and what
  * happened to them, and it is read long after the event.
  */
+const LOSS_PLACE = {
+  expedition: 'losses on the surface',
+  uprising: 'losses putting down an uprising',
+  raid: 'losses defending the airlock',
+  conquest: 'losses taking another silo',
+};
+
 const DEATH_PLACE = {
   expedition: 'was killed in action on the surface.',
   uprising: 'was killed holding the admin floor.',
@@ -430,7 +438,11 @@ export function applyResolution(state, res, { context = 'expedition', kiaKind = 
     actions.push({
       type: 'ORDER_DELTA',
       amount: BAL.order.kiaPenalty * res.casualties.length,
-      reason: 'losses on the surface',
+      // The same correction `DEATH_PLACE` above exists for. This said "on the
+      // surface" for people killed at the airlock and on the fifth floor of
+      // another silo. Nothing reads `reason` today, which is precisely why it
+      // was able to rot.
+      reason: LOSS_PLACE[context] || LOSS_PLACE.expedition,
     });
     actions.push({ type: 'STAT_BUMP', stats: { kia: res.casualties.length } });
   }

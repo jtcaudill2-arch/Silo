@@ -35,6 +35,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
 import { conquestState, CONQUEST_STAGES } from './diplomacy.js';
+import { getItem } from '../data/items.js';
 
 const Q = BAL.conquest;
 
@@ -62,6 +63,13 @@ export function canLaunchRun(state, siloId) {
   const c = conquestState(state, siloId);
   const stage = c.stage || 'scout';
 
+  // 'held' is a terminal marker, not a stage anyone can run. `resolveRun` has
+  // no branch for it, so letting a squad launch on it burned twelve days and a
+  // supply load for nothing. It is reachable: a satellite that revolts used to
+  // keep this marker (see SATELLITE_REVOLT, which now clears it), and an
+  // in-flight run can land after another has taken the silo.
+  if (stage === 'held') return { ok: false, stage, reason: 'It is already yours.' };
+
   if (stage === 'undermine' && (c.scoutRuns || 0) < Q.scoutRunsRequired) {
     return { ok: false, stage, reason: 'Their defences are not mapped yet.' };
   }
@@ -69,7 +77,10 @@ export function canLaunchRun(state, siloId) {
     if (!state.research.completed.includes('breaching_charges')) {
       return { ok: false, stage, reason: 'Breaching charges are not researched.' };
     }
-    const ready = state.military.squadIds.filter((id) => !state.military.squads[id].deployed).length;
+    // The `!sq` guard `raid.defenders` has and this did not. Nothing in the
+    // game produces a squadId without a squad, but a gate that throws is a
+    // worse answer than a gate that says no.
+    const ready = state.military.squadIds.filter((id) => !state.military.squads[id]?.deployed).length;
     if (ready < Q.breachSquadsRequired) {
       return {
         ok: false,
@@ -160,6 +171,77 @@ function contest(state, roster, silo, rng, detection) {
 }
 
 /**
+ * Fold one floor's wounds into the running total.
+ *
+ * `applyResolution` hands back absolute values computed from the citizen as
+ * it currently stands, so the *first* patch for anyone is the real reading
+ * and every later one is that same starting point minus only its own floor's
+ * damage. Taking the difference recovers each floor's actual wound, which is
+ * what accumulates.
+ */
+function accumulate(hurt, patches, state) {
+  for (const p of patches || []) {
+    const c = state.citizens[p.id];
+    if (!c) continue;
+    const wound = Math.max(0, c.health - p.health);
+    const dose = Math.max(0, (p.radiation ?? c.radiation) - c.radiation);
+    const seen = hurt.get(p.id) || { health: c.health, radiation: c.radiation, rad: false };
+    seen.health = Math.max(1, seen.health - wound);
+    if (dose > 0) { seen.radiation = Math.min(100, seen.radiation + dose); seen.rad = true; }
+    hurt.set(p.id, seen);
+  }
+}
+
+/**
+ * The time-outside costs, which a conquest run pays exactly like a salvage
+ * run does.
+ *
+ * These are not decoration. `EXPEDITION_RESOLVE` reads `a.suitIntegrity ?? 100`
+ * and `a.radiation || 0`, so an action that simply omits them does not leave
+ * suits and doses alone — it writes every suit back to 100 and everybody's
+ * dose to nothing. Measured on the same band, same days, same seed: a salvage
+ * run came home with suits at 1.9 and 202 rad waiting for decontamination; a
+ * conquest run came home with suits at 100 and no dose at all.
+ *
+ * That made a conquest sortie a free suit refurbisher that strictly dominated
+ * the salvage run it borrows its band from — and since the stages stay put on
+ * failure, it could be cycled forever.
+ *
+ * Same arithmetic as expedition.js, deliberately: this is the same twelve days
+ * on the same ground in the same suits.
+ */
+function outsideWear(state, expedition, roster) {
+  const band = BAL.expedition.bands.find((b) => b.key === expedition.band) || { travelDays: 6 };
+  const start = averageSuitIntegrity(state, roster);
+  const hours = band.travelDays * BAL.expedition.hoursPerDay;
+  const shielding = suitShielding(state, roster);
+  return Math.max(0, start - shielding * hours * 0.35);
+}
+
+function outsideDose(expedition, state, roster) {
+  const band = BAL.expedition.bands.find((b) => b.key === expedition.band) || { travelDays: 6, radPerHour: 7 };
+  const hours = band.travelDays * BAL.expedition.hoursPerDay;
+  if (!state) return Math.round(band.radPerHour * hours * 0.55);
+  return Math.round(band.radPerHour * suitShielding(state, roster) * hours);
+}
+
+function suitShielding(state, roster) {
+  const tiers = roster
+    .map((id) => state.citizens[id]?.gear?.suit)
+    .map((gid) => (gid ? getItem(state.military.gear[gid]?.item)?.tier ?? 1 : 1));
+  const tier = tiers.length ? Math.round(tiers.reduce((a, b) => a + b, 0) / tiers.length) : 1;
+  return BAL.gear.suit.degradePerHourOutside[Math.max(0, tier - 1)] ?? 0.55;
+}
+
+function averageSuitIntegrity(state, roster) {
+  const vals = roster
+    .map((id) => state.citizens[id]?.gear?.suit)
+    .map((gid) => (gid ? state.military.gear[gid]?.integrity ?? 100 : 0))
+    .filter((v) => v > 0);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+
+/**
  * Resolve a conquest run. Called from `resolveExpedition` in place of the
  * salvage pipeline.
  *
@@ -177,16 +259,101 @@ export function resolveRun(state, expedition) {
     return c && c.status !== 'dead';
   });
 
-  if (!silo || !roster.length) {
+  // Two very different failures used to share one branch, and it told the
+  // player the wrong one: with a live roster and a missing target it reported
+  // "Nobody came back" over eight people walking back in through the airlock.
+  if (!roster.length) {
+    const text = 'The approach run never reported in. Nobody came back.';
     return {
       actions: [
-        { type: 'EXPEDITION_RESOLVE', id: expedition.id, survivors: roster, journal },
-        {
-          type: 'LOG',
-          entry: { kind: 'expedition', text: 'The approach run never reported in. Nobody came back.' },
-        },
+        { type: 'EXPEDITION_RESOLVE', id: expedition.id, survivors: [], casualties: [], journal: [text] },
+        { type: 'LOG', entry: { kind: 'alert', text } },
       ],
-      journal: ['Nobody came back.'],
+      journal: [text],
+      survivors: [],
+      casualties: [],
+    };
+  }
+  if (!silo) {
+    const text = 'The squad came home. Whatever they were sent to look at is not there any more.';
+    return {
+      actions: [
+        {
+          type: 'EXPEDITION_RESOLVE',
+          id: expedition.id,
+          survivors: roster,
+          casualties: [],
+          journal: [text],
+          suitIntegrity: outsideWear(state, expedition, roster),
+          radiation: outsideDose(expedition, state, roster),
+        },
+        { type: 'LOG', entry: { kind: 'expedition', text } },
+      ],
+      journal: [text],
+      survivors: roster,
+      casualties: [],
+    };
+  }
+
+  // ---- the ladder may have moved while they were walking ------------------
+  //
+  // `purpose` is frozen at launch and the run is six days out each way, so by
+  // the time it reports the stage can be somewhere else — another squad's run
+  // landed first, or a satellite revolted. Writing the stage unconditionally
+  // dragged the ladder *backwards*: a scout report arriving after the breach
+  // had opened rewrote `stage` to 'undermine' and the player paid for the
+  // undermine run a second time.
+  const current = (conquestState(state, silo.id).stage) || 'scout';
+  if (expedition.purpose !== current) {
+    const text =
+      `The party sent to ${silo.name} came back with work that has been overtaken. ` +
+      'Whatever they learned, the situation there has moved on.';
+    return {
+      actions: [
+        {
+          type: 'EXPEDITION_RESOLVE',
+          id: expedition.id,
+          survivors: roster,
+          casualties: [],
+          journal: [text],
+          suitIntegrity: outsideWear(state, expedition, roster),
+          radiation: outsideDose(expedition, state, roster),
+        },
+        { type: 'LOG', entry: { kind: 'expedition', text } },
+      ],
+      journal: [text],
+      survivors: roster,
+      casualties: [],
+    };
+  }
+
+  // ---- and the target may no longer be a target ---------------------------
+  //
+  // Gated at launch, and that is not enough: the world collapses silos on its
+  // own and a run is twelve days round trip. Unchecked, an in-flight assault
+  // conquered rubble — `SATELLITE_ADD` writes `status: 'satellite'`, which
+  // resurrected a collapsed silo as a productive holding — or took one the
+  // player already held, pushing a second entry for it.
+  if (silo.status === 'collapsed' || silo.contact === 'satellite') {
+    const text = silo.contact === 'satellite'
+      ? `${silo.name} was already Silo 12's by the time they got there.`
+      : `They reached ${silo.name} and found it had already fallen in on itself.`;
+    return {
+      actions: [
+        {
+          type: 'EXPEDITION_RESOLVE',
+          id: expedition.id,
+          survivors: roster,
+          casualties: [],
+          journal: [text],
+          suitIntegrity: outsideWear(state, expedition, roster),
+          radiation: outsideDose(expedition, state, roster),
+        },
+        { type: 'LOG', entry: { kind: 'expedition', text } },
+      ],
+      journal: [text],
+      survivors: roster,
+      casualties: [],
     };
   }
 
@@ -300,6 +467,23 @@ export function resolveRun(state, expedition) {
     let standing = roster.slice();
     let won = 0;
     let ammo = 1;
+    // Wounds, carried across the floors by hand.
+    //
+    // `applyResolution` builds an *absolute* `health` from the citizen it can
+    // see, and nothing dispatches between these five fights — so five patches
+    // each read the same pre-assault health and the reducer, which assigns,
+    // kept only the last. Measured on one citizen: wounds of 22, 8, 22, 17
+    // and 13 became a single write of 87 against a start of 100. Eighty-two
+    // points of damage arrived as thirteen, and the stage whose entire
+    // premise is "five fights on one load-out" was being fought by people who
+    // healed between floors.
+    //
+    // So the wounds are accumulated here and emitted once, at the true
+    // cumulative value. The same shape exists on the salvage path, which
+    // applies per-encounter-day; it matters less there because nothing
+    // depends on the accumulation, but it is the same defect.
+    const hurt = new Map();
+    let victories = 0;
 
     for (let i = 0; i < Q.holdCombats; i++) {
       if (!standing.length) break;
@@ -313,9 +497,13 @@ export function resolveRun(state, expedition) {
         // fraction of the ammunition it started with.
         ammoFactorOverride: ammo,
       });
-      actions.push(
-        ...applyResolution(state, res, { context: 'conquest', kiaKind: 'killed taking the floors' })
-      );
+      // Everything except the wounds. See `accumulate` below for why the
+      // wounds cannot go through `applyResolution` here.
+      for (const a of applyResolution(state, res, { context: 'conquest', kiaKind: 'killed taking the floors' })) {
+        if (a.type === 'CITIZENS_PATCH') { accumulate(hurt, a.patches, state); continue; }
+        if (a.type === 'ORDER_DELTA' && a.reason === 'a victory') { victories++; continue; }
+        actions.push(a);
+      }
       casualties = casualties.concat(res.casualties);
       standing = standing.filter((id) => !res.casualties.includes(id));
       journal.push(`— Floor ${i + 1} —`, ...res.log);
@@ -328,6 +516,21 @@ export function resolveRun(state, expedition) {
     }
 
     survivors = standing;
+
+    // The wounds, once, at their true total — and only for people who are
+    // still alive to carry them.
+    const patches = [...hurt.entries()]
+      .filter(([id]) => !casualties.includes(id))
+      .map(([id, v]) => (v.rad ? { id, health: v.health, radiation: v.radiation } : { id, health: v.health }));
+    if (patches.length) actions.push({ type: 'CITIZENS_PATCH', patches });
+
+    // And one victory bonus for the assault, not one per floor. Five floors
+    // used to pay `order.victoryBonus` five times — +20 Order arriving in a
+    // single action stream, which is twenty days of satellite upkeep repaid at
+    // the moment of conquest and was never anybody's intention.
+    if (victories > 0) {
+      actions.push({ type: 'ORDER_DELTA', amount: BAL.order.victoryBonus, reason: 'a silo taken' });
+    }
 
     if (won >= Q.holdCombats) {
       actions.push({ type: 'CONQUEST_PATCH', siloId: silo.id, patch: { stage: 'held' } });
@@ -352,6 +555,13 @@ export function resolveRun(state, expedition) {
     survivors,
     casualties,
     journal,
+    // Both are required, not optional. The reducer reads `a.suitIntegrity ??
+    // 100`, so omitting it does not mean "leave the suits alone" — it means
+    // "write every suit back to full". Same for the dose: `a.radiation || 0`
+    // sends a squad home from twelve days outside with nothing to
+    // decontaminate.
+    suitIntegrity: outsideWear(state, expedition, roster),
+    radiation: outsideDose(expedition, state, roster),
   });
 
   return { actions, journal, survivors, casualties };

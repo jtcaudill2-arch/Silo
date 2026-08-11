@@ -985,6 +985,12 @@ const worldReducers = {
   },
 
   SATELLITE_ADD(state, a) {
+    // Idempotent. A second entry for the same silo is not a bigger empire: it
+    // pays that silo's yield twice, charges Order per array length, breaks the
+    // `i < garrisons` assignment in world.js, is never ticked because
+    // SATELLITE_TICK `.find()`s only the first — and inflates the count the
+    // Dominion ending is decided on.
+    if (state.world.satellites.some((x) => x.siloId === a.siloId)) return;
     state.world.satellites.push({ siloId: a.siloId, since: state.clock.day, order: BAL.conquest.conqueredStartOrder });
     const silo = state.world.silos[a.siloId];
     if (silo) {
@@ -1016,6 +1022,13 @@ const worldReducers = {
       silo.contact = 'hostile';
       silo.status = 'struggling';
       silo.reputation = -100;
+      // And the conquest ladder goes back to the bottom. Without this the
+      // silo keeps `stage: 'held'` for ever: the radio panel reads "Already
+      // taken.", the launch gate says a run is fine, and every squad sent
+      // spends twelve days and a full supply load resolving a stage that has
+      // no branch — a permanent no-op the player can repeat indefinitely.
+      // Taking a silo back is a fresh conquest, and it should be.
+      silo.conquest = { stage: null, scoutRuns: 0, undermined: false, defenseMult: 1 };
     }
     pushLog(state, {
       kind: 'alert',
@@ -1024,6 +1037,15 @@ const worldReducers = {
   },
 
   PENDING_RAID(state, a) {
+    // Never overwrite a raid that has not landed yet. Two events maturing on
+    // the same day used to show the player two alerts and resolve one, which
+    // is the exact "the alert went up and nothing happened" failure the raid
+    // module exists to remove. The one already at the door keeps its place;
+    // the second silo's party is folded into it as extra strength.
+    if (state.world.pendingRaid) {
+      state.world.pendingRaid.strength = Math.max(state.world.pendingRaid.strength, a.strength);
+      return;
+    }
     // Written, and — today — never read. `RAID_RESOLVED` below is dispatched
     // from nowhere in src/ or test/, and no sim module looks at
     // `world.pendingRaid`, so a raid announces itself and then nothing

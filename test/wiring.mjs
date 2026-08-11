@@ -826,6 +826,157 @@ console.log('');
   }
 }
 
+// ---- 11. the hold's five fights actually accumulate -------------------------
+//
+// An audit found the stage discarding about 85% of the damage it inflicts.
+// `applyResolution` builds an *absolute* health from the citizen it can see,
+// nothing dispatches between the five fights, and the reducer assigns — so
+// five patches each read the same pre-assault health and only the last
+// survived. Wounds of 22, 8, 22, 17 and 13 landed as a single write of 87
+// against a start of 100. The stage whose whole premise is "five fights on
+// one load-out" was being fought by people who healed between floors.
+{
+  const store = newStore(909);
+  const s = store.state;
+  s.clock.day = 300;
+  s.resources.ammo = 9000;
+  const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+  let g = 0;
+  for (const cid of ids) {
+    for (const [kind, item] of [['suit', 'suit_3'], ['weapon', 'service_rifle'], ['armor', 'padded_vest']]) {
+      const id = 'g' + ++g;
+      s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, integrity: 60, assignedTo: cid };
+      s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+    }
+  }
+  // A target the squad can actually beat several floors of. Against the
+  // hardest silo it loses on floor one, emits a single patch, and the test
+  // cannot tell the fixed code from the broken code — which is exactly what
+  // it did on the first attempt, staying green under mutation.
+  const TARGET = 6;
+  s.world.silos[TARGET].conquest = { stage: 'hold', scoutRuns: 2, undermined: true, defenseMult: 0.75 };
+  const out = resolveConquestRun(s, { id: 77, band: 'approach', target: TARGET, purpose: 'hold', roster: ids, leaderId: ids[0] });
+
+  const floorsFought = out.journal.filter((l) => /^— Floor /.test(l)).length;
+  if (floorsFought < 2) {
+    fail(`the hold fixture only fought ${floorsFought} floor(s) — it cannot test whether wounds accumulate across them`);
+  }
+  const patches = out.actions.filter((a) => a.type === 'CITIZENS_PATCH');
+  if (patches.length > 1) {
+    fail(`the hold emitted ${patches.length} health patches; each reads pre-assault state, so all but the last are discarded`);
+  } else {
+    ok('the hold emits one cumulative wound patch, not one per floor that overwrites the last');
+  }
+
+  // One victory bonus for the assault, not one per floor. Five floors used to
+  // pay `order.victoryBonus` five times — +20 Order in a single action stream.
+  const vic = out.actions.filter((a) => a.type === 'ORDER_DELTA' && a.amount === BAL.order.victoryBonus);
+  if (vic.length > 1) fail(`one assault paid ${vic.length} victory bonuses (${vic.length * BAL.order.victoryBonus} Order)`);
+  else ok(`an assault pays at most one victory bonus (${vic.length})`);
+}
+
+// ---- 12. a conquest run costs what going outside costs -----------------------
+//
+// `EXPEDITION_RESOLVE` reads `a.suitIntegrity ?? 100` and `a.radiation || 0`.
+// An action that omits them does not leave suits and doses alone — it writes
+// every suit back to full and everybody's dose to nothing. Measured before
+// the fix, on the same band and the same days: a salvage run came home with
+// suits at 1.9 and 202 rad to decontaminate; a conquest run came home with
+// suits at 100 and no dose. That made a conquest sortie a free suit
+// refurbisher that strictly dominated the salvage run it borrows its band
+// from, and the stages stay put on failure, so it could be cycled for ever.
+{
+  const store = newStore(515);
+  const s = store.state;
+  s.clock.day = 200;
+  const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMin);
+  let g = 0;
+  for (const cid of ids) {
+    const id = 'g' + ++g;
+    s.military.gear[id] = { id, item: 'suit_2', kind: 'suit', durability: BAL.gear.durabilityMax, integrity: 40, assignedTo: cid };
+    s.citizens[cid].gear = { suit: id };
+  }
+  const out = resolveConquestRun(s, { id: 91, band: 'approach', target: 6, purpose: 'scout', roster: ids, leaderId: ids[0] });
+  const res = out.actions.find((a) => a.type === 'EXPEDITION_RESOLVE');
+  if (!(res.suitIntegrity < 40)) {
+    fail(`a conquest run returned suits at ${res.suitIntegrity} from a start of 40 — twelve days outside cost them nothing`);
+  } else if (!(res.radiation > 0)) {
+    fail('a conquest run returned a dose of zero after twelve days on the surface');
+  } else {
+    ok(`a conquest run wears suits and carries a dose home: 40 → ${res.suitIntegrity.toFixed(1)}, ${res.radiation} rad`);
+  }
+}
+
+// ---- 13. one run at a time, and a silo is taken once -------------------------
+//
+// Two squads sent at the same silo both froze the same `purpose` and both read
+// the same pre-dispatch state. Two clean scouts both wrote `scoutRuns: 1` and
+// the ladder could not be finished; two won holds both dispatched
+// `SATELLITE_ADD`, and because the Dominion ending counts
+// `world.satellites.length`, three silos taken twice read as six and fired an
+// ending nobody had earned. Reachable by ordinary clicking.
+{
+  const store = newStore(0x1234);
+  const s = store.state;
+  const TARGET = 6;
+  for (const f of s.silo.floors) f.excavated = true;
+  placeRoom(s, { type: 'generator_hall', floor: 7, slot: 0, width: 3, level: 3 });
+  placeRoom(s, { type: 'airlock', floor: 8, slot: 0, width: 3, level: 3 });
+  store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'breaching_charges' });
+  store.dispatchAll(autoAssign(s));
+  new Game(store).runDays(3);
+  for (const k of ['food', 'water', 'ammo', 'meds']) s.resources[k] = 9000;
+  for (let n = 0; n < 2; n++) store.dispatchAll(formSquad(s, `Column ${n + 1}`));
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  let k = 0;
+  for (const sqId of s.military.squadIds) {
+    for (let i = 0; i < BAL.military.squadMin; i++) if (adults[k]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[k++].id });
+  }
+  let g = 0;
+  for (const sqId of s.military.squadIds) {
+    for (const cid of s.military.squads[sqId].members) {
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+      }
+    }
+  }
+  const [a, b] = s.military.squadIds;
+  store.dispatchAll(launchConquest(s, a, TARGET));
+  const second = launchConquest(s, b, TARGET);
+  const inFlight = s.expeditions.active.filter((e) => e.target === TARGET && e.purpose !== 'salvage').length;
+  if (second.length || inFlight > 1) {
+    fail(`two squads are in flight against the same silo (${inFlight}) — their results overwrite each other`);
+  } else {
+    ok('a second squad cannot be sent at a silo that already has a run in flight');
+  }
+
+  // And the reducer refuses a duplicate even if something else finds a way.
+  store.dispatch({ type: 'SATELLITE_ADD', siloId: TARGET });
+  store.dispatch({ type: 'SATELLITE_ADD', siloId: TARGET });
+  const dupes = s.world.satellites.filter((x) => x.siloId === TARGET).length;
+  if (dupes !== 1) fail(`world.satellites carries ${dupes} entries for silo ${TARGET}`);
+  else ok('a silo can only be added to the satellite list once, however it gets there');
+
+  // A revolt puts the ladder back to the bottom, so it can be retaken. Left
+  // on 'held' the panel read "Already taken." while the button still sent
+  // squads on a stage with no branch — twelve days and a supply load, for ever.
+  // Put the silo in the state a won hold leaves it in — that is the state the
+  // bug needs. Dispatching SATELLITE_ADD alone leaves `conquest.stage` on
+  // 'scout', so the revolt has nothing to reset and the test passes whether
+  // or not the reset exists.
+  store.dispatch({ type: 'CONQUEST_PATCH', siloId: TARGET, patch: { stage: 'held' } });
+  store.dispatch({ type: 'SATELLITE_REVOLT', siloId: TARGET });
+  const after = conquestState(s, TARGET);
+  const gate = canLaunchRun(s, TARGET);
+  if (after.stage === 'held' || (!gate.ok && /already/i.test(gate.reason || ''))) {
+    fail(`a revolted silo cannot be retaken (stage=${after.stage}, gate="${gate.reason}")`);
+  } else {
+    ok(`a silo that throws you out can be taken again (stage back to ${after.stage ?? 'scout'})`);
+  }
+}
+
 // ---- 7. migrations write what they promise ----------------------------------
 {
   const s = createNewGame({ seed: 9, now: 1 });

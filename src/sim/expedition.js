@@ -161,6 +161,24 @@ export function launch(state, squadId, bandKey, opts = {}) {
 export function launchConquest(state, squadId, siloId) {
   const gate = canLaunchRun(state, siloId);
   if (!gate.ok) return [];
+  // One run at a time against one silo.
+  //
+  // Without this, two squads sent at the same target both froze the same
+  // `purpose` and both read the same pre-dispatch state, and the results were
+  // not merely redundant — they were wrong. Two clean scout runs both wrote
+  // `scoutRuns: 1` and the ladder could not be finished; two won holds both
+  // dispatched `SATELLITE_ADD` and `world.satellites` carried the same silo
+  // twice, which paid its yield twice, mis-assigned garrisons, left the
+  // duplicate never warming or decaying, and — because the Dominion ending
+  // counts `satellites.length` — let three silos taken twice read as six and
+  // fire an ending the player had not earned.
+  //
+  // Reachable by ordinary clicking: open the silo, send a squad, reopen the
+  // panel, send the next one.
+  const inFlight = state.expeditions.active.some(
+    (e) => !e.resolved && e.target === siloId && e.purpose !== 'salvage'
+  );
+  if (inFlight) return [];
   return launch(state, squadId, BAL.conquest.band, { target: siloId, purpose: gate.stage });
 }
 
