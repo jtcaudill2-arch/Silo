@@ -887,6 +887,7 @@ export const BAL = {
   // `sim/directives.js`. That module ranks every applicable order by weight
   // and shows the highest. The bands are:
   //
+  //   97    somebody is at the airlock and there is one day to answer
   //   88-95 a hard stop already reached, or a floor about to come down
   //   50-95 something is trending to zero, sooner is higher
   //   85-   a room about to fail, 85 minus its condition
@@ -904,6 +905,16 @@ export const BAL = {
   // decides. What lives here are the shared numbers — the ones that shape more
   // than one order, or that decide whether an order is issued at all.
   directives: {
+    // Above everything, including a resource that runs out today.
+    //
+    // A shortage is a curve — it has been getting worse for days and it will
+    // keep getting worse for days — and the player can act on it tomorrow.
+    // A raid is a cliff with a date on it: one day to answer, no partial
+    // credit, and the answer is a different panel from anything else in this
+    // list. It is also the only order that expires whether or not it is
+    // obeyed, which is exactly the kind of thing a single-line thread has to
+    // put first or not bother showing at all.
+    raidTop: 97,
     // The top of the life-support band: a resource that runs out today.
     lifeSupportTop: 95,
     // How a falling resource's urgency decays with its runway.
@@ -1398,6 +1409,50 @@ export const BAL = {
     breachSuitTier: 3,
     holdCombats: 5,
     holdGarrisonDays: 30,
+    // ---- what taking a silo is actually worth ----
+    //
+    // Conquest paid nothing at all. `resolveRun` had no loot pipeline, so five
+    // sorties and a month of fighting returned the satellite stream and
+    // literally nothing else — measured against salvage on the same band with
+    // the same squad over 330 days: +950 stores and 0 artifacts, against
+    // +4,257 and 25. Since twelve of the forty-eight research nodes and all
+    // three endings are artifact-gated, that is not a weaker option, it is a
+    // strictly dominated one, and a strictly dominated option is dead content
+    // whatever else is true of it.
+    //
+    // The fix is deliberately not "make conquest pay like salvage". It pays
+    // for different things, so that the two are a choice:
+    //
+    //   salvage    a steady, repeatable, artifact-rich trickle off the ground
+    //   conquest   one large sack, a shot at what is in their archive, and
+    //              then a permanent share of everything they make
+    //
+    // Both figures come off the world table's own columns, which is the other
+    // thing this buys: `power.economy` and `power.science` have decided almost
+    // nothing for the player until now. A rich silo is worth robbing and a
+    // clever one is worth reading, and the table has been saying which is
+    // which for six phases.
+    sack: {
+      // Units of stores per point of the target's `power.economy`, split
+      // across what a storeroom actually holds. Ferrous at economy 95 gives
+      // about 1,050 — under a third of what 330 days of salvage returns, but
+      // arriving at once, and on top of the satellite.
+      perEconomy: 11,
+      keys: ['scrap', 'parts', 'alloy', 'food', 'meds', 'ammo', 'fuel'],
+      // The breach opens the storerooms; the hold is what lets you empty them.
+      breachShare: 0.35,
+      // Chance per artifact on their table, per point of `power.science`. At
+      // science 66 that is a 33% shot at each. This is the only reason to
+      // choose a clever target over a rich one, and the only artifact source
+      // in the game that is not a dice roll on the wasteland.
+      artifactChancePerScience: 0.005,
+      // Which table they are drawn from. Tier 3 is the deep band's — a silo
+      // that has been standing since the collapse has the same class of thing
+      // in it as the deep ruins, which is the fiction and also keeps
+      // `origin_shard` (tier 4, the Scar) as something you have to walk to.
+      artifactTier: 3,
+    },
+
     // ---- what a stage costs to actually attempt ----
     //
     // The four stages were a status readout and nothing else: `canAdvance`

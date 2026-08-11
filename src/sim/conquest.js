@@ -35,7 +35,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
 import { conquestState, CONQUEST_STAGES } from './diplomacy.js';
-import { getItem } from '../data/items.js';
+import { getItem, LOOT } from '../data/items.js';
 
 const Q = BAL.conquest;
 
@@ -168,6 +168,48 @@ function contest(state, roster, silo, rng, detection) {
     Math.sqrt(military) * detection * (c.defenseMult ?? 1) * sizePenalty
   );
   return (avg * rng.float(0.7, 1.3)) / theirs;
+}
+
+/**
+ * What a squad carries out of a silo it has just been inside.
+ *
+ * Scaled off the target's own row in the world table — `power.economy` for
+ * the storerooms, `power.science` for what is in the archive — so that
+ * choosing a target is a decision about that row rather than about which one
+ * is nearest. `share` is how much of it this stage gets at: the breach opens
+ * the doors, the hold is what lets you empty them.
+ *
+ * Artifacts come off the deep band's table. A silo standing since the
+ * collapse holds the same class of thing as the deep ruins, and keeping
+ * `origin_shard` on tier 4 means the Scar is still somewhere you have to walk
+ * to — conquest is a second road to the research tree, not a bypass round it.
+ */
+function sack(silo, rng, share) {
+  const S = Q.sack;
+  const economy = silo?.power?.economy ?? 40;
+  const science = silo?.power?.science ?? 30;
+  const total = economy * S.perEconomy * share;
+
+  const loot = {};
+  const taken = [];
+  // Split across the keys with a per-key roll, so two sacks of the same silo
+  // do not read identically.
+  const weights = S.keys.map(() => 0.5 + rng.next());
+  const sum = weights.reduce((a, b) => a + b, 0);
+  S.keys.forEach((k, i) => {
+    const amount = Math.round((total * weights[i]) / sum);
+    if (amount > 0) { loot[k] = amount; taken.push(`${amount} ${k}`); }
+  });
+
+  const artifacts = {};
+  const table = LOOT[S.artifactTier] || {};
+  for (const aid of Object.keys(table.artifacts || {})) {
+    if (rng.chance(science * S.artifactChancePerScience * share)) {
+      artifacts[aid] = (artifacts[aid] || 0) + 1;
+      taken.push(`a ${aid.replace(/_/g, ' ')}`);
+    }
+  }
+  return { loot, artifacts, taken };
 }
 
 /**
@@ -365,6 +407,8 @@ export function resolveRun(state, expedition) {
 
   let casualties = [];
   let survivors = roster.slice();
+  let loot = {};
+  let artifacts = {};
 
   // ---- scout: get in, map it, get out unseen -----------------------------
   if (stage === 'scout') {
@@ -449,6 +493,9 @@ export function resolveRun(state, expedition) {
     if (res.outcome.win) {
       actions.push({ type: 'CONQUEST_PATCH', siloId: silo.id, patch: { stage: 'hold' } });
       journal.push('The door is open and the first floor is theirs. Now they have to keep it.');
+      const got = sack(silo, rng, Q.sack.breachShare);
+      loot = got.loot; artifacts = got.artifacts;
+      if (got.taken.length) journal.push(`Carried out of the entry level: ${got.taken.join(', ')}.`);
       actions.push({
         type: 'LOG',
         entry: { kind: 'expedition', text: `${silo.name} is breached. ${res.outcome.name}.` },
@@ -536,6 +583,9 @@ export function resolveRun(state, expedition) {
       actions.push({ type: 'CONQUEST_PATCH', siloId: silo.id, patch: { stage: 'held' } });
       actions.push({ type: 'SATELLITE_ADD', siloId: silo.id });
       actions.push({ type: 'STAT_BUMP', stats: { silosTaken: 1 } });
+      const got = sack(silo, rng, 1 - Q.sack.breachShare);
+      loot = got.loot; artifacts = got.artifacts;
+      if (got.taken.length) journal.push(`Out of their storerooms: ${got.taken.join(', ')}.`);
       journal.push(`All ${Q.holdCombats} floors. ${silo.name} is Silo 12's.`);
     } else {
       journal.push(`${won} of ${Q.holdCombats} floors held. The rest of it is still theirs.`);
@@ -560,11 +610,13 @@ export function resolveRun(state, expedition) {
     // "write every suit back to full". Same for the dose: `a.radiation || 0`
     // sends a squad home from twelve days outside with nothing to
     // decontaminate.
+    loot,
+    artifacts,
     suitIntegrity: outsideWear(state, expedition, roster),
     radiation: outsideDose(expedition, state, roster),
   });
 
-  return { actions, journal, survivors, casualties };
+  return { actions, journal, survivors, casualties, loot, artifacts };
 }
 
 export default { resolveRun, isConquestRun, nextStage, canLaunchRun, garrisonForce };

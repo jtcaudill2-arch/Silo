@@ -977,6 +977,67 @@ console.log('');
   }
 }
 
+// ---- 14. taking a silo is worth something --------------------------------
+//
+// `resolveRun` shipped with no loot pipeline at all: five sorties and a month
+// of fighting returned the satellite stream and nothing else. A design review
+// measured it against salvage on the same band with the same squad over 330
+// days — +950 stores and *zero* artifacts, against +4,257 and 25 — and since
+// twelve of the forty-eight research nodes and all three endings are
+// artifact-gated, that is not a weaker option but a strictly dominated one.
+//
+// Conquest is not meant to out-earn salvage. It is meant to pay for different
+// things: one large sack off the target's own `power.economy`, a shot at what
+// its `power.science` says is in the archive, and then a permanent share. So
+// what is asserted is that it pays *at all*, and that the world table's
+// columns are what decide how much.
+{
+  const rich = { id: 91, name: 'Rich', power: { military: 20, economy: 95, science: 20 } };
+  const poor = { id: 92, name: 'Poor', power: { military: 20, economy: 20, science: 20 } };
+  const clever = { id: 93, name: 'Clever', power: { military: 20, economy: 50, science: 98 } };
+  const dull = { id: 94, name: 'Dull', power: { military: 20, economy: 50, science: 5 } };
+
+  const run = (target, seed) => {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 300;
+    s.resources.ammo = 9000;
+    s.world.silos[target.id] = { ...target, contact: 'radio', status: 'stable', treaties: [], reputation: 0 };
+    s.world.silos[target.id].conquest = { stage: 'hold', scoutRuns: 2, undermined: true, defenseMult: 0.75 };
+    const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+    let g = 0;
+    for (const cid of ids) {
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+      }
+    }
+    return resolveConquestRun(s, { id: 5, band: 'approach', target: target.id, purpose: 'hold', roster: ids, leaderId: ids[0] });
+  };
+  const stores = (o) => Object.values(o.loot || {}).reduce((a, b) => a + b, 0);
+  const arts = (seedRange, target) => {
+    let n = 0;
+    for (let seed = 1; seed <= seedRange; seed++) n += Object.keys(run(target, seed).artifacts || {}).length;
+    return n;
+  };
+
+  const gotRich = stores(run(rich, 7));
+  const gotPoor = stores(run(poor, 7));
+  if (!gotRich) fail('taking a silo returned no stores at all — conquest still pays nothing');
+  else if (!(gotRich > gotPoor * 2)) fail(`a rich silo paid ${gotRich} and a poor one ${gotPoor} — economy decides nothing`);
+  else ok(`sacking a silo pays off its economy: ${gotRich} stores from a rich one, ${gotPoor} from a poor one`);
+
+  const cleverArts = arts(12, clever);
+  const dullArts = arts(12, dull);
+  // A margin, not `>`. With science neutered to a constant the two targets
+  // still differ by a coin flip — the streams are keyed on the silo id — so a
+  // bare `>` passed under mutation. Measured, 98 against 5 is 25 to 1.
+  if (!cleverArts) fail('a high-science silo yielded no artifacts over 12 seeds — the archive is empty');
+  else if (!(cleverArts >= dullArts * 3)) fail(`science barely decides anything: ${cleverArts} artifacts vs ${dullArts}`);
+  else ok(`and its archive off its science: ${cleverArts} artifacts against ${dullArts} over 12 seeds`);
+}
+
 // ---- 7. migrations write what they promise ----------------------------------
 {
   const s = createNewGame({ seed: 9, now: 1 });

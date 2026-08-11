@@ -27,6 +27,7 @@ import {
   canBuild, canExcavate, canRepair, canShore, strainedFloors, buildCostFor, describeCost,
 } from './build.js';
 import { staffSlots, inService } from './economy.js';
+import { raiderBandFor, defenders as raidDefenders } from './raid.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
 import { canStart, isComplete } from './research.js';
@@ -47,6 +48,7 @@ import { canStart, isComplete } from './research.js';
  * carries its own rank beside the sentence it decides, rather than being
  * looked up somewhere else:
  *
+ *   97    somebody is at the airlock and there is one day to answer
  *   88-95 a hard stop already reached — no generation headroom, no coolant,
  *         more breath than scrubbers, nowhere to sleep — or a floor that is
  *         about to come down (88 minus its integrity)
@@ -491,6 +493,50 @@ export function directives(state) {
       why: 'The silo is breathing more than it scrubs. Air quality falls from here, and health follows it.',
       panel: 'build',
       weight: 90,
+    });
+  }
+
+  // ---- somebody is at the door -------------------------------------------
+  //
+  // The one order that outranks a resource running out today, and the only one
+  // with a deadline the player cannot move.
+  //
+  // `world.pendingRaid` carries `strength`, which decides the whole fight —
+  // which of the four bands turns up, and therefore whether four people with
+  // pipe guns are a garrison or a funeral. For the whole of this feature's
+  // life that number was rendered nowhere: `grep -rn pendingRaid src/ui/`
+  // returned nothing. The player got a transient toast reading "Raiders at the
+  // airlock" and had to decide, blind, whether to spend the day arming people.
+  // A warning that carries no information is not a warning, and a grace day
+  // nobody can act on is theatre — which is what a design review measured it
+  // as: 16 of 20 raids met by a standing squad, and lost, because the squad
+  // that was standing was the wrong size for the band that came.
+  //
+  // So the band is named, the defenders are counted, and the two cases read
+  // differently. Ranked above life support deliberately: a shortage is a curve
+  // and this is a cliff with a date on it.
+  if (state.world.pendingRaid) {
+    const raid = state.world.pendingRaid;
+    const from = state.world.silos[raid.siloId]?.name || 'Somebody';
+    const band = raiderBandFor(raid.strength);
+    const held = raidDefenders(state).length;
+    const daysLeft = Math.max(0, raid.day + BAL.raid.graceDays - state.clock.day);
+    const when = daysLeft <= 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : `in ${daysLeft} days`;
+    // The band names are a mix: "Scrappers" and "Dust Runners" are plural,
+    // "The Slag Crews" carries its own article, and "Warband" is a bare
+    // singular. Lowercasing all four produced "has warband at the door".
+    const party = /^the /i.test(band.name) || /s$/.test(band.name) ? band.name : aOrAn(band.name);
+    add({
+      id: 'raid',
+      text: held ? `Hold the airlock — ${band.name}` : `Get somebody on the airlock — ${band.name}`,
+      why: held
+        ? `${from} has ${party} at the door, arriving ${when}. ` +
+          `${held} ${held === 1 ? 'person is' : 'people are'} standing to meet them. ` +
+          `${band.desc}`
+        : `${from} has ${party} at the door, arriving ${when}, and nobody is standing there. ` +
+          `Without a squad they take a third of everything portable and kill whoever is nearest. ${band.desc}`,
+      panel: 'military',
+      weight: BAL.directives.raidTop,
     });
   }
 
