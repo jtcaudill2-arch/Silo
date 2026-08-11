@@ -176,6 +176,48 @@ if (unreachable.length) {
   ok(`all ${RESEARCH_LIST.length} research nodes are reachable`);
 }
 
+// The two progressions the player is supposed to be able to *plan*.
+//
+// This file's whole subject is "can it be reached at all", and reachable-in-
+// principle is not the same as reachable-in-a-campaign. An artifact gate is
+// the difference: points and shifts are things a silo decides to spend, and
+// an artifact falls out of an expedition or it does not. The excavation
+// ladder had that rule written down and enforced by hand (see the note in
+// data/research.js); the conquest gate did not, and measured, that is exactly
+// where it stopped — a seed that finished Explosives on day 117 sat waiting
+// on one alloy ingot and one intact servo for the remaining five hundred and
+// fifty days, in a campaign that ended on day 662.
+//
+// So the rule is asserted rather than remembered. Digging and taking a silo
+// both cost plenty; neither may cost a die roll.
+console.log('');
+console.log('  progressions a player can plan');
+{
+  const PLANNABLE = [
+    ...BAL.silo.tiers.filter((t) => t.gate).map((t) => ({ id: t.gate, what: `the ${t.name}` })),
+    { id: 'breaching_charges', what: 'taking another silo' },
+  ];
+  for (const { id, what } of PLANNABLE) {
+    // Every node in the closure, not just the leaf — a clean gate behind a
+    // gated prerequisite is still gated.
+    const seen = new Set();
+    const walk = (nid) => {
+      const n = RESEARCH_LIST.find((x) => x.id === nid);
+      if (!n || seen.has(nid)) return [];
+      seen.add(nid);
+      const mine = Object.keys(n.artifacts || {}).length ? [`${nid} (${Object.keys(n.artifacts).join(', ')})`] : [];
+      return [...mine, ...(n.requires || []).flatMap(walk)];
+    };
+    const gated = walk(id);
+    const points = [...seen].reduce((a, x) => a + (RESEARCH_LIST.find((n) => n.id === x)?.cost || 0), 0);
+    console.log(`  ${what.padEnd(24)} ${String(points).padStart(5)} pts  ${gated.length ? 'ARTIFACT-GATED: ' + gated.join('; ') : 'no artifact gate'}`);
+    if (gated.length) {
+      fail(`${what} is gated on an artifact (${gated.join('; ')}) — it is a progression the player is meant to be able to decide on`);
+    }
+  }
+}
+if (!failures.length) ok('digging and conquest are both bought with points and time, not with a die roll');
+
 // Endings. Each one names research it needs; that research has to be reachable.
 console.log('');
 console.log('  endings');

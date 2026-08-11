@@ -290,10 +290,51 @@ export const RESEARCH = {
     effects: { weaponTier: 3, armorTier: 2 },
     desc: 'Needs an alloy your foundry cannot make. Somebody out there still can.',
   }),
+  // Charges are explosives. `firearms_3` was on this list too, and it was
+  // doing gate duty it was never designed for.
+  //
+  // Measured, three seeds, seven hundred days of competent play: `firearms_3`
+  // lands on day 540 and `breaching_charges` lands *never*, on any of them,
+  // in campaigns that end between day 676 and day 849. The full closure was
+  // 3,450 points and three artifacts, and a conquest is four sorties of
+  // twelve days on top of it — so the one feature the metallurgy line exists
+  // to open unlocked at the credits, if at all. The world was not the
+  // problem; no high-military silo collapsed in any of those runs. The door
+  // was.
+  //
+  // Off `explosives` alone the chain is firearms_1 -> firearms_2 ->
+  // explosives -> here, which is 1,980 points past the node a campaign
+  // reaches on day 104. `firearms_3` is still what wins the breach — it is
+  // the tier-3 weapon the fight is priced against — it is simply no longer
+  // what locks the door. `firearms_4` continues to require both, so the
+  // weapons line keeps its order.
+  // And no artifacts on it, for the reason the excavation ladder has none —
+  // see the note there. Taking a silo is the other progression the player is
+  // supposed to be able to *decide* on: it costs points, shifts, suits,
+  // supplies and people, all of which a silo can go and get. An artifact
+  // cannot be decided on.
+  //
+  // Measured, three seeds, a player deliberately driving at this and nothing
+  // else, before and after re-parenting off `firearms_3`:
+  //
+  //   with firearms_3    charges on day 443, 602, never
+  //   without            charges on day 412, 542, never
+  //
+  // Thirty to sixty days, and a seed that reached `explosives` on day 117 and
+  // then sat for the remaining five hundred and fifty. The chain was never
+  // the binding constraint; one alloy ingot and one intact servo were. That
+  // is the same die roll in the middle of the same kind of line, and this
+  // node is worse than the excavation one was, because a conquest is four
+  // sorties of twelve days *after* the gate opens — so an artifact that
+  // arrives late does not delay the reward, it deletes it.
+  //
+  // Still 1,100 points and thirty-six shifts, still behind Explosives, and
+  // every sortie past it still costs suits, supplies and casualties.
+  // Artifacts keep gating the origin chain and the exotic tech, where waiting
+  // on the wasteland is the point.
   breaching_charges: N({
     id: 'breaching_charges', branch: 'metallurgy', name: 'Breaching Charges',
-    cost: 1100, minCycles: 36, requires: ['explosives', 'firearms_3'],
-    artifacts: { alloy_ingot: 1, intact_servo: 1 },
+    cost: 1100, minCycles: 36, requires: ['explosives'],
     effects: { breaching: 1 },
     desc: 'Opens a sealed silo airlock. There is no other use for this, and everyone knows it.',
   }),
