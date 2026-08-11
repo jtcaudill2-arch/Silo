@@ -56,7 +56,8 @@ import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun, nextStage, garrisonForce, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
 import { resolve as resolveCombat } from '../src/sim/combat.js';
-import { conquestState } from '../src/sim/diplomacy.js';
+import { conquestState, simulateTick as diploTick } from '../src/sim/diplomacy.js';
+import { playerPower } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
@@ -701,6 +702,127 @@ console.log('');
     fail(`scouting ${hardest.name} (military ${hardest.power.military}) never failed in 40 seeds — the check does nothing`);
   } else {
     ok(`the hardest silo is hard, not shut: ${scouted}/40 approach runs on ${hardest.name} got in unseen`);
+  }
+}
+
+// ---- 10. a raid can actually be triggered by the world ----------------------
+//
+// The resolver is only half the feature. For the whole of this project's
+// history the dynamic trigger required `reputation < -40`, and measured, no
+// playstyle reached it: a 400-day campaign left the worst reputation in the
+// world at -15, and 300 days of deliberately antagonising The Anvil reached
+// -23. So a raid could resolve and still never happen — the only one a player
+// ever saw was a scripted event on day 26.
+//
+// Counting raids in a campaign cannot assert this: the rate is deliberately
+// low enough to leave the descent affordable, so a short window is luck. So
+// the conditions are built here and the tick is run directly.
+{
+  const store = newStore(31337);
+  const s = store.state;
+  s.clock.day = 200;
+  s.world.lastDiploDay = 0;
+
+  // An aggressive silo, in contact, with no pact.
+  const attacker = Object.values(s.world.silos).find((x) => x.disposition?.aggression > BAL.diplomacy.raidAggression);
+  if (!attacker) fail('no silo in the world table is aggressive enough to ever raid');
+  else {
+    attacker.contact = 'radio';
+    attacker.status = 'stable';
+    attacker.treaties = [];
+    attacker.reputation = 0;
+
+    // A fat, softly-held silo: the opportunity path, which is the only one a
+    // peaceful player will ever meet.
+    //
+    // With one squad, deliberately. A silo with *no* soldiers reads
+    // `playerPower.military` 0 and passes any threshold, so a fixture without
+    // one cannot tell 20 from 40 — and 20 was the value that made this whole
+    // path dead, because a single squad of four with pipe guns scores 24 and
+    // every real campaign has one by the time it is worth robbing. A fixture
+    // that is softer than any silo a player will ever run proves nothing
+    // about the thresholds it is meant to be pinning.
+    store.dispatchAll(formSquad(s, 'Watch'));
+    const sqId = s.military.squadIds[0];
+    for (const c of s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20).slice(0, BAL.military.squadMin)) {
+      store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+    }
+    // And the weapons node. `playerPower.military` is soldiers x 4 plus
+    // weaponTier x 8, so a squad alone reads 16 and a squad plus Firearms I
+    // reads 24 — and 24 is the number that mattered: it is what every
+    // autopilot campaign sits at, and it is what a threshold of 20 was
+    // silently excluding. Without this line the fixture reads 16, passes
+    // either threshold, and cannot tell the broken value from the fixed one.
+    store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'firearms_1' });
+
+    const rich = () => {
+      const p = playerPower(s);
+      return p.economy >= BAL.diplomacy.raidTemptEconomy && p.military <= BAL.diplomacy.raidTemptMilitary;
+    };
+    for (const f of s.silo.floors) f.excavated = true;
+    let slot = 0, floor = 20;
+    while (!rich() && floor < 60) {
+      placeRoom(s, { type: 'storage_depot', floor, slot, width: 1, level: 1 });
+      if (++slot >= BAL.silo.slotsPerFloor) { slot = 0; floor++; }
+    }
+    if (!rich()) {
+      fail('could not build a silo that reads as worth raiding — check playerPower against raidTempt*');
+    } else {
+      let queued = 0;
+      for (let day = 200; day < 900; day++) {
+        s.clock.day = day;
+        for (const a of diploTick(s)) {
+          if (a.type === 'WORLD_EVENT_QUEUE' && a.event?.kind === 'raid') queued++;
+          if (a.type === 'DIPLO_TICK') s.world.lastDiploDay = a.day;
+        }
+      }
+      if (!queued) {
+        fail(
+          `a wealthy, undefended silo next to ${attacker.name} was never raided in 700 days — ` +
+          'the dynamic raid trigger is unreachable, which is the state this feature shipped in'
+        );
+      } else {
+        ok(`the world raids a rich, lightly-held silo: ${queued} raids queued over 700 days next to ${attacker.name}`);
+      }
+
+      // The other path, pinned separately. A well-defended silo is not an
+      // opportunity, so this is the clause that has to carry an aggressive
+      // player who has made an enemy — and it is the clause whose threshold
+      // measured unreachable at -40.
+      //
+      // What this pins is the mechanism, not the number: the fixture sets
+      // reputation relative to `raidGrudgeReputation`, so it follows the
+      // constant wherever it goes. Pinning the *value* would mean asserting
+      // that ordinary play reaches it, which needs a campaign, and a
+      // stochastic assertion on a rate this deliberately low is either flaky
+      // or pins the balance to whatever made the test pass — see the note in
+      // test/campaign.mjs where exactly that assertion was removed. The
+      // evidence for -20 is the measurement recorded on the constant itself.
+      s.research.completed = [...s.research.completed, 'firearms_3'];
+      for (const c of s.citizenIds.map((i) => s.citizens[i])
+        .filter((c) => c.age >= 20 && c.squadId == null).slice(0, BAL.military.squadMax - BAL.military.squadMin)) {
+        store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+      }
+      if (playerPower(s).military <= BAL.diplomacy.raidTemptMilitary) {
+        fail('the grudge fixture is still soft enough to be an opportunity — it cannot isolate the grudge path');
+      } else {
+        attacker.reputation = BAL.diplomacy.raidGrudgeReputation - 1;
+        s.world.lastDiploDay = 0;
+        let grudged = 0;
+        for (let day = 200; day < 900; day++) {
+          s.clock.day = day;
+          for (const a of diploTick(s)) {
+            if (a.type === 'WORLD_EVENT_QUEUE' && a.event?.kind === 'raid') grudged++;
+            if (a.type === 'DIPLO_TICK') s.world.lastDiploDay = a.day;
+          }
+        }
+        if (!grudged) {
+          fail(`a defended silo that ${attacker.name} hates was never raided in 700 days — the grudge path is dead`);
+        } else {
+          ok(`and comes for a defended silo it has a grudge against: ${grudged} over 700 days`);
+        }
+      }
+    }
   }
 }
 

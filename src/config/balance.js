@@ -1230,21 +1230,26 @@ export const BAL = {
     // `evaluateEveryDays` have passed, so a per-day reading of these numbers
     // overstates them threefold.
     //
-    // Measured over a 400-day autopilot campaign: the conditions hold on 160
-    // silo-days, which is about 53 evaluations. At the first values (0.03 /
-    // 0.012) that is well under one raid a campaign, and the campaign audit
-    // duly reported exactly one — the scripted probe on day 26 — with the
-    // dynamic system contributing nothing. At 0.10 / 0.06 the same campaign
-    // sees a handful: enough that a standing squad earns its rations, not so
-    // many that being raided is weather.
+    // Set from measured campaigns, and the measurement had to be a *whole*
+    // campaign. Tuned on a 400-day window these read 0.10 / 0.06 and looked
+    // right — 4 and 8 raids, a standing squad worth keeping. Run to an ending
+    // at 900 days the same numbers compounded to 26 raids on one seed, a raid
+    // every 35 days, and cost the campaign its depth: raids take scrap, parts
+    // and alloy, which are exactly what the descent is bought with, and the
+    // silo that dug all 144 floors without them stopped at 124 with them.
     //
-    // Both aggressive silos in the world table tend to collapse on their own
-    // during a long campaign (The Anvil and Gallow Deep were both `collapsed`
-    // by day 400 on seed 0x1234), which caps this from above no matter what
-    // these numbers say. That is world simulation working as designed, and it
-    // is why the rate is set from measured raids rather than from the odds.
-    raidChanceGrudge: 0.1,
-    raidChanceOpportunity: 0.06,
+    //   opportunity   raids (two seeds)   floors reached
+    //   0.06           4 and 26           124 and 124
+    //   0.03           1 and 17           136 and 144
+    //   0.02           1 and 11           136 and 144
+    //
+    // 0.02 is the rate that leaves the bottom of the silo reachable. The gap
+    // between the two seeds is the world, not the dice: a silo whose
+    // aggressive neighbours collapse early is genuinely safer than one next
+    // to a living Anvil, and flattening that would make the world table say
+    // less than it does now.
+    raidChanceGrudge: 0.035,
+    raidChanceOpportunity: 0.02,
     memoryFloorFraction: 0.15, // never fully forgets
     thresholds: {
       merchant: 12,

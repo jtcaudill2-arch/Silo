@@ -237,27 +237,20 @@ if (runs.every((r) => Object.keys(r.s.flags.crises || {}).length >= 3)) {
   ok(`scripted crises fired in both campaigns (${runs.map((r) => Object.keys(r.s.flags.crises).length).join(', ')} each)`);
 }
 
-// Raids have to actually happen. This is the assertion that would have caught
-// the state the feature shipped in: `world.pendingRaid` written by two
-// producers, resolved by nothing, and — once it *was* resolved — reachable
-// only through one scripted event on day 26, because the dynamic trigger
-// needed a reputation no playstyle could reach.
+// There is deliberately no assertion here on how many raids happened.
 //
-// The reference player takes them rather than repelling them, and that is not
-// a fault: `autopilot` is a one-squad player by construction (it manages
-// `squadIds[0]` and nothing else), and one squad cannot hold the door and
-// walk the surface at the same time. That is the tension the feature exists
-// to create, and it is the same reason the counterplay is asserted in
-// test/wiring.mjs §8, against a silo that actually keeps people in.
-for (const r of runs) {
-  const raids = (r.s.stats.raidsRepelled || 0) + (r.s.stats.raidsLost || 0);
-  if (raids < 2) {
-    fail(`0x${r.seed.toString(16)} saw ${raids} raid(s) in ${r.lastDay} days — the raid system is not reachable in play`);
-  }
-}
-if (runs.every((r) => (r.s.stats.raidsRepelled || 0) + (r.s.stats.raidsLost || 0) >= 2)) {
-  ok(`raids reach a real campaign (${runs.map((r) => (r.s.stats.raidsRepelled || 0) + (r.s.stats.raidsLost || 0)).join(' and ')} over ${DAYS} days)`);
-}
+// There was one, requiring two per campaign, and it was written while the
+// raid rate was three times too high. At the rate that actually leaves the
+// bottom of the silo reachable, a 250-day window sees one raid on a seed
+// whose aggressive neighbours died early and several on one whose did not —
+// and that spread is the world table doing its job, not a fault. An assertion
+// on a stochastic count would either be flaky or would pin the balance to
+// whatever made the test pass.
+//
+// What matters — that the dynamic trigger can fire at all — is asserted
+// deterministically in test/wiring.mjs §10, by building the conditions and
+// running the tick. What matters here is that any raid which *does* happen
+// resolves, and the "still pending" check in `faults` above covers that.
 
 // A campaign that dies on day 30 has not exercised anything. This is not a
 // balance assertion — it is a floor under the other one, so "no faults found"
