@@ -110,9 +110,16 @@ export function isConquestRun(expedition) {
  * `raiderFleeLossFraction` cap, which is the difference between a hard fight
  * and a squad wipe — these are people defending their home, and they break.
  */
-export function garrisonForce(silo, scale = 1, defenseMult = 1) {
+export function garrisonForce(silo, scale = 1, defenseMult = 1, partyForce = 0) {
   const military = silo?.power?.military ?? 40;
-  const power = Math.max(1, military * Q.garrisonPowerPerMilitary * defenseMult * scale);
+  // They answer what is at the door. See `garrisonResponse` in balance.js for
+  // the measurement — without this the target's military rating stops
+  // deciding anything past about 430 of party force, which a squad of trained
+  // veterans passes comfortably.
+  const response = partyForce > 0
+    ? Math.pow(Math.max(1, partyForce / Q.garrisonReferenceForce), Q.garrisonResponse)
+    : 1;
+  const power = Math.max(1, military * Q.garrisonPowerPerMilitary * defenseMult * scale * response);
   return {
     id: `garrison:${silo?.id ?? '?'}`,
     name: `${silo?.name || 'The silo'}'s garrison`,
@@ -124,6 +131,14 @@ export function garrisonForce(silo, scale = 1, defenseMult = 1) {
     human: true,
     displayName: `${silo?.name || 'The silo'}'s garrison`,
   };
+}
+
+/** What the party is worth in a fight, for the garrison to answer. */
+function partyForce(state, roster) {
+  return roster.reduce((a, id) => {
+    const c = state.citizens[id];
+    return a + (c ? unitPower(state, c) : 0);
+  }, 0);
 }
 
 /**
@@ -478,7 +493,7 @@ export function resolveRun(state, expedition) {
 
   // ---- breach: the whole garrison, at the door ---------------------------
   else if (stage === 'breach') {
-    const enemy = garrisonForce(silo, Q.breachGarrisonScale, c.defenseMult ?? 1);
+    const enemy = garrisonForce(silo, Q.breachGarrisonScale, c.defenseMult ?? 1, partyForce(state, roster));
     const res = resolveCombat(state, roster, enemy, {
       battleId: `breach:${silo.id}:${expedition.id}`,
       leaderId: expedition.leaderId,
@@ -534,7 +549,7 @@ export function resolveRun(state, expedition) {
 
     for (let i = 0; i < Q.holdCombats; i++) {
       if (!standing.length) break;
-      const enemy = garrisonForce(silo, Q.holdGarrisonScale, c.defenseMult ?? 1);
+      const enemy = garrisonForce(silo, Q.holdGarrisonScale, c.defenseMult ?? 1, partyForce(state, standing));
       const res = resolveCombat(state, standing, enemy, {
         battleId: `hold:${silo.id}:${expedition.id}:${i}`,
         leaderId: expedition.leaderId,

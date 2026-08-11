@@ -55,7 +55,7 @@ import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun, nextStage, garrisonForce, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
-import { resolve as resolveCombat } from '../src/sim/combat.js';
+import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick } from '../src/sim/diplomacy.js';
 import { playerPower } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
@@ -643,7 +643,11 @@ console.log('');
           f.citizens[cid].gear = { ...(f.citizens[cid].gear || {}), [kind]: id };
         }
       }
-      const enemy = garrisonForce({ id: 9, name: 'T', power: { military } }, BAL.conquest.breachGarrisonScale, 0.75);
+      // The party's force is passed, because that is what the game passes —
+      // a garrison answers what is at its door. Omitting it would measure a
+      // code path no player ever meets.
+      const force = ids.reduce((a, id) => a + unitPower(f, f.citizens[id]), 0);
+      const enemy = garrisonForce({ id: 9, name: 'T', power: { military } }, BAL.conquest.breachGarrisonScale, 0.75, force);
       if (resolveCombat(f, ids, enemy, { battleId: 'wiring-cal:' + seed }).outcome.win) wins++;
     }
     return wins;
@@ -1036,6 +1040,70 @@ console.log('');
   if (!cleverArts) fail('a high-science silo yielded no artifacts over 12 seeds — the archive is empty');
   else if (!(cleverArts >= dullArts * 3)) fail(`science barely decides anything: ${cleverArts} artifacts vs ${dullArts}`);
   else ok(`and its archive off its science: ${cleverArts} artifacts against ${dullArts} over 12 seeds`);
+}
+
+// ---- 15. preparation decides, and so does the target ------------------------
+//
+// `garrisonForce` scaled with the target and nothing else, so the hardest
+// silo in the game was a fixed ceiling — 95 x 6 x 0.75 = 428 — while a
+// party's force has no ceiling at all. Measured breach wins out of 25 against
+// military 95: four green troopers 0, eight green 8, four veterans 17, eight
+// veterans 25. Past about 430 of force the world table's military column
+// decided nothing, and it is the column the whole diplomacy screen is built
+// on. What flattened it was training, not headcount — four veterans out-fight
+// eight recruits, which is right, and then out-fought the game.
+//
+// A garrison now answers the force at its door, sub-linearly, so bringing
+// more is still worth doing. What is asserted is that *both* dimensions
+// still decide something: the hardest silo must not fall to a maximum party
+// every time, and it must not be immune to one either.
+{
+  const attempt = (n, trained, military, seed) => {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 300;
+    s.resources.ammo = 9000;
+    const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, n);
+    let g = 0;
+    for (const cid of ids) {
+      const c = s.citizens[cid];
+      if (trained) c.skills.combat = 45;
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        c.gear = { ...(c.gear || {}), [kind]: id };
+      }
+    }
+    s.world.silos[6] = {
+      ...s.world.silos[6],
+      power: { military, economy: 60, science: 40 },
+      contact: 'radio', status: 'stable',
+      conquest: { stage: 'breach', scoutRuns: 2, undermined: true, defenseMult: 0.75 },
+    };
+    const out = resolveConquestRun(s, { id: 1, band: 'approach', target: 6, purpose: 'breach', roster: ids, leaderId: ids[0] });
+    return out.actions.some((a) => a.type === 'CONQUEST_PATCH' && a.patch?.stage === 'hold');
+  };
+  const rate = (n, trained, military) => {
+    let w = 0;
+    for (let seed = 1; seed <= 25; seed++) if (attempt(n, trained, military, seed)) w++;
+    return w;
+  };
+
+  const best = rate(BAL.military.squadMax, true, 95);
+  const green = rate(BAL.military.squadMax, false, 95);
+  const bestSoft = rate(BAL.military.squadMax, true, 20);
+
+  if (best >= 25) {
+    fail(`a maximum party breached the hardest silo ${best}/25 times — preparation has erased the target's military rating`);
+  } else if (best < 8) {
+    fail(`a maximum party breached the hardest silo only ${best}/25 times — it is shut, not hard`);
+  } else if (!(bestSoft > best)) {
+    fail(`the softest and hardest silos play the same to a maximum party (${bestSoft} vs ${best})`);
+  } else if (!(best > green + 5)) {
+    fail(`training the same party changes little against the hardest silo (${green} green, ${best} trained)`);
+  } else {
+    ok(`the hardest silo answers preparation without being erased by it: ${green}/25 green, ${best}/25 veteran, ${bestSoft}/25 against the softest`);
+  }
 }
 
 // ---- 7. migrations write what they promise ----------------------------------

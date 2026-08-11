@@ -1409,6 +1409,48 @@ export const BAL = {
     breachSuitTier: 3,
     holdCombats: 5,
     holdGarrisonDays: 30,
+    // ---- how hard they fight back ----
+    //
+    // `garrisonForce` used to scale with the target and nothing else, so the
+    // hardest silo in the game was a fixed ceiling of 95 x 6 x 0.75 = 428 —
+    // and a party's force has no ceiling at all. Measured, breach wins out of
+    // 25 against military 20 / 60 / 95:
+    //
+    //   4 green    (force 132)   21 /  2 /  0     <- a real curve
+    //   8 green    (force 203)   25 / 21 /  8
+    //   4 trained  (force 263)   25 / 25 / 17
+    //   8 trained  (force 582)   25 / 25 / 25     <- no curve at all
+    //
+    // Past about 430 of force the world table's military column stopped
+    // deciding anything, and it is the column the whole diplomacy screen is
+    // built around. Note what actually flattens it: not headcount — eight
+    // green troopers are 203 — but *training*. Four veterans out-fight eight
+    // recruits, which is correct, and then out-fight the game.
+    //
+    // So a garrison now answers the force at its door. That is not
+    // rubber-banding for its own sake, it is what a silo would do: they can
+    // see what is coming up the approach, and a duty shift meets four
+    // scavengers while everyone who can hold a rifle meets a company. It is
+    // deliberately sub-linear, so bringing more is still worth doing — at 0.5
+    // a party twice the force faces a garrison only 1.41x heavier, and nets a
+    // real advantage for it.
+    //
+    // Measured at 0.5, same cells:
+    //
+    //   4 green    21 /  0 /  0      a minimum squad cannot brute-force anything
+    //   8 green    25 / 12 /  0      numbers alone do not do it
+    //   4 trained  25 / 18 /  3      nor does quality alone
+    //   8 trained  25 / 25 / 19      the best party takes the worst silo ~76%
+    //
+    // and the breach is stage three of four — the hold is still five fights
+    // after it. Both dimensions decide something now, and neither is
+    // sufficient by itself.
+    garrisonResponse: 0.5,
+    // What "a party worth waking up for" is measured against: a minimum squad
+    // in decent kit, which is 132 of force. Below this the exponent would
+    // *weaken* the garrison, so it is clamped at 1.
+    garrisonReferenceForce: 130,
+
     // ---- what taking a silo is actually worth ----
     //
     // Conquest paid nothing at all. `resolveRun` had no loot pipeline, so five
