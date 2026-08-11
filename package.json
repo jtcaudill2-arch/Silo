@@ -8,7 +8,7 @@
     "serve": "node tools/serve.mjs",
     "build": "node tools/build-site.mjs",
     "serve:dist": "node tools/build-site.mjs && node tools/serve.mjs --root dist --base /Silo/",
-    "test": "node test/reachability.mjs && node test/wiring.mjs && node test/levels.mjs && node test/deep.mjs && node test/harness.mjs && node test/obedient.mjs && node test/unlocks.mjs && node test/catchup.mjs && node test/expedition.mjs && node test/conquest.mjs && node test/world.mjs && node test/order.mjs && node test/pacing.mjs && node test/browser.mjs && node test/mobile.mjs",
+    "test": "node test/reachability.mjs && node test/wiring.mjs && node test/levels.mjs && node test/deep.mjs && node test/harness.mjs && node test/obedient.mjs && node test/unlocks.mjs && node test/catchup.mjs && node test/expedition.mjs && node test/conquest.mjs && node test/world.mjs && node test/order.mjs && node test/pacing.mjs && node test/browser.mjs && node test/campaign.mjs --days=250 && node test/mobile.mjs",
     "test:mobile": "node test/mobile.mjs",
     "test:sim": "node test/harness.mjs",
     "test:catchup": "node test/catchup.mjs",
@@ -22,7 +22,8 @@
     "assets": "node tools/gen-atlas.mjs && node tools/gen-icons.mjs && node tools/gen-precache.mjs",
     "test:conquest": "node test/conquest.mjs",
     "test:obedient": "node test/obedient.mjs",
-    "test:unlocks": "node test/unlocks.mjs"
+    "test:unlocks": "node test/unlocks.mjs",
+    "test:campaign": "node test/campaign.mjs"
   },
   "engines": {
     "node": ">=18"

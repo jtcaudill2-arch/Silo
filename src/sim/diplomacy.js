@@ -411,12 +411,44 @@ export function simulateTick(state) {
       });
     }
 
-    // A hostile silo with a grudge and a bigger army eventually acts on it.
-    if (silo.reputation < -40 && silo.disposition.aggression > 0.6 && rng.chance(0.03)) {
-      actions.push({
-        type: 'WORLD_EVENT_QUEUE',
-        event: { kind: 'raid', siloId: silo.id, day: day + rng.int(2, 5) },
-      });
+    // Why anyone comes for Silo 12. Two reasons, and the second one is new.
+    //
+    // The first — a grudge — was the only one, and it never happened. Measured
+    // over a 400-day campaign the worst reputation any silo reached was -15,
+    // and over 300 days of *deliberately* antagonising The Anvil (repeated
+    // approach runs, each failure worth `scoutFailAlertRep`) it reached -23.
+    // The gate was -40, and only two silos of twenty have the aggression to
+    // pass the second clause at all. So the dynamic raid was unreachable by
+    // every playstyle, and the only raid a player ever saw in a whole
+    // campaign was the scripted probe on day 26.
+    //
+    // That did not matter while `world.pendingRaid` was written and never
+    // read. It matters now that sim/raid.js resolves it: a defence mechanic
+    // that fires once per campaign, before the player can have formed a
+    // squad, is a mechanic the player never gets to use.
+    //
+    // The second reason is the one The Anvil's own entry in data/silos.js has
+    // always described — "Raids openly and keeps a ledger of who has not paid
+    // yet" — which is not a grudge, it is a business. A silo that is fat and
+    // lightly held gets visited whether or not it has given offence. That is
+    // what makes keeping a squad at home a standing decision rather than a
+    // reaction, and it is the only clause a peaceful player will ever meet.
+    const grudge = silo.reputation < D.raidGrudgeReputation;
+    const aggressive = silo.disposition.aggression > D.raidAggression;
+    if (aggressive && !hasTreaty(silo, 'nap') && !hasTreaty(silo, 'alliance')) {
+      const me = playerPower(state);
+      // Worth robbing, and cheap to rob. Both halves matter: a poor silo is
+      // not worth the walk, and a well-defended one is somebody else's
+      // problem.
+      const fat = me.economy >= D.raidTemptEconomy;
+      const soft = me.military <= D.raidTemptMilitary;
+      const opportunity = fat && soft;
+      if ((grudge || opportunity) && rng.chance(grudge ? D.raidChanceGrudge : D.raidChanceOpportunity)) {
+        actions.push({
+          type: 'WORLD_EVENT_QUEUE',
+          event: { kind: 'raid', siloId: silo.id, day: day + rng.int(2, 5) },
+        });
+      }
     }
   }
 

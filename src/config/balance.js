@@ -1194,6 +1194,57 @@ export const BAL = {
     honestyWeight: 8,
     paranoiaWeight: 40,
     memoryDecayPer10Days: 1,
+
+    // ---- who comes for you, and why ----
+    //
+    // See the note in sim/diplomacy.js. Only two silos of twenty have the
+    // aggression to raid at all — The Anvil (0.95) and Gallow Deep (0.7) —
+    // which is deliberate: being raided should mean something specific about
+    // your neighbours, not be weather.
+    raidAggression: 0.6,
+    // The grudge path. Was -40, which measured unreachable: a 400-day
+    // campaign left the worst reputation in the world at -15, and 300 days of
+    // deliberately antagonising The Anvil reached -23. -20 is inside what a
+    // player who declares war (-50 at once) or keeps getting caught scouting
+    // (-12 a time) can actually reach.
+    raidGrudgeReputation: -20,
+    // The opportunity path, against `playerPower`. Economy is rooms x 2.2
+    // capped at 100, so 40 is a silo of about eighteen rooms — established,
+    // visibly worth the walk.
+    //
+    // Military is `soldiers x 4 + weaponTier x 8`. The threshold was 20
+    // first, and measured that never fired: an autopilot silo forms one squad
+    // early and sits at 24 for the rest of the campaign, so it read as
+    // "defended" for ever on the strength of four people with pipe guns.
+    // Against a Warband that is not a garrison, it is a rounding error. 40 is
+    // roughly two crewed squads, or one with researched weapons — the point
+    // at which a raider would genuinely go and look at somebody else.
+    //
+    // Both halves have to hold. A poor silo is not worth robbing and a
+    // defended one is somebody else's problem, and that conjunction is what
+    // makes standing a squad down a decision rather than a default.
+    raidTemptEconomy: 40,
+    raidTemptMilitary: 40,
+    // Per aggressive silo per diplomacy tick, once the condition holds. Note
+    // *per tick*, not per day: `simulateTick` returns early unless
+    // `evaluateEveryDays` have passed, so a per-day reading of these numbers
+    // overstates them threefold.
+    //
+    // Measured over a 400-day autopilot campaign: the conditions hold on 160
+    // silo-days, which is about 53 evaluations. At the first values (0.03 /
+    // 0.012) that is well under one raid a campaign, and the campaign audit
+    // duly reported exactly one — the scripted probe on day 26 — with the
+    // dynamic system contributing nothing. At 0.10 / 0.06 the same campaign
+    // sees a handful: enough that a standing squad earns its rations, not so
+    // many that being raided is weather.
+    //
+    // Both aggressive silos in the world table tend to collapse on their own
+    // during a long campaign (The Anvil and Gallow Deep were both `collapsed`
+    // by day 400 on seed 0x1234), which caps this from above no matter what
+    // these numbers say. That is world simulation working as designed, and it
+    // is why the rate is set from measured raids rather than from the odds.
+    raidChanceGrudge: 0.1,
+    raidChanceOpportunity: 0.06,
     memoryFloorFraction: 0.15, // never fully forgets
     thresholds: {
       merchant: 12,
