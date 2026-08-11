@@ -139,6 +139,7 @@ npm run test:pacing -- --days=800
 node test/harness.mjs --days=300 --verbose
 node test/browser.mjs --shots   # real browser, incl. offline boot; writes .shots/
 npm run test:mobile             # a phone, by finger, served from /Silo/
+npm run test:campaign -- --days=900   # two whole campaigns, checked every day
 ```
 
 `test/browser.mjs` and `test/mobile.mjs` are the only ones that need anything
@@ -151,6 +152,17 @@ correctly on every hidden resource counter and locked panel while all of them
 stayed on screen — `[hidden]` is a user-agent rule and loses to the author
 `display: flex` on `.res` and `.nav-btn`. The old assertion counted
 `!node.hidden` and passed throughout. Both tests now count what renders.
+
+`campaign.mjs` is the opposite of the others. They each ask a specific
+question; it asks the unspecific one — play two whole campaigns and see if
+anything comes apart — and re-checks the whole of state every day against
+things that should never be true: a citizen dead and still on the roster, a
+room staffed by somebody who does not exist, a resource gone NaN, an
+expedition days past its return, a raid still pending, a log line with
+"undefined" in it. It runs at 250 days in `npm test` and is worth running at
+900 by hand, because that is where balance faults show up: the raid rate was
+tuned inside a 400-day window and only a run to an ending revealed it had
+closed off the bottom twenty floors of the silo.
 
 `reachability.mjs` is the cheapest and the one to run first. It is a
 fixed-point solve over the research tree, the loot tables and the band suit
@@ -200,6 +212,8 @@ src/
   config/balance.js    EVERY tunable number. No exceptions.
   core/                loop, store, reducers, save, catchup, rng, events, game
   sim/                 pure (state, ctx) -> actions. No DOM, no mutation.
+                       economy, jobs, build, dig, research, expedition,
+                       combat, raid, conquest, diplomacy, world, order
   render/              canvas, floors, citizens, depth gauge
   ui/                  plain DOM panels
   data/                rooms, research, silos, encounters, items, names, traits
