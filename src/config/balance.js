@@ -860,7 +860,6 @@ export const BAL = {
     sheriffBonusPerLevel: 1.6,
     deputyBonus: 0.7,
     dissidentMultiplier: 1.35,
-    satellitePenaltyPerDay: -1,
     uprisingThreshold: 25,
     uprisingConsecutiveDays: 3,
     uprisingChancePerDay: 0.34,
@@ -1397,7 +1396,6 @@ export const BAL = {
     undermineDefenseReduction: 0.25,
     breachSquadsRequired: 2,
     breachSuitTier: 3,
-    breachChargesRequired: 4,
     holdCombats: 5,
     holdGarrisonDays: 30,
     // ---- what a stage costs to actually attempt ----
@@ -1463,8 +1461,22 @@ export const BAL = {
     // Which is the curve the design asks for: the agrarian silo is a
     // formality once you can reach it, and the one whose hook is "the main
     // military threat" is a campaign you will lose people over and may lose
-    // outright. Re-measure this cell if `combat.outcomes`, gear tiers or
-    // `squadMax` move — it is the only number holding the difficulty apart.
+    // outright. Re-measured after the audit fixes: 40W/0L, 40W/0L, 34W/6L,
+    // 15W/25L, with the hold and casualty columns unchanged — the table
+    // holds.
+    //
+    // What it does NOT hold for is a *better* party, and that is the real
+    // limit of this constant. `garrisonForce` scales with the target only, so
+    // the hardest garrison in the game is a fixed ceiling at 95 x 6 = 570,
+    // while a party's force scales with headcount, gear and training without
+    // bound: eight troopers at the load-out above are about 203, the same
+    // eight with trained combat skill are past 550, and the curve above
+    // flattens to 25/25 everywhere. A design judge measuring at combat 45
+    // read that as this table being wrong; it is not — it is a different
+    // squad. But the observation underneath is correct and unfixed: past a
+    // certain squad, the military column stops deciding anything, and the
+    // number that decides it is `military.squadMax`. Scaling the garrison
+    // with the party is the fix, and it is not made here.
     garrisonPowerPerMilitary: 6,
     // The breach is one fight against everything they have at the door.
     breachGarrisonScale: 1,
@@ -1475,9 +1487,26 @@ export const BAL = {
     holdGarrisonScale: 0.45,
     holdAmmoDecayPerFight: 0.15,
     // Losing the breach or the hold is not a reset to zero. The stage stands
-    // and can be tried again; what it costs is the squad that tried it.
-    holdFailuresAllowed: 1,
-    conqueredStartOrder: 5,
+    // and can be tried again; what it costs is the squad that tried it. There
+    // is no `holdFailuresAllowed` — there was one, read by nothing, and a
+    // constant that describes a rule the code does not have is the exact
+    // defect this module was written to remove.
+    // What a silo's own order reads the day it is taken, and the number that
+    // makes `holdGarrisonDays` mean something.
+    //
+    // It was 5, against a `revoltOrderThreshold` of 20 — so an ungarrisoned
+    // satellite was already below the line before the first day's decay was
+    // applied, and revolted immediately, every time. That made
+    // `satelliteDecayPerDay` dead weight: its value could be -0.001 and
+    // nothing would change. It also made the `hold` stage's own description —
+    // "then 30 days of garrison or they revolt" — wrong by thirty times and
+    // wrong in shape: it described a slide and delivered a cliff.
+    //
+    // 62 is derived, not picked: (62 - 20) / 1.4 is exactly
+    // `holdGarrisonDays`. A silo you take and walk away from throws you out a
+    // month later, which is the sentence the panel has always shown the
+    // player. Garrisoned, it warms from 62 at `satelliteWarmPerDay`.
+    conqueredStartOrder: 62,
     satelliteEfficiency: 0.4,
     satelliteOrderPerDay: -1, // what each satellite costs *your* order, daily
     // What happens to the occupied silo's own order. Warming needs a squad

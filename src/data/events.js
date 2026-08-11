@@ -47,14 +47,16 @@ export const CRISES = {
     headline: 'Somebody is at the airlock',
     text:
       'Four of them, maybe five, working at the outer door with a cutting torch and no ' +
-      'particular hurry. They are not equipped to get through it. They are equipped to ' +
-      'find out how long it would take.',
+      'particular hurry. They are not equipped to get through it today. They are ' +
+      'equipped to find out how long it would take, and they are taking their time ' +
+      'about it. Whoever is standing at that door tomorrow is the whole of the answer.',
     resolve: (s) => [
       { type: 'PENDING_RAID', siloId: 5, strength: 0.25 },
       { type: 'ORDER_DELTA', amount: -4, reason: 'raiders at the door' },
     ],
     advice:
-      'They left. The next ones will know exactly how long it takes, because these ones measured it.',
+      'Put somebody on the airlock before tomorrow. A squad standing there turns this ' +
+      'kind of party around; an empty corridor lets them take whatever they can carry.',
   },
 
   refugee_wave: {
