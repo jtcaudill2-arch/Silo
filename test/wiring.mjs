@@ -54,7 +54,7 @@ import { tierUnlocked } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
-import { canLaunchRun, nextStage, garrisonForce, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
+import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick } from '../src/sim/diplomacy.js';
 import { playerPower } from '../src/sim/world.js';
@@ -484,8 +484,22 @@ console.log('');
   } else {
     ok('a pending raid is resolved by the day loop, not left standing for ever');
   }
-  if (!(s.resources.scrap < before.scrap)) {
-    fail(`an undefended raid took nothing (scrap ${before.scrap} -> ${s.resources.scrap})`);
+  // A floor, not just a direction.
+  //
+  // `scrap < before.scrap` passed against `theft(state, 0)` — a raid that
+  // carried off literally nothing — because two units of ordinary production
+  // drift over the grace day satisfy it. And the floor is deliberately a hard
+  // fraction rather than `BAL.raid.undefendedTheft`: a bar derived from the
+  // constant collapses to zero when the constant does, which is how zeroing
+  // the theft passed too. A raid that walks off with under a tenth of the
+  // scrap is not the thing shell.js warns the player about.
+  const RAID_TAKES_AT_LEAST = 0.1;
+  const took = before.scrap - s.resources.scrap;
+  if (!(took >= before.scrap * RAID_TAKES_AT_LEAST)) {
+    fail(
+      `an undefended raid took ${Math.round(took)} of ${Math.round(before.scrap)} scrap — under a tenth, so ` +
+      'the airlock stood open and nothing meaningful left with them'
+    );
   } else {
     ok(`an undefended raid costs real stores: scrap ${Math.round(before.scrap)} -> ${Math.round(s.resources.scrap)}`);
   }
@@ -859,6 +873,7 @@ console.log('');
   // it did on the first attempt, staying green under mutation.
   const TARGET = 6;
   s.world.silos[TARGET].conquest = { stage: 'hold', scoutRuns: 2, undermined: true, defenseMult: 0.75 };
+  const preHealth = Object.fromEntries(ids.map((i) => [i, s.citizens[i].health]));
   const out = resolveConquestRun(s, { id: 77, band: 'approach', target: TARGET, purpose: 'hold', roster: ids, leaderId: ids[0] });
 
   const floorsFought = out.journal.filter((l) => /^— Floor /.test(l)).length;
@@ -866,10 +881,50 @@ console.log('');
     fail(`the hold fixture only fought ${floorsFought} floor(s) — it cannot test whether wounds accumulate across them`);
   }
   const patches = out.actions.filter((a) => a.type === 'CITIZENS_PATCH');
-  if (patches.length > 1) {
-    fail(`the hold emitted ${patches.length} health patches; each reads pre-assault state, so all but the last are discarded`);
+  if (patches.length !== 1) {
+    fail(`the hold emitted ${patches.length} health patches, not 1; each reads pre-assault state, so all but the last are discarded`);
   } else {
     ok('the hold emits one cumulative wound patch, not one per floor that overwrites the last');
+  }
+
+  // The patch has to be a real wound, end to end.
+  const drops = patches.flatMap((p) => p.patches).map((q) => preHealth[q.id] - q.health);
+  const worst = drops.length ? Math.round(Math.max(...drops)) : 0;
+  if (!(worst > 0)) {
+    fail(`${floorsFought} floors of fighting left the squad at full health — no wound reached the patch`);
+  } else {
+    ok(`and it is a real wound: worst ${worst} health over ${floorsFought} floors`);
+  }
+
+  // Now the arithmetic, exactly, because the total above cannot prove it.
+  //
+  // This is the correction to a first attempt at this assertion. It bounded
+  // the accumulated drop by `survivorHealthLoss[1]` (34) on the reasoning
+  // that no single floor could exceed it — but combat.js:217 computes
+  // `rng.int(8,34) * (win ? 0.7 : 1.2) * traitMod(injuryTaken)`, so one bad
+  // floor against a frail soldier reaches 61. Measured: the last-floor-wins
+  // mutation produced a drop of 45 and sailed past a ceiling of 34. A bound
+  // of 61 against a clean reading of 66 is four points of margin, which is
+  // not a test either.
+  //
+  // So the accumulation is pinned directly, on wounds we choose. Three floors
+  // read the same pre-assault health of 100 — which is precisely the
+  // situation `accumulate` exists for, since nothing dispatches between the
+  // fights — and report 80, 85 and 90. That is 20 + 15 + 10 of damage, and
+  // the citizen must finish on 55. Last-floor-wins finishes on 90.
+  {
+    const fake = { citizens: { z: { id: 'z', health: 100, radiation: 0 } } };
+    const hurt = new Map();
+    for (const h of [80, 85, 90]) accumulate(hurt, [{ id: 'z', health: h }], fake);
+    const got = hurt.get('z')?.health;
+    if (got !== 55) {
+      fail(
+        `three floors wounding 20, 15 and 10 off the same pre-assault reading of 100 left the citizen on ` +
+        `${got}, not 55 — the floors overwrite instead of accumulating`
+      );
+    } else {
+      ok('and the floors accumulate exactly: 20 + 15 + 10 off 100 leaves 55, not 90');
+    }
   }
 
   // One victory bonus for the assault, not one per floor. Five floors used to
@@ -1026,10 +1081,32 @@ console.log('');
     return n;
   };
 
+  // Ratios alone are tautologies here, and this section learned that the hard
+  // way twice. `gotRich > gotPoor * 2` compares two numbers that both scale
+  // off `sack.perEconomy`, so rich/poor is 95/20 for *every* value of it: with
+  // `perEconomy` cut from 11 to 0.2 the whole sack fell to 12 stores across
+  // seven resources and the ratio test still printed a tick. Same for the
+  // artifact margin under `artifactChancePerScience` at 0.0002.
+  //
+  // So each ratio now sits behind an absolute floor that is not derived from
+  // the constant it is meant to police. The magnitudes come from the design
+  // review that measured a mature silo producing 242-293 stores a day: a sack
+  // worth less than a single day of what the silo makes anyway is not the
+  // "one large sack" this feature is sold on, whatever it is worth relative
+  // to a poorer target. Measured today: 679 rich, 143 poor, 20 artifacts
+  // against 0 over 12 seeds.
+  const SACK_WORTH_THE_ASSAULT = 300;
+  const ARCHIVE_WORTH_THE_TRIP = 6;
+
   const gotRich = stores(run(rich, 7));
   const gotPoor = stores(run(poor, 7));
   if (!gotRich) fail('taking a silo returned no stores at all — conquest still pays nothing');
-  else if (!(gotRich > gotPoor * 2)) fail(`a rich silo paid ${gotRich} and a poor one ${gotPoor} — economy decides nothing`);
+  else if (!(gotRich >= SACK_WORTH_THE_ASSAULT)) {
+    fail(
+      `sacking the richest silo in the table returned ${gotRich} stores — under a day of the silo's own ` +
+      `production, so five sorties and a month of walking bought nothing`
+    );
+  } else if (!(gotRich > gotPoor * 2)) fail(`a rich silo paid ${gotRich} and a poor one ${gotPoor} — economy decides nothing`);
   else ok(`sacking a silo pays off its economy: ${gotRich} stores from a rich one, ${gotPoor} from a poor one`);
 
   const cleverArts = arts(12, clever);
@@ -1038,7 +1115,12 @@ console.log('');
   // still differ by a coin flip — the streams are keyed on the silo id — so a
   // bare `>` passed under mutation. Measured, 98 against 5 is 25 to 1.
   if (!cleverArts) fail('a high-science silo yielded no artifacts over 12 seeds — the archive is empty');
-  else if (!(cleverArts >= dullArts * 3)) fail(`science barely decides anything: ${cleverArts} artifacts vs ${dullArts}`);
+  else if (!(cleverArts >= ARCHIVE_WORTH_THE_TRIP)) {
+    fail(
+      `the best archive in the table yielded ${cleverArts} artifacts over 12 seeds — a rounding error against ` +
+      'the 25 salvage returns in the same span, so the archive is not a reason to take a silo'
+    );
+  } else if (!(cleverArts >= dullArts * 3)) fail(`science barely decides anything: ${cleverArts} artifacts vs ${dullArts}`);
   else ok(`and its archive off its science: ${cleverArts} artifacts against ${dullArts} over 12 seeds`);
 }
 

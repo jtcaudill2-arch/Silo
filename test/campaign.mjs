@@ -25,6 +25,11 @@
  * results is `x === x`, which stays green against anything.
  *
  * Run: node test/campaign.mjs [--days=900] [--seeds=0x1234,0xbeef]
+ *
+ * `npm test` deliberately passes no `--days`, so CI runs the default below and
+ * the two can never disagree. They did once: CI ran 250 days against a file
+ * whose late-campaign assertions start at 600, which cost this branch its
+ * coverage of conquest entirely. Both campaigns take about ten seconds.
  */
 
 import { createStore } from '../src/core/store.js';
@@ -89,6 +94,21 @@ function faults(s) {
       if (!room) at(`${id} is posted to room ${c.job.roomId}, which does not exist`);
       else if (!room.staff.includes(c.id)) at(`${id} thinks it works in ${room.id}; the room disagrees`);
     }
+  }
+
+  // ---- and the roster agrees with the citizens ---------------------------
+  //
+  // The other direction, which this file was missing. Everything above walks
+  // `citizenIds -> citizens`; nothing walked back. A mutation that dropped the
+  // `citizenIds.push` for a returning recruit — so the person exists, eats,
+  // works, and is on no roster — ran two full campaigns without a word.
+  //
+  // That is the likelier direction for a roster bug and the worse one: it
+  // shrinks the population silently, and every population-derived number in
+  // the game reads the roster.
+  for (const c of Object.values(s.citizens)) {
+    if (c.status === 'dead' || ids.has(c.id)) continue;
+    at(`${c.id} is alive (status ${c.status}) and on no roster — citizens has them, citizenIds does not`);
   }
 
   // ---- rooms agree with the roster ---------------------------------------
@@ -262,7 +282,20 @@ if (runs.every((r) => Object.keys(r.s.flags.crises || {}).length >= 3)) {
 // The autopilot reaches `breaching_charges` last, so this only holds over a
 // campaign long enough to finish the tree. Under that, it is not asserted —
 // a short run has not earned the right to expect a conquest.
+//
+// But it says so out loud. This gate used to `continue` in silence, and
+// `npm test` used to pass `--days=250`: the assertion never evaluated, and
+// the suite reported fifteen green sections as though it had. Deleting the
+// autopilot's entire `conquer()` left the whole suite green. A check that
+// quietly opts itself out is worse than no check, because it is counted.
 const LONG = 600;
+const short = runs.filter((r) => r.lastDay < LONG);
+if (short.length) {
+  fail(
+    `${short.map((r) => `0x${r.seed.toString(16)} (${r.lastDay}d)`).join(', ')} ended before day ${LONG}, so the ` +
+    'conquest assertion did not run — raise --days or explain why conquest is unreachable'
+  );
+}
 for (const r of runs) {
   if (r.lastDay < LONG) continue;
   if (!(r.s.stats.silosTaken > 0)) {

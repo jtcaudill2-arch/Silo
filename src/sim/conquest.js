@@ -235,8 +235,14 @@ function sack(silo, rng, share) {
  * and every later one is that same starting point minus only its own floor's
  * damage. Taking the difference recovers each floor's actual wound, which is
  * what accumulates.
+ *
+ * Exported for test/wiring.mjs §11. The end-to-end assertion there can only
+ * see the total, and a total cannot distinguish "five floors accumulated"
+ * from "one bad floor" — combat.js:217 lets a single fight take
+ * 34 x 1.2 x 1.5 = 61 points, which overlaps what several floors produce. So
+ * the arithmetic is pinned there, exactly, on known wounds.
  */
-function accumulate(hurt, patches, state) {
+export function accumulate(hurt, patches, state) {
   for (const p of patches || []) {
     const c = state.citizens[p.id];
     if (!c) continue;
