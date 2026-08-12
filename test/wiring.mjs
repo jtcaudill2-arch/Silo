@@ -56,7 +56,7 @@ import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
-import { conquestState, simulateTick as diploTick } from '../src/sim/diplomacy.js';
+import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
 import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
@@ -1652,6 +1652,91 @@ console.log('');
     );
   } else {
     ok(`Dominion asks for ${BAL.endings.dominionSilosRequired} holdings at once, against a reference peak of 2`);
+  }
+}
+
+// ---- 24. the grudge has an exit, and a neighbour's war is not yours ---------
+//
+// Every escalation in the raid loop was world-driven and every de-escalation
+// needed a panel the world had closed. A *repelled* raid still cost 8
+// reputation, and nothing but player diplomacy ever raises it — so four clean
+// repulses walked The Anvil from -15 to -47, each one making the next raid
+// likelier via the grudge path, which bypasses the opportunity conjunction so
+// arming up stops helping. There was no play, not even a perfect one, that
+// walked a grudge back.
+{
+  const store = newStore(606);
+  const s = store.state;
+  const before = s.world.silos[5].reputation;
+  s.world.pendingRaid = { siloId: 5, strength: 0.2, day: s.clock.day - BAL.raid.graceDays };
+  store.dispatchAll(formSquad(s, 'Watch'));
+  const sqId = s.military.squadIds[0];
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  let g = 0;
+  for (let i = 0; i < 8; i++) {
+    const c = adults[i];
+    if (!c) continue;
+    store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+    const id = 'g' + ++g;
+    s.military.gear[id] = { id, item: 'mag_rifle', kind: 'weapon', durability: BAL.gear.durabilityMax, assignedTo: c.id };
+    s.citizens[c.id].gear = { ...(s.citizens[c.id].gear || {}), weapon: id };
+  }
+  s.resources.ammo = 5000;
+  store.dispatchAll(raid.simulateDay(s));
+
+  if (!s.stats.raidsRepelled) {
+    fail('the fixture did not repel the raid, so it cannot show what repelling one is worth');
+  } else if (!(s.world.silos[5].reputation > before)) {
+    fail(
+      `turning a raid back moved reputation from ${before} to ${Math.round(s.world.silos[5].reputation)} — ` +
+      'winning still makes the next raid likelier, so there is no way out of a grudge'
+    );
+  } else {
+    ok(`beating a raid at the door is the way out of a grudge: ${before} -> ${Math.round(s.world.silos[5].reputation)}`);
+  }
+}
+{
+  // A war between two *other* silos used to collapse your options for them to
+  // "Sue for peace" alone — refused, because you are not at war.
+  const store = newStore(707);
+  const s = store.state;
+  const silo = s.world.silos[16];
+  silo.contact = 'radio';
+  const peaceful = availableActions(s, silo).length;
+  store.dispatch({ type: 'WORLD_WAR', a: 16, b: 5, at: s.clock.day });
+  const duringOthersWar = availableActions(s, silo).length;
+
+  if (!(duringOthersWar === peaceful)) {
+    fail(
+      `a war between two other silos cut your options for one of them from ${peaceful} to ${duringOthersWar} — ` +
+      'their private war closed your radio'
+    );
+  } else {
+    ok(`a neighbour's war with somebody else leaves your options alone (${peaceful} either way)`);
+  }
+}
+
+// ---- 25. a holding sliding toward revolt says so before it goes ------------
+//
+// `conqueredStartOrder` is derived so the slide takes `holdGarrisonDays`
+// rather than being a cliff — and nothing in src/ui or src/render drew a
+// satellite's order, so the player's first word was the revolt itself.
+{
+  const store = newStore(808);
+  const s = store.state;
+  store.dispatch({ type: 'SATELLITE_ADD', siloId: 16, order: BAL.conquest.conqueredStartOrder });
+
+  const quiet = directives(s).find((d) => d.id === 'satellite_order');
+  if (quiet) fail('a freshly-taken holding at full starting order already nagged about revolting');
+
+  s.world.satellites[0].order = BAL.directives.satelliteWarnOrder - 5;
+  const warned = directives(s).find((d) => d.id === 'satellite_order');
+  if (!warned) {
+    fail('a holding sliding toward revolt produced no standing order — the countdown is still invisible');
+  } else if (!/\d/.test(warned.why)) {
+    fail(`the satellite warning does not say how long is left: "${warned.why}"`);
+  } else {
+    ok(`a sliding holding raises an order before it revolts: "${warned.text}"`);
   }
 }
 

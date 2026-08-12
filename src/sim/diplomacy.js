@@ -155,7 +155,16 @@ export const ACTIONS = [
 ];
 
 export function availableActions(state, silo) {
-  const atWar = hasTreaty(silo, 'war');
+  // At war *with you*, not at war with anybody.
+  //
+  // `hasTreaty(silo, 'war')` with no `withId` matches a war between two other
+  // silos, and `WORLD_WAR` writes that treaty onto both of them. So when two
+  // neighbours started fighting each other, your radio panel for each of them
+  // collapsed to "Sue for peace" — refused, because you were not at war —
+  // and every other option disappeared. Measured on day 175 of one campaign:
+  // both raid-capable silos locked out at once, one of them raiding the
+  // player sixteen days later.
+  const atWar = hasTreaty(silo, 'war', PLAYER_SILO_ID);
   return ACTIONS.filter((a) => {
     if (a.needs === 'war') return atWar;
     if (atWar && a.id !== 'peace' && a.id !== 'threaten') return false;
@@ -490,11 +499,41 @@ export function simulateTick(state) {
 
 // -------------------------------------------------------------- conquest ---
 
+/**
+ * The ladder, as the player reads it on the silo card.
+ *
+ * Each line says what the stage *buys*, not only what it costs. It used to
+ * do the opposite, and stages one and two are 22 of every 28 sorties — 132 of
+ * 168 squad-days in a measured campaign — with no loot, no artifacts and no
+ * casualties by design. Escalation the player cannot see is paperwork.
+ *
+ * Scout gave only its cost ("Failure alerts them"). Undermine gave fiction —
+ * "cut their power or water, turn a faction" — while the actual effect is a
+ * flat `undermineDefenseReduction` off the garrison, which is the one number
+ * that would make it feel like an achievement and was never shown. Breach
+ * gave a requirements list rather than the fact that it opens the storerooms.
+ */
 export const CONQUEST_STAGES = [
-  { id: 'scout', name: 'Scout', desc: `${BAL.conquest.scoutRunsRequired} successful approach runs to map their defences. Failure alerts them.` },
-  { id: 'undermine', name: 'Undermine', desc: 'Cut their power or water, turn a faction, or starve them through their trade partners.' },
-  { id: 'breach', name: 'Breach', desc: `Breaching charges, ${BAL.conquest.breachSquadsRequired}+ squads, tier-${BAL.conquest.breachSuitTier} suits. The hardest single fight in the game.` },
-  { id: 'hold', name: 'Hold', desc: `${BAL.conquest.holdCombats} sequential floor fights with no resupply, then ${BAL.conquest.holdGarrisonDays} days of garrison or they revolt.` },
+  {
+    id: 'scout',
+    name: 'Scout',
+    desc: `${BAL.conquest.scoutRunsRequired} clean approach runs to map their defences. Nothing comes home but the map, and failure alerts them.`,
+  },
+  {
+    id: 'undermine',
+    name: 'Undermine',
+    desc: `Cut their power, turn a faction, starve their trade. Takes ${Math.round(BAL.conquest.undermineDefenseReduction * 100)}% off their garrison for every fight that follows.`,
+  },
+  {
+    id: 'breach',
+    name: 'Breach',
+    desc: `The whole garrison at the door. Forcing it opens their storerooms — about ${Math.round(BAL.conquest.sack.breachShare * 100)}% of what they hold. Needs breaching charges, ${BAL.conquest.breachSquadsRequired}+ crewed squads and tier-${BAL.conquest.breachSuitTier} suits.`,
+  },
+  {
+    id: 'hold',
+    name: 'Hold',
+    desc: `${BAL.conquest.holdCombats} floor fights on one load-out, no resupply. Winning them all takes the silo, the rest of its stores and whatever is in its archive — then ${BAL.conquest.holdGarrisonDays} days of garrison or they throw you out.`,
+  },
 ];
 
 export function conquestState(state, siloId) {

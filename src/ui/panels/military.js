@@ -20,7 +20,13 @@ import { openCitizen } from '../citizenCard.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmtDelta } from '../dom.js';
 
 const ASSIGNMENTS = [
-  { id: 'garrison', label: 'Garrison', desc: 'Adds Order and defends the silo.' },
+  // What this button actually does, which it did not say. `world.js` decides
+  // which holdings are held by counting garrison squads that are not
+  // deployed and assigning them to satellites in list order, and
+  // `military.js` takes the satellite count off the top of the home-presence
+  // bonus — so the moment you take your first silo, this stops paying the
+  // Order it advertised, silently, with the copy unchanged.
+  { id: 'garrison', label: 'Garrison', desc: 'Holds a conquered silo, or adds Order at home if there is none to hold.' },
   { id: 'training', label: 'Training', desc: 'Grows combat skill. Costs ammunition.' },
 ];
 

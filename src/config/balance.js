@@ -915,6 +915,16 @@ export const BAL = {
     // obeyed, which is exactly the kind of thing a single-line thread has to
     // put first or not bother showing at all.
     raidTop: 97,
+    // A holding sliding toward revolt. Below life support on purpose: losing
+    // one is expensive and survivable, and an order about a silo six days'
+    // walk away must not outrank the scrubbers. Above the income band,
+    // because a month of a garrison's output is worth more than a Workshop.
+    satelliteTop: 80,
+    // How far down the slide the warning starts. `conqueredStartOrder` is 62
+    // and `revoltOrderThreshold` is 20, so 45 gives about eighteen days'
+    // notice at `satelliteDecayPerDay` — long enough to form and post a
+    // squad, short enough that a warmed, contented holding never nags.
+    satelliteWarnOrder: 45,
     // The top of the life-support band: a resource that runs out today.
     lifeSupportTop: 95,
     // How a falling resource's urgency decays with its runway.
@@ -1410,6 +1420,15 @@ export const BAL = {
     undefendedDeathsMax: 3,
     orderOnRepelled: 6,
     orderOnSacked: -14,
+    // What the attacker thinks of you afterwards. Positive on a repulse
+    // deliberately: see the note at the dispatch site in sim/raid.js for why a
+    // symmetric penalty made the grudge path inescapable.
+    //
+    // +6 against -20 is not forgiveness. It takes four clean repulses to undo
+    // one sacking, so a silo that keeps beating you off eventually stops
+    // bothering, and one that gets through keeps coming.
+    reputationOnRepelled: 6,
+    reputationOnSacked: -20,
   },
 
   // -------------------------------------------------------- conquest ---

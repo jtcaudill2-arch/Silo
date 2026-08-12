@@ -288,7 +288,20 @@ export function simulateDay(state) {
     actions.push({
       type: 'SILO_REPUTATION',
       siloId: pending.siloId,
-      amount: res.outcome.win ? -8 : -20,
+      // Turning them back is the one moment a warlord silo reconsiders.
+      //
+      // This was -8 for a repulse, which made reputation a one-way ratchet
+      // into the higher-rate grudge path: `diplomacy.js` fires raids at
+      // `raidChanceGrudge` once reputation passes `raidGrudgeReputation`, and
+      // that clause bypasses the opportunity conjunction entirely, so arming
+      // up stops helping. Measured, four *repelled* raids walked The Anvil
+      // from -15 to -47 and every one of them made the next one likelier.
+      // Nothing else in the game raises a silo's reputation except player
+      // diplomacy, and a silo raiding you is usually `contact: 'none'`.
+      //
+      // There was no play — not even a perfect one — that walked a grudge
+      // back. Now there is exactly one: beat them at the door.
+      amount: res.outcome.win ? R.reputationOnRepelled : R.reputationOnSacked,
     });
   }
 

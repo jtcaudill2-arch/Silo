@@ -550,6 +550,47 @@ export function directives(state) {
     });
   }
 
+  // ---- a holding about to throw you out ----------------------------------
+  //
+  // `conqueredStartOrder` is 62 and derived: (62 - 20) / 1.4 is exactly
+  // `holdGarrisonDays`, so an ungarrisoned holding slides for a month rather
+  // than falling off a cliff. That was careful, and the player could not see
+  // a second of it. Nothing in src/ui or src/render draws a satellite's
+  // order, there was no directive, and the first word you got was the revolt
+  // itself: "has thrown out your garrison. Everything you spent taking it is
+  // gone." Measured: 37 days, 30 days, 144 days. A countdown nobody can see
+  // is a cliff with extra steps.
+  //
+  // Below life support and below the raid, deliberately. Losing a holding is
+  // expensive and it is not fatal, and an order about a silo six days' walk
+  // away must not outrank the scrubbers.
+  {
+    const Q = BAL.conquest;
+    const sats = state.world.satellites || [];
+    const failing = sats
+      .map((sat) => ({
+        sat,
+        silo: state.world.silos[sat.siloId],
+        days: Math.ceil((sat.order - Q.revoltOrderThreshold) / Math.abs(Q.satelliteDecayPerDay)),
+      }))
+      .filter((x) => x.silo && x.sat.order < D.satelliteWarnOrder)
+      .sort((a, b) => a.days - b.days)[0];
+
+    if (failing) {
+      const when = failing.days <= 1 ? 'tomorrow' : `in about ${failing.days} days`;
+      add({
+        id: 'satellite_order',
+        text: `Garrison ${failing.silo.name}`,
+        why:
+          `${failing.silo.name} is at ${Math.round(failing.sat.order)} order and sliding. ` +
+          `Without a squad standing on it, it throws your garrison out ${when} and everything ` +
+          'spent taking it is gone.',
+        panel: 'military',
+        weight: D.satelliteTop,
+      });
+    }
+  }
+
   // ---- a room about to fail --------------------------------------------
   //
   // A room the silo has never crewed is excluded, however bad its number is.
