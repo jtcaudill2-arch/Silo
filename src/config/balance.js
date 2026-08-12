@@ -1614,6 +1614,29 @@ export const BAL = {
     conqueredStartOrder: 62,
     satelliteEfficiency: 0.4,
     satelliteOrderPerDay: -1, // what each satellite costs *your* order, daily
+    // What a held silo sends home each day, before the three scalings below
+    // it. These were literals in sim/world.js — 18 and 10 — which is both
+    // against the rule that every tunable lives here and the reason nobody
+    // noticed a satellite was running at a loss.
+    //
+    // The arithmetic, at the old numbers. Yield is
+    // `base * (economy/100) * satelliteEfficiency * (order/100)`, so Selby at
+    // economy 97 and the starting order of 62 scaled to 0.24: 4.3 of its
+    // specialty and 2.4 chits, 6.7 a day. Measured across every satellite-day
+    // of two full campaigns the average was 4.05. Its garrison is six
+    // soldiers at `barracksFoodPerSoldierPerDay` 0.4 and
+    // `stipendChitsPerSoldierPerDay` 0.5 — 5.4 a day — before the six
+    // foregone jobs and the Order. A holding cost more to keep than it sent
+    // back, which is not "a permanent share of everything they make"; it is a
+    // tax on winning.
+    //
+    // At 60/30 the same silo sends 14.4 and 7.2, about 22 a day. Against a
+    // mature silo's measured 242-293 a day of gross production that is 8% —
+    // visible on the counters, worth the garrison, and nowhere near enough to
+    // replace the surface programme. Three of them is a quarter of a second
+    // economy, which is what taking a third of the world should feel like.
+    satelliteYieldPerDay: 60,
+    satelliteChitsPerDay: 30,
     // What happens to the occupied silo's own order. Warming needs a squad
     // sitting on it; without one the place slides toward throwing you out.
     // One garrison squad per satellite is the real price of Dominion — six
@@ -1697,7 +1720,27 @@ export const BAL = {
   // ------------------------------------------------------- endings ---
   endings: {
     compactAlliesRequired: 8,
-    dominionSilosRequired: 6,
+    // Held at once, not taken over a campaign — `events.js` reads
+    // `world.satellites.length`, and a holding that revolts or collapses
+    // leaves that list.
+    //
+    // This was 6, and 6 was unreachable by playing well rather than merely
+    // hard. Two things made it so. Each holding needs a garrison squad
+    // standing still on it for ever, so six means six squads fed, paid and
+    // doing nothing else; and the neighbours are on a collapse timer the
+    // player cannot touch. Measured across three 900-day campaigns: takeable
+    // silos fall from 14 at day 100 to between 2 and 5 by day 700, while
+    // `breaching_charges` — deliberately last in the research order — does
+    // not land until day 423-514. By the time the door opens the room is
+    // emptying, and two of those three campaigns ended with *no* standing
+    // neighbours at all.
+    //
+    // The reference player peaks at 2, 1 and 1 concurrent holdings on the
+    // three seeds. Three is therefore still beyond it: reaching Dominion
+    // means deliberately building garrison squads it does not build and
+    // taking silos it does not bother with, which is what an ending should
+    // ask for. Six asked for a world that had stopped existing.
+    dominionSilosRequired: 3,
     surfaceResearchRequired: 'origin_record',
   },
 

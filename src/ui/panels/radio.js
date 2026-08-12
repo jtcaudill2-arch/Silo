@@ -295,9 +295,14 @@ function openSilo(state, shell, silo) {
     body.appendChild(
       el(
         'div.note',
-        'Four stages, each a separate expedition on the Silo approach band. Conquered silos contribute at ' +
-          `${Math.round(BAL.conquest.satelliteEfficiency * 100)}% and cost you ` +
-          `${Math.abs(BAL.conquest.satelliteOrderPerDay)} Order a day. Two is comfortable. Five will break you.`
+        // "contribute at 40%" reads as 40% of a silo whose economy bar shows
+        // 97. It is 40% of a flat daily figure, scaled again by economy and
+        // again by the holding's own order — so the honest thing to show is
+        // what actually arrives.
+        'Four stages, each a separate expedition on the Silo approach band. A held silo sends back ' +
+          `about ${satelliteYieldEstimate(silo)} crates a day once it settles, needs a garrison squad ` +
+          `standing on it, and costs ${Math.abs(BAL.conquest.satelliteOrderPerDay)} Order a day. ` +
+          'Two is comfortable. Five will break you.'
       )
     );
   }
@@ -368,6 +373,18 @@ function conquestLaunch(state, shell, silo) {
       shell.renderPanel(true);
     },
   });
+}
+
+/**
+ * What a holding would actually send home, per day, once its order has warmed.
+ *
+ * Shown rather than the efficiency percentage because the percentage is not
+ * the number the player gets: it is one of three multipliers on a flat base.
+ */
+function satelliteYieldEstimate(silo) {
+  const Q = BAL.conquest;
+  const scale = ((silo?.power?.economy ?? 50) / 100) * Q.satelliteEfficiency;
+  return Math.round((Q.satelliteYieldPerDay + Q.satelliteChitsPerDay) * scale);
 }
 
 function stageIndex(id) {

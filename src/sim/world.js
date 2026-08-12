@@ -271,8 +271,8 @@ function tickSatellites(state) {
     const scale = (silo.power.economy / 100) * eff;
     const def = siloDef(sat.siloId);
     const yieldKey = specialtyResource(def?.specialty);
-    if (yieldKey) deltas[yieldKey] = (deltas[yieldKey] || 0) + 18 * scale;
-    deltas.chits = (deltas.chits || 0) + 10 * scale;
+    if (yieldKey) deltas[yieldKey] = (deltas[yieldKey] || 0) + BAL.conquest.satelliteYieldPerDay * scale;
+    deltas.chits = (deltas.chits || 0) + BAL.conquest.satelliteChitsPerDay * scale;
 
     const held = i < garrisons;
     const shift = held ? BAL.conquest.satelliteWarmPerDay : BAL.conquest.satelliteDecayPerDay;

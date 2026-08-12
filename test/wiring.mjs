@@ -1586,6 +1586,75 @@ console.log('');
   }
 }
 
+// ---- 23. a holding pays for the garrison standing on it ---------------------
+//
+// It did not. The yield was two literals in sim/world.js — 18 and 10 — scaled
+// three times over, so Selby at economy 97 sent home 6.7 a day at its starting
+// order and 4.05 averaged across every satellite-day of two campaigns. Its
+// garrison is six soldiers at 0.4 food and 0.5 chits each: 5.4 a day, before
+// the six foregone jobs and the Order. The "permanent share of everything they
+// make" that conquest is sold on was a tax on winning.
+//
+// Measured through the real world tick rather than by re-deriving the formula,
+// because re-deriving it here would pass against a world.js that had stopped
+// using it.
+{
+  const store = newStore(2024);
+  const s = store.state;
+  const TARGET = 6;
+  store.dispatch({ type: 'SATELLITE_ADD', siloId: TARGET, order: BAL.conquest.conqueredStartOrder });
+  // A garrison squad standing on it, which is what the yield has to beat.
+  // Six, which is what the campaign measurement used and what a player
+  // actually stations on a holding — not `squadMin`. Sizing this at the
+  // minimum was how the first version of this check passed against the old
+  // 18/10 literals: 4.6 a day beats a four-soldier upkeep of 3.6 and loses to
+  // a six-soldier one of 5.4, so the bar has to be the garrison people really
+  // leave there.
+  const GARRISON = 6;
+  store.dispatchAll(formSquad(s, 'Occupation'));
+  const sqId = s.military.squadIds[0];
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  for (let i = 0; i < GARRISON; i++) {
+    if (adults[i]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[i].id });
+  }
+
+  const yielded = {};
+  for (const a of worldDay(s)) {
+    if (a.type === 'RESOURCE_DELTA') for (const [k, v] of Object.entries(a.deltas || {})) {
+      yielded[k] = (yielded[k] || 0) + v;
+    }
+  }
+  const total = Object.values(yielded).reduce((a, b) => a + b, 0);
+  const crewed = s.military.squads[sqId].members.length;
+  const upkeep = crewed *
+    (BAL.military.barracksFoodPerSoldierPerDay + BAL.military.stipendChitsPerSoldierPerDay);
+
+  // A margin, not a hair. "Barely positive" is not "a permanent share of
+  // everything they make", and it is not worth six people standing still,
+  // six jobs left empty and a point of Order a day.
+  if (!(total > upkeep * 2)) {
+    fail(
+      `a holding sent home ${total.toFixed(1)} a day against a garrison of ${crewed} that eats ` +
+      `${upkeep.toFixed(1)} — that does not pay for the people standing on it, let alone the jobs they left`
+    );
+  } else {
+    ok(`a holding pays for its garrison: ${total.toFixed(1)} a day home against ${upkeep.toFixed(1)} for ${crewed} soldiers`);
+  }
+
+  // Dominion has to be reachable by a player who pursues it. The reference
+  // player peaks at 2 concurrent holdings, so the bar must be near that
+  // rather than at a number the world has collapsed past by the time the
+  // research lands.
+  if (BAL.endings.dominionSilosRequired > 4) {
+    fail(
+      `Dominion needs ${BAL.endings.dominionSilosRequired} holdings at once, each pinning a garrison squad — ` +
+      'measured, takeable silos fall to 2-5 by day 700 and the reference player peaks at 2'
+    );
+  } else {
+    ok(`Dominion asks for ${BAL.endings.dominionSilosRequired} holdings at once, against a reference peak of 2`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }
