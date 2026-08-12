@@ -234,6 +234,27 @@ export function squadPower(state, squadId) {
 export function simulateDay(state) {
   const actions = [];
   let soldiers = 0;
+  // How many garrison squads are actually *at home*.
+  //
+  // A squad cannot both reassure people in the corridors and occupy somebody
+  // else's silo, and it used to do both: `world.tickSatellites` counts idle
+  // garrison squads as holding satellites, and this paid every one of them
+  // the presence bonus regardless. So each garrisoned satellite was +2.5 Order
+  // for the squad and -1 for the occupation — a net +1.5 a day — and Dominion
+  // made a silo *more* stable, against a radio panel that says "Two is
+  // comfortable. Five will break you." Measured, six satellites with six
+  // garrisons ran at Order 77 where none at all ran at 45.
+  //
+  // The occupations are taken off the top, matching `tickSatellites`, which
+  // assigns them to the first satellites in the list.
+  let homeGarrisons = Math.max(
+    0,
+    state.military.squadIds.filter((id) => {
+      const q = state.military.squads[id];
+      return q && !q.deployed && q.assignment === 'garrison';
+    }).length - (state.world?.satellites?.length || 0)
+  );
+
   const patches = [];
 
   const trainingRooms = Object.values(state.silo.rooms).filter((r) => {
@@ -264,7 +285,7 @@ export function simulateDay(state) {
       }
     }
 
-    if (sq.assignment === 'garrison') {
+    if (sq.assignment === 'garrison' && homeGarrisons-- > 0) {
       actions.push({
         type: 'ORDER_DELTA',
         amount: BAL.military.garrisonOrderBonusPerSquad,

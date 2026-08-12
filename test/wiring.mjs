@@ -1106,6 +1106,60 @@ console.log('');
   }
 }
 
+// ---- 16. holding silos costs something ---------------------------------------
+//
+// The radio panel has always said "Two is comfortable. Five will break you."
+// It was the opposite: each garrisoned satellite was +2.5 Order for the squad
+// and -1 for the occupation, a net +1.5 a day, and a design review measured
+// six satellites running at Order 77 where none at all ran at 45. Dominion
+// made a silo *more* stable.
+//
+// The cause was one squad counted twice. `world.tickSatellites` counts idle
+// garrison squads as holding satellites; `military.simulateDay` paid every
+// garrison squad the home-presence bonus regardless. A squad cannot both
+// reassure people in the corridors and occupy somebody else's silo.
+{
+  const orderAfter = (satellites) => {
+    const store = newStore(0x1234);
+    const s = store.state;
+    const game = new Game(store);
+    store.dispatchAll(autoAssign(s));
+    game.runDays(20);
+    const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+    let k = 0;
+    for (let i = 0; i < satellites; i++) {
+      store.dispatchAll(formSquad(s, `Column ${i + 1}`));
+      const id = s.military.squadIds[i];
+      for (let m = 0; m < BAL.military.squadMin; m++) {
+        if (adults[k]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: id, citizenId: adults[k++].id });
+      }
+    }
+    for (const x of Object.values(s.world.silos).filter((x) => x.id !== 12).slice(0, satellites)) {
+      store.dispatch({ type: 'SATELLITE_ADD', siloId: x.id });
+    }
+    const before = s.order.value;
+    game.runDays(60);
+    return { drift: s.order.value - before, end: s.order.value };
+  };
+
+  const none = orderAfter(0);
+  const few = orderAfter(2);
+  const many = orderAfter(6);
+
+  if (few.drift >= none.drift) {
+    fail(`holding two silos left Order better off than holding none (${few.drift.toFixed(1)} vs ${none.drift.toFixed(1)}) — occupation is free`);
+  } else if (many.drift >= few.drift) {
+    fail(`holding six silos cost no more Order than holding two (${many.drift.toFixed(1)} vs ${few.drift.toFixed(1)})`);
+  } else if (!(many.end < BAL.order.uprisingThreshold)) {
+    fail(`six occupations left Order at ${many.end.toFixed(1)}, above the uprising line — "five will break you" is still not true`);
+  } else {
+    ok(
+      `occupation costs Order and scales: none ${none.drift.toFixed(1)}, two ${few.drift.toFixed(1)}, ` +
+      `six ${many.drift.toFixed(1)} over 60 days, ending at ${many.end.toFixed(1)} against an uprising line of ${BAL.order.uprisingThreshold}`
+    );
+  }
+}
+
 // ---- 7. migrations write what they promise ----------------------------------
 {
   const s = createNewGame({ seed: 9, now: 1 });
