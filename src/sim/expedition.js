@@ -22,7 +22,7 @@ import { fullName, makeCitizen } from './population.js';
 import { effects as researchEffects } from './research.js';
 import { rollEnemyForce, resolve as resolveCombat, applyResolution } from './combat.js';
 import { squadMembers, readiness } from './military.js';
-import { isConquestRun, resolveRun as resolveConquestRun, canLaunchRun } from './conquest.js';
+import { isConquestRun, resolveRun as resolveConquestRun, canLaunchRun, accumulate } from './conquest.js';
 
 export const BANDS = BAL.expedition.bands;
 
@@ -228,10 +228,33 @@ export function resolveExpedition(state, expedition) {
   const casualties = [];
   let extraDays = 0;
 
+  // "days each way" was wrong, and it is where the twelve-day figure that
+  // spread through conquest.js and research.js came from. `returnDay` is
+  // `day + band.travelDays` and the wear and dose are billed at
+  // `travelDays * hoursPerDay`, so this is the whole trip, not one leg.
   journal.push(
-    `${band.name}. ${roster.length} out, ${Math.round(travelDays)} days each way, ` +
+    `${band.name}. ${roster.length} out, ${Math.round(travelDays)} days there and back, ` +
       `${radPerHour} rad an hour on the surface.`
   );
+
+  // Wounds, carried across the run's encounters by hand.
+  //
+  // The same defect the hold stage was fixed for, on the path that runs far
+  // more often. `applyResolution` builds an *absolute* health from the citizen
+  // it can see, nothing dispatches between a run's encounters, and the reducer
+  // assigns — so two fights in one expedition both read the same pre-run
+  // health and the later patch overwrote the earlier. Measured on the deep
+  // band: 48 points of wounds landing as 35, and 47 as 24.
+  //
+  // Radiation was worse. The second patch's dose is `min(100, c.radiation +
+  // this fight's rad)` off the original reading, so the first fight's dose was
+  // not reduced, it was dropped.
+  //
+  // conquest.js used to say this mattered less here because "nothing depends
+  // on the accumulation". That is not true of survival odds on a five-day run:
+  // a squad that should be at 40 health going into the last fight goes in at
+  // 75, and lives through fights it should not.
+  const hurt = new Map();
 
   // ---- one encounter per travel day ---------------------------------------
   // Days on which somebody actually shot at them. Counted because the rounds
@@ -250,7 +273,7 @@ export function resolveExpedition(state, expedition) {
 
     const ctx = {
       state, rng, expedition, band, bi, roster, journal, loot, artifacts,
-      recruits, actions, casualties, day,
+      recruits, actions, casualties, day, hurt,
     };
 
     switch (enc.type) {
@@ -286,8 +309,11 @@ export function resolveExpedition(state, expedition) {
           const victim = rng.pick(roster);
           const c = state.citizens[victim];
           if (c) {
-            const hurt = rng.int(enc.injury[0], enc.injury[1]);
-            actions.push({ type: 'CITIZENS_PATCH', patches: [{ id: victim, health: Math.max(1, c.health - hurt) }] });
+            const wound = rng.int(enc.injury[0], enc.injury[1]);
+            // Through the accumulator, like every other wound on this run —
+            // this is an absolute health computed from the same pre-run
+            // reading, so on its own it would overwrite the fights.
+            accumulate(hurt, [{ id: victim, health: Math.max(1, c.health - wound) }], state);
             journal.push(`${fullName(c)} came out of it worst.`);
           }
         }
@@ -349,6 +375,15 @@ export function resolveExpedition(state, expedition) {
     );
   }
 
+  // The wounds, once, at their true total — and only for people still alive to
+  // carry them home.
+  {
+    const patches = [...hurt.entries()]
+      .filter(([id]) => !casualties.includes(id))
+      .map(([id, v]) => (v.rad ? { id, health: v.health, radiation: v.radiation } : { id, health: v.health }));
+    if (patches.length) actions.push({ type: 'CITIZENS_PATCH', patches });
+  }
+
   actions.push({
     type: 'EXPEDITION_RESOLVE',
     id: expedition.id,
@@ -387,7 +422,11 @@ function runCombat(ctx, enc, suitIntegrity) {
   });
 
   journal.push(...res.log);
-  actions.push(...applyResolution(state, res, { context: 'expedition' }));
+  // Everything except the wounds; see `hurt` in resolveExpedition.
+  for (const a of applyResolution(state, res, { context: 'expedition' })) {
+    if (a.type === 'CITIZENS_PATCH') { accumulate(ctx.hurt, a.patches, state); continue; }
+    actions.push(a);
+  }
   actions.push({
     type: 'STAT_BUMP',
     stats: def.human ? { raidersKilled: res.enemyKilled } : { mutantsKilled: res.enemyKilled },
@@ -410,10 +449,7 @@ function runScavenge(ctx, enc) {
     const victim = rng.pick(ctx.roster);
     const c = ctx.state.citizens[victim];
     if (c) {
-      ctx.actions.push({
-        type: 'CITIZENS_PATCH',
-        patches: [{ id: victim, health: Math.max(1, c.health - rng.int(20, 45)) }],
-      });
+      accumulate(ctx.hurt, [{ id: victim, health: Math.max(1, c.health - rng.int(20, 45)) }], ctx.state);
       journal.push(`Part of it came down. ${fullName(c)} was under it.`);
     }
   }
@@ -449,7 +485,10 @@ function runSurvivor(ctx, enc) {
       ambush: -0.5,
     });
     journal.push(...res.log);
-    actions.push(...applyResolution(state, res, { context: 'expedition' }));
+    for (const a of applyResolution(state, res, { context: 'expedition' })) {
+      if (a.type === 'CITIZENS_PATCH') { accumulate(ctx.hurt, a.patches, state); continue; }
+      actions.push(a);
+    }
     for (const id of res.casualties) {
       ctx.casualties.push(id);
       const i = ctx.roster.indexOf(id);

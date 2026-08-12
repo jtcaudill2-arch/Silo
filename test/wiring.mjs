@@ -1443,6 +1443,55 @@ console.log('');
   else ok('and opens once they are crewed');
 }
 
+// ---- 21. the salvage path accumulates its wounds too ------------------------
+//
+// The hold stage was fixed for this and the path that runs a hundred times as
+// often was not. `applyResolution` builds an absolute health from the citizen
+// it can see, nothing dispatches between a run's encounters, and the reducer
+// assigns — so two fights in one expedition both read the same pre-run health
+// and the later patch overwrote the earlier. Measured on the deep band: 48
+// points of wounds landing as 35, and 47 as 24. Radiation was worse, because
+// the second patch's dose is computed off the original reading, so the first
+// fight's dose was dropped rather than reduced.
+//
+// One patch per run is the shape that proves it; §11 pins the arithmetic.
+{
+  let checked = 0;
+  let worst = null;
+  for (let seed = 1; seed <= 40 && !worst; seed++) {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 300;
+    const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+    let g = 0;
+    for (const cid of ids) {
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+      }
+    }
+    const out = resolveExpedition(s, {
+      id: 900 + seed, squadId: 1, band: 'deep', purpose: 'salvage', target: null,
+      launchDay: 300, returnDay: 300, roster: ids, leaderId: ids[0], resolved: false,
+    });
+    const fights = out.journal.filter((l) => /Contact|ambush|attack/i.test(l)).length;
+    const patches = out.actions.filter((a) => a.type === 'CITIZENS_PATCH');
+    if (patches.length > 1) worst = { seed, n: patches.length, fights };
+    if (patches.length) checked++;
+  }
+  if (worst) {
+    fail(
+      `expedition on seed ${worst.seed} emitted ${worst.n} health patches; each reads pre-run state, so all but ` +
+      'the last are discarded and most of the run\'s damage never lands'
+    );
+  } else if (!checked) {
+    fail('no expedition over 40 seeds wounded anybody, so this check proved nothing');
+  } else {
+    ok(`a salvage run emits one cumulative wound patch, never one per fight (${checked} of 40 seeds wounded somebody)`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }
