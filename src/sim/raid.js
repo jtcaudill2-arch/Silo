@@ -26,7 +26,7 @@
 import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { RAIDERS } from '../data/encounters.js';
-import { rollEnemyForce, resolve as resolveCombat, applyResolution } from './combat.js';
+import { rollEnemyForce, resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
 import { fullName } from './population.js';
 
 const R = BAL.raid;
@@ -45,6 +45,73 @@ export function raiderBandFor(strength) {
   let i = 0;
   while (i < R.bandByStrength.length && s > R.bandByStrength[i]) i++;
   return RAIDERS[Math.min(i, RAIDERS.length - 1)];
+}
+
+/**
+ * What standing here is likely to cost, before it is paid.
+ *
+ * Every other fight in this game shows a forecast first — this module's own
+ * header says so, and `riskPreview` is what the airlock draws for a salvage
+ * run. The raid directive showed a head count instead: "4 people are standing
+ * to meet them", which reads as sufficiency. Measured against a Warband, four
+ * defenders won 3 of 40 while losing 2.0 of the 4, and the balance table
+ * already recorded that. Telling the player the count and not the odds pointed
+ * them at the losing play.
+ *
+ * Deterministic on purpose: it consumes no rng, because a preview that drew
+ * from the raid's own stream would change the raid. It uses the resolver's
+ * terms — `unitPower` per defender, the same morale, size and terrain
+ * modifiers, the enemy's power at the midpoint of its count range — and drops
+ * only the two gaussian rolls, plus the ammunition and leader terms, which is
+ * what makes it an estimate rather than a promise.
+ *
+ * Checked against the resolver rather than assumed. Forty real raids per cell,
+ * ratio from this function, win rate from `simulateDay`:
+ *
+ *                  4 unarmed   4 armed    8 armed    8 tier-4
+ *   Scrappers      2.33  93%   2.57 100%  8.78 100%  10.89 100%
+ *   Dust Runners   0.60  43%   1.74  78%  2.16 100%   7.64 100%
+ *   Slag Crews     0.22   0%   0.25  20%  1.40  85%   3.51 100%
+ *   Warband        0.12   0%   0.31   0%  0.70  13%   0.91  60%
+ *
+ * Monotone in the right direction everywhere, and the thresholds below are
+ * read off it: above 2.0 is a formality, 1.4 holds, under 0.6 is a funeral.
+ * The one soft cell is four unarmed against Dust Runners — 0.60 predicted, 43%
+ * measured — where the estimate is harsher than the outcome because it drops
+ * the ammunition term. Erring toward "do not stand here" is the right side to
+ * be wrong on for a warning.
+ */
+export function forecast(state, strength) {
+  const C = BAL.combat;
+  const ours = defenders(state);
+  const band = raiderBandFor(strength);
+  const theirs = band.power * ((band.count[0] + band.count[1]) / 2) * R.sizeScale;
+  if (!ours.length) return { ratio: 0, band, defenders: 0, verdict: null };
+
+  const members = ours.map((id) => state.citizens[id]).filter(Boolean);
+  const squadPower = members.reduce((a, c) => a + unitPower(state, c), 0);
+  const avgMorale = members.reduce((a, c) => a + c.morale, 0) / members.length;
+  const moraleMod = C.moraleModBase + (avgMorale / 100) * C.moraleModRange;
+  const sizeMod = 1 + Math.log2(Math.max(1, members.length)) * C.sizeModPerLog2;
+  const terrainMod = 1 + R.homeTerrain * C.terrainSwing;
+
+  const ratio = (squadPower * moraleMod * sizeMod * terrainMod) / Math.max(0.001, theirs);
+  return { ratio, band, defenders: members.length, verdict: raidVerdict(ratio) };
+}
+
+/**
+ * The same vocabulary `verdictFor` uses at the airlock, against the outcome
+ * thresholds this fight will actually be scored on rather than against numbers
+ * picked to sound right.
+ */
+function raidVerdict(ratio) {
+  const win = BAL.combat.outcomes.find((o) => o.win && o.min <= ratio);
+  if (ratio >= 2.0) return 'They will not get through this.';
+  if (ratio >= 1.4) return 'The door should hold.';
+  if (win) return 'It should hold, and it will cost people.';
+  if (ratio >= 0.9) return 'Too close. Expect to lose some of them and some of the stores.';
+  if (ratio >= 0.6) return 'This is a defeat. More bodies or better weapons, or let them have it.';
+  return 'Standing here kills the squad and loses the stores anyway.';
 }
 
 /**

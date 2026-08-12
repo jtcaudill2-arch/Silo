@@ -1492,6 +1492,100 @@ console.log('');
   }
 }
 
+// ---- 22. the raid tells the player the odds, and they are the real odds -----
+//
+// The directive counted heads — "4 people are standing to meet them" — which
+// reads as sufficiency, and against a Warband four defenders win 3 of 40. A
+// forecast that did not track the resolver would be worse than none, so the
+// two ends of the measured table are pinned here.
+{
+  const manned = (seed, n, weapon) => {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 200;
+    s.resources.ammo = 5000;
+    store.dispatchAll(formSquad(s, 'Watch'));
+    const sqId = s.military.squadIds[0];
+    const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+    let g = 0;
+    for (let i = 0; i < n; i++) {
+      const c = adults[i];
+      if (!c) continue;
+      store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+      if (weapon) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item: weapon, kind: 'weapon', durability: BAL.gear.durabilityMax, assignedTo: c.id };
+        s.citizens[c.id].gear = { ...(s.citizens[c.id].gear || {}), weapon: id };
+      }
+    }
+    return s;
+  };
+
+  // Each factor on its own, because varying both at once proves neither.
+  //
+  // The first version of this compared four unarmed against a Warband with
+  // eight armed against Scrappers and asserted the ratios were far apart.
+  // They were — under every mutation too. Replacing the enemy with a constant
+  // 50 still passed, because the kit differed; replacing `unitPower` with a
+  // flat 5 a head also passed, because the band differed. Two variables, one
+  // comparison, nothing pinned. This is the same confound §14 was rebuilt for.
+
+  // Band decides, with the defenders held fixed.
+  const vsScrappers = raid.forecast(manned(5, 4, 'service_rifle'), 0.2);
+  const vsWarband = raid.forecast(manned(5, 4, 'service_rifle'), 0.95);
+  if (!(vsScrappers.ratio > vsWarband.ratio * 3)) {
+    fail(
+      `the same four defenders rate ${vsScrappers.ratio.toFixed(2)} against Scrappers and ` +
+      `${vsWarband.ratio.toFixed(2)} against a Warband — who is at the door decides nothing`
+    );
+  } else {
+    ok(`the forecast reads the band: ${vsScrappers.ratio.toFixed(2)} against Scrappers, ${vsWarband.ratio.toFixed(2)} against a Warband`);
+  }
+
+  // Kit decides, with the band held fixed.
+  const bare = raid.forecast(manned(5, 4, null), 0.4);
+  const armed = raid.forecast(manned(5, 4, 'service_rifle'), 0.4);
+  if (!(armed.ratio > bare.ratio * 1.5)) {
+    fail(
+      `four people rate ${bare.ratio.toFixed(2)} unarmed and ${armed.ratio.toFixed(2)} with rifles ` +
+      'against the same band — what they are carrying decides nothing'
+    );
+  } else {
+    ok(`and reads the kit: ${bare.ratio.toFixed(2)} unarmed against ${armed.ratio.toFixed(2)} with rifles`);
+  }
+
+  // And the verdicts must actually differ across that range.
+  if (vsWarband.verdict === vsScrappers.verdict) {
+    fail(`a rout and a formality get the same verdict: "${vsWarband.verdict}"`);
+  } else {
+    ok('and puts them in different words');
+  }
+
+  // And it must not touch the state it is reading.
+  //
+  // Two earlier versions of this assertion were untestable. The first fired
+  // the forecast at a bare silo, where `defenders` returns nothing and the
+  // function exits before it touches a citizen. The second crewed the silo
+  // but compared *raid outcomes* — a lossy channel, since combat buckets its
+  // result and a two-point morale drop across six people does not flip a
+  // band. So a mutation that had the forecast decrement everyone's morale
+  // survived both.
+  //
+  // The property worth pinning is simply that it writes nothing, and that is
+  // exact: snapshot, forecast, compare.
+  {
+    const s2 = manned(909, 6, 'service_rifle');
+    s2.world.pendingRaid = { siloId: 5, strength: 0.6, day: s2.clock.day - BAL.raid.graceDays };
+    const before = JSON.stringify(s2);
+    for (const strength of [0.2, 0.6, 0.95]) raid.forecast(s2, strength);
+    if (JSON.stringify(s2) !== before) {
+      fail('the raid forecast wrote to the state it was reading — a preview must not change what it previews');
+    } else {
+      ok('the forecast is read-only: three previews leave the silo byte-identical');
+    }
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }

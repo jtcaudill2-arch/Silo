@@ -45,7 +45,7 @@ import {
   shoreFloor,
 } from '../sim/build.js';
 import { autoAssign } from '../sim/jobs.js';
-import { liveResourceKeys, newlyUnlocked, unlockedIds } from '../sim/unlocks.js';
+import { liveResourceKeys, newlyUnlocked, unlockedIds, lockReason } from '../sim/unlocks.js';
 
 /** Resources shown in the top strip, in this order. */
 const STRIP = [
@@ -579,6 +579,24 @@ export class Shell {
     if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
     const panel = this.panels.get(d.panel);
     if (panel && !panel.locked?.(state)) return { label: 'Open', run: () => this.openDirective() };
+    // A locked panel says why it is locked, rather than nothing at all.
+    //
+    // sim/unlocks.js states the invariant that no standing order ever points
+    // at a shut panel, and the day-25 raider probe breaks it: the raid
+    // directive outranks everything at weight 97 and sends the player to
+    // `military`, which needs an Armory or Barracks that a day-25 silo has
+    // not built. This returned null, so no button drew, and `open()` returns
+    // early on a locked panel, so tapping the bar did nothing either. The
+    // highest-priority order in the game was displayed with no way to obey it
+    // and no explanation — on four of five seeds, as the player's very first
+    // contact with the raid system.
+    //
+    // The lock is the real answer here and it is actionable: "Build an Armory
+    // or Barracks first" is exactly what the player needs to hear.
+    if (panel) {
+      const why = lockReason(state, d.panel);
+      if (why) return { label: 'Why?', run: () => toast(why, 'bad') };
+    }
     return null;
   }
 

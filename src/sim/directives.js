@@ -27,7 +27,7 @@ import {
   canBuild, canExcavate, canRepair, canShore, strainedFloors, buildCostFor, describeCost,
 } from './build.js';
 import { staffSlots, inService } from './economy.js';
-import { raiderBandFor, defenders as raidDefenders } from './raid.js';
+import { raiderBandFor, defenders as raidDefenders, forecast as raidForecast } from './raid.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
 import { canStart, isComplete } from './research.js';
@@ -536,10 +536,13 @@ export function directives(state) {
     add({
       id: 'raid',
       text: held ? `Hold the airlock — ${band.name}` : `Get somebody on the airlock — ${band.name}`,
+      // The odds, not just the head count. "4 people are standing to meet
+      // them" reads as sufficiency, and against a Warband four defenders win
+      // 3 of 40. See `forecast` in sim/raid.js.
       why: held
         ? `${from} has ${party} at the door, arriving ${when}. ` +
           `${held} ${held === 1 ? 'person is' : 'people are'} standing to meet them. ` +
-          `${band.desc}`
+          `${raidForecast(state, raid.strength).verdict} ${band.desc}`
         : `${from} has ${party} at the door, arriving ${when}, and nobody is standing there. ` +
           `Without a squad they take a third of everything portable and kill whoever is nearest. ${band.desc}`,
       panel: 'military',
