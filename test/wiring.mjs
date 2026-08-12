@@ -1740,6 +1740,42 @@ console.log('');
   }
 }
 
+// ---- 26. two squads home on one day both get decontaminated ----------------
+//
+// `pendingDecon` is a single slot and `EXPEDITION_RESOLVE` assigned to it, so
+// the second squad home overwrote the first — and `DECON` is the only thing
+// besides a crewed Clinic that removes a dose, so those people carried their
+// radiation for the rest of the campaign with no prompt. Always possible;
+// conquest made it ordinary, because the breach needs two crewed squads and
+// every conquest run is the same six-day band.
+{
+  const store = newStore(1212);
+  const s = store.state;
+  const ids = s.citizenIds.slice(0, 8);
+  const first = ids.slice(0, 4);
+  const second = ids.slice(4, 8);
+
+  s.expeditions.active = [
+    { id: 1, squadId: 1, band: 'approach', roster: first, purpose: 'salvage', returnDay: 0, resolved: false },
+    { id: 2, squadId: 2, band: 'approach', roster: second, purpose: 'salvage', returnDay: 0, resolved: false },
+  ];
+  store.dispatch({ type: 'EXPEDITION_RESOLVE', id: 1, survivors: first, casualties: [], radiation: 40, journal: [] });
+  store.dispatch({ type: 'EXPEDITION_RESOLVE', id: 2, survivors: second, casualties: [], radiation: 90, journal: [] });
+
+  const waiting = s.pendingDecon?.members || [];
+  const missing = first.filter((id) => !waiting.includes(id));
+  if (missing.length) {
+    fail(
+      `${missing.length} of the first squad home are not queued for decon — the second squad's return ` +
+      'overwrote them, and nothing else will ever offer them a wash'
+    );
+  } else if (waiting.length !== 8) {
+    fail(`decon is waiting on ${waiting.length} people, not the 8 who came back`);
+  } else {
+    ok(`two squads home on one day both queue for decon: ${waiting.length} waiting, worst dose ${Math.round(s.pendingDecon.radiation)}`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }

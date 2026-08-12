@@ -561,9 +561,43 @@ export function resolveRun(state, expedition) {
     // healed between floors.
     //
     // So the wounds are accumulated here and emitted once, at the true
-    // cumulative value. The same shape exists on the salvage path, which
-    // applies per-encounter-day; it matters less there because nothing
-    // depends on the accumulation, but it is the same defect.
+    // cumulative value. The same shape existed on the salvage path and has
+    // since been fixed the same way — see the `hurt` map in expedition.js,
+    // where two fights in one run were also overwriting each other.
+    //
+    // WHAT THIS STILL DOES NOT DO, on purpose, with the measurement.
+    //
+    // The recording is right; the feedback loop is not. `resolveCombat` and
+    // `partyForce` read `state.citizens[id].health`, and nothing has written
+    // these wounds there yet — so floor five is fought by a squad the game
+    // scores at 100 that in fact finished floor four on 11. Ammunition decays
+    // between floors and health does not, which is half of "one load-out".
+    //
+    // It was implemented — `unitPower` takes a health override, `resolve`
+    // takes a `healthOf` — and then backed out, because it costs more than it
+    // buys at the current numbers. With wounds carrying, the reference player
+    // stopped being able to take a silo at all on one of the two campaign
+    // seeds. Compensating on `holdGarrisonScale` does not cleanly recover it;
+    // silos taken per campaign, two seeds each:
+    //
+    //   0.45 (today)   3, 3        with wounds carrying:  0, 3
+    //   0.40                                              2, 1
+    //   0.36                                              1, 1
+    //   0.32                                              2, 2
+    //   0.28                                              1, 2
+    //   0.24                                              2, 3
+    //
+    // Halving the garrison does not restore throughput and would leave the
+    // hold softer per floor than the breach, which is backwards. And it fights
+    // the Dominion change made in the same pass: that was set to 3 concurrent
+    // holdings on the measurement that the reference player peaks at 2, and a
+    // campaign that takes 1-2 silos total puts it back out of reach.
+    //
+    // So it needs its own pass — probably `holdCombats` and the garrison scale
+    // together, re-measured against Dominion — rather than being smuggled in
+    // beside four other balance changes. The override plumbing was removed
+    // rather than left dead, because unused plumbing implies a feature that is
+    // not there.
     const hurt = new Map();
     let victories = 0;
 

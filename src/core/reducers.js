@@ -812,11 +812,29 @@ const expeditionReducers = {
     }
 
     state.stats.expeditionsReturned = (state.stats.expeditionsReturned || 0) + 1;
-    state.pendingDecon = {
-      squadId: exp.squadId,
-      members: a.survivors || [],
-      radiation: a.radiation || 0,
-    };
+    // Two squads back on the same day queue together rather than one erasing
+    // the other.
+    //
+    // This assigned, and `DECON` is the only thing besides a crewed Clinic
+    // that removes a dose — so the first squad home simply never got a decon
+    // prompt and carried its radiation indefinitely. It was always possible;
+    // conquest made it ordinary, because the breach gate demands two crewed
+    // squads and every conquest run is on the same six-day band, so two
+    // squads sent together come back together.
+    //
+    // Merging keeps the single-slot shape the airlock panel draws, and the
+    // filter cost already scales with `members.length`. `radiation` is
+    // display only — the reducer below works off each citizen's own dose — so
+    // the worse of the two readings is the honest one to show.
+    const back = a.survivors || [];
+    const prior = state.pendingDecon;
+    state.pendingDecon = prior
+      ? {
+          squadId: prior.squadId,
+          members: [...new Set([...(prior.members || []), ...back])],
+          radiation: Math.max(prior.radiation || 0, a.radiation || 0),
+        }
+      : { squadId: exp.squadId, members: back, radiation: a.radiation || 0 };
 
     const name = sq?.name || 'The squad';
     const lost = (a.casualties || []).length;
