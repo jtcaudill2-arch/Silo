@@ -57,7 +57,7 @@ import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expeditio
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick } from '../src/sim/diplomacy.js';
-import { playerPower } from '../src/sim/world.js';
+import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
@@ -1302,6 +1302,145 @@ console.log('');
   for (let v = 10; v < SCHEMA_VERSION; v++) if (MIGRATIONS[v]) state = MIGRATIONS[v](state) || state;
   if (JSON.stringify(state) !== before) fail('re-running the migration chain changed the state');
   else ok('running the whole chain a second time is a no-op');
+}
+
+// ---- 18. a silo you have taken is not a silo that raids you -----------------
+//
+// The raid pass skipped collapsed silos and treaty partners and nothing else,
+// so a conquered silo kept its aggression and its grudge and went on putting
+// parties on your airlock. Measured before the fix: The Anvil, garrisoned and
+// contented at satellite order 92.6, robbed its owner on day 51.
+//
+// It looked covered. `SATELLITE_ADD` writes `status: 'satellite'` — but
+// `world.js` recomputes `status` from stability for every silo that is not
+// collapsed and overwrites it on the next world day, so that write is dead.
+// `contact` is the field that survives. Both halves are asserted here,
+// because a test that only checked the skip would stay green if the skip
+// moved back onto the field that gets overwritten.
+{
+  const raidsAgainst = (mutate) => {
+    const store = newStore(31337);
+    const s = store.state;
+    const silo = s.world.silos[5];
+    silo.contact = 'radio';
+    silo.reputation = BAL.diplomacy.raidGrudgeReputation - 50;
+    silo.treaties = [];
+    mutate(s, silo);
+    let queued = 0;
+    for (let d = 0; d < 400; d++) {
+      s.clock.day = d;
+      for (const a of diploTick(s)) {
+        if (a.type === 'WORLD_EVENT_QUEUE' && a.event?.kind === 'raid' && a.event.siloId === 5) queued++;
+      }
+    }
+    return queued;
+  };
+
+  const hostile = raidsAgainst(() => {});
+  const taken = raidsAgainst((s, silo) => {
+    silo.contact = 'satellite';
+    s.world.satellites = [{ siloId: 5, order: 90 }];
+  });
+
+  if (!hostile) {
+    fail('the fixture never produced a raid at all, so it cannot show that conquest stops one');
+  } else if (taken) {
+    fail(`a silo you have conquered sent ${taken} raiding parties at you over 400 days`);
+  } else {
+    ok(`a conquered silo stops raiding you: ${hostile} raids over 400 days as a neighbour, 0 as a holding`);
+  }
+
+  // And the dead write is still dead, which is why the skip must not use it.
+  {
+    const store = newStore(31337);
+    const s = store.state;
+    store.dispatch({ type: 'SATELLITE_ADD', siloId: 5, order: BAL.conquest.conqueredStartOrder });
+    const afterAdd = s.world.silos[5].status;
+    store.dispatchAll(worldDay(s));
+    if (afterAdd === 'satellite' && s.world.silos[5].status === 'satellite') {
+      ok('silo.status survives a world day as "satellite" — the raid skip could safely read it');
+    } else {
+      ok(`silo.status is overwritten by the world tick ("${afterAdd}" -> "${s.world.silos[5].status}"), so contact is the field to read`);
+    }
+  }
+}
+
+// ---- 19. a holding that collapses stops being a holding ---------------------
+//
+// Nothing removed a satellite from `world.satellites` when its silo collapsed,
+// so `tickSatellites` went on paying yield off a dead silo's economy, went on
+// ticking its order, and it went on counting toward `dominionSilosRequired` —
+// the ending could be held open by silos that had stopped transmitting.
+{
+  const store = newStore(4711);
+  const s = store.state;
+  store.dispatch({ type: 'SATELLITE_ADD', siloId: 16, order: BAL.conquest.conqueredStartOrder });
+  if (s.world.satellites.length !== 1) fail('SATELLITE_ADD did not record a holding');
+
+  // Drive it under the collapse line. Stability chases a target rather than
+  // holding whatever it is set to, so zeroing it alone just lets it drift
+  // back up — the target has to be zero as well, which is a silo with no
+  // economy, no people and nothing but soldiers.
+  Object.assign(s.world.silos[16].power, { stability: 0, economy: 0, population: 0, military: 100 });
+  store.dispatchAll(worldDay(s));
+
+  if (s.world.satellites.some((x) => x.siloId === 16)) {
+    fail('a satellite whose silo collapsed is still in world.satellites, still paying yield and still counting toward Dominion');
+  } else if (s.world.silos[16].status !== 'collapsed') {
+    fail(`the fixture did not actually collapse the silo (status "${s.world.silos[16].status}")`);
+  } else {
+    ok('a satellite whose silo collapses is dropped from the holdings, and says so in the log');
+  }
+
+  const said = s.log.some((e) => /gone quiet with your garrison/.test(e.text || ''));
+  if (!said) fail('losing a holding to a collapse was not reported to the player');
+
+  // A collapse is not a revolt: the silo is not left "hostile and struggling",
+  // because the collapse patch already said what it is.
+  if (s.world.silos[16].contact === 'hostile') {
+    fail('a collapsed silo was left marked hostile — SATELLITE_REVOLT overwrote the collapse');
+  }
+}
+
+// ---- 20. the launch gate counts people, not squad records -------------------
+//
+// `canLaunchRun` is what actually stops a squad going out — `canAdvance` only
+// answers whether a stage is finished — and it counted
+// `squadIds.filter(id => !deployed)`. `SQUAD_CREATE` makes a squad with
+// `members: []`, so the hardest requirement in the game was cleared by
+// pressing New Squad twice and crewing neither.
+//
+// test/conquest.mjs covers the `canAdvance` half of this. This is the other
+// half, and it is asserted separately because the two functions had already
+// drifted apart once.
+{
+  const store = newStore(0x1234);
+  const s = store.state;
+  const TARGET = 6;
+  store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'breaching_charges' });
+  store.dispatch({ type: 'CONQUEST_PATCH', siloId: TARGET, patch: { stage: 'breach', scoutRuns: 2, undermined: true } });
+
+  for (let i = 0; i < BAL.conquest.breachSquadsRequired; i++) {
+    store.dispatch({ type: 'SQUAD_CREATE', name: `Paper ${i + 1}` });
+  }
+  const paper = canLaunchRun(s, TARGET);
+  if (paper.ok) {
+    fail(`canLaunchRun let a squad set out on the breach with ${BAL.conquest.breachSquadsRequired} empty squads`);
+  } else {
+    ok(`the launch gate counts people: "${paper.reason}"`);
+  }
+
+  const crew = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  let next = 0;
+  for (const sqId of s.military.squadIds) {
+    for (let i = 0; i < BAL.military.squadMin; i++) {
+      const c = crew[next++];
+      if (c) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+    }
+  }
+  const crewed = canLaunchRun(s, TARGET);
+  if (!crewed.ok) fail(`crewing the squads did not open the breach (${crewed.reason})`);
+  else ok('and opens once they are crewed');
 }
 
 function readSource(rel) {

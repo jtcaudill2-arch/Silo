@@ -1018,21 +1018,32 @@ const worldReducers = {
   SATELLITE_REVOLT(state, a) {
     state.world.satellites = state.world.satellites.filter((s) => s.siloId !== a.siloId);
     const silo = state.world.silos[a.siloId];
+    // Two ways to lose a holding, and they are not the same event. A revolt
+    // leaves a hostile neighbour that remembers you; a collapse leaves
+    // nothing. `collapseSilo` passes `cause: 'collapse'` and patches the silo
+    // itself, so the hostile/struggling writes below would fight it — and
+    // "they have thrown out your garrison" is the wrong sentence for a silo
+    // that has stopped transmitting.
+    const collapsed = a.cause === 'collapse';
     if (silo) {
-      silo.contact = 'hostile';
-      silo.status = 'struggling';
-      silo.reputation = -100;
-      // And the conquest ladder goes back to the bottom. Without this the
-      // silo keeps `stage: 'held'` for ever: the radio panel reads "Already
-      // taken.", the launch gate says a run is fine, and every squad sent
-      // spends twelve days and a full supply load resolving a stage that has
-      // no branch — a permanent no-op the player can repeat indefinitely.
-      // Taking a silo back is a fresh conquest, and it should be.
+      if (!collapsed) {
+        silo.contact = 'hostile';
+        silo.status = 'struggling';
+        silo.reputation = -100;
+      }
+      // The conquest ladder goes back to the bottom either way. Without this
+      // the silo keeps `stage: 'held'` for ever: the radio panel reads
+      // "Already taken.", the launch gate says a run is fine, and every squad
+      // sent spends a supply load resolving a stage that has no branch — a
+      // permanent no-op the player can repeat indefinitely. Taking a silo back
+      // is a fresh conquest, and it should be.
       silo.conquest = { stage: null, scoutRuns: 0, undermined: false, defenseMult: 1 };
     }
     pushLog(state, {
       kind: 'alert',
-      text: `${silo?.name || 'A satellite'} has thrown out your garrison. Everything you spent taking it is gone.`,
+      text: collapsed
+        ? `${silo?.name || 'A satellite'} has gone quiet with your garrison inside it. It is not yours any more; it is not anybody's.`
+        : `${silo?.name || 'A satellite'} has thrown out your garrison. Everything you spent taking it is gone.`,
     });
   },
 

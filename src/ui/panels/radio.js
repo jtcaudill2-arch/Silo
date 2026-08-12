@@ -343,7 +343,27 @@ function conquestLaunch(state, shell, silo) {
 
   return button(`${label} (${ready.name})`, {
     onclick: () => {
-      shell.store.dispatchAll(launchConquest(shell.store.state, ready.id, silo.id));
+      // Report what happened, not what was attempted.
+      //
+      // `launchConquest` returns [] on the in-flight guard and on any
+      // `canLaunch` failure, and this toasted regardless. The modal is a
+      // one-shot DOM tree — `renderPanel` redraws the panel behind it, not
+      // this — so the button and its captured squad stay on screen after the
+      // first launch, and pressing it again said "Second is on its way" while
+      // dispatching nothing at all.
+      const acts = launchConquest(shell.store.state, ready.id, silo.id);
+      if (!acts.length) {
+        // Three things can refuse it — the ladder, the supplies, or a run
+        // already in flight — and only the first two carry a reason.
+        const now = shell.store.state;
+        const why = canLaunchRun(now, silo.id).reason
+          || canLaunch(now, ready.id, BAL.conquest.band).reason
+          || `${ready.name} is already out.`;
+        toast(why);
+        shell.renderPanel(true);
+        return;
+      }
+      shell.store.dispatchAll(acts);
       toast(`${ready.name} is on its way to ${silo.name}.`);
       shell.renderPanel(true);
     },

@@ -12,6 +12,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { siloDef, ARCHETYPES, PLAYER_SILO_ID } from '../data/silos.js';
 import { playerPower, specialtyResource, inRange } from './world.js';
+import { readySquads } from './military.js';
 
 const D = BAL.diplomacy;
 
@@ -462,6 +463,16 @@ export function simulateTick(state) {
   for (const silo of Object.values(state.world.silos)) {
     if (silo.id === PLAYER_SILO_ID) continue;
     if (silo.status === 'collapsed') continue;
+    // A silo you have taken does not put a raiding party on your airlock.
+    //
+    // This tested `status`, and `SATELLITE_ADD` writes `status: 'satellite'`,
+    // so it looked covered. It was not: `world.js` recomputes `status` from
+    // stability for every silo that is not collapsed, and overwrites it with
+    // 'stable' on the very next world day. `contact` is the field that
+    // survives, and it is the one the radio panel reads. Measured before the
+    // fix: The Anvil, garrisoned and contented at order 92.6, robbed its
+    // owner on day 51.
+    if (silo.contact === 'satellite') continue;
     if (!(silo.disposition.aggression > D.raidAggression)) continue;
     if (hasTreaty(silo, 'nap') || hasTreaty(silo, 'alliance')) continue;
     const grudge = silo.reputation < D.raidGrudgeReputation;
@@ -516,7 +527,7 @@ export function canAdvance(state, siloId) {
     if (!research.includes('breaching_charges')) {
       return { ok: false, stage: 'breach', reason: 'Breaching charges are not researched.' };
     }
-    const ready = state.military.squadIds.filter((id) => !state.military.squads[id].deployed).length;
+    const ready = readySquads(state).length;
     if (ready < BAL.conquest.breachSquadsRequired) {
       return { ok: false, stage: 'breach', reason: `Needs ${BAL.conquest.breachSquadsRequired} squads standing by; ${ready} are.` };
     }
@@ -535,7 +546,7 @@ export function canAdvance(state, siloId) {
   // finished", not "you may not attempt it" — see `canLaunchRun` in
   // sim/conquest.js, which is what actually gates sending a squad.
   if (c.stage === 'hold') {
-    const ready = state.military.squadIds.filter((id) => !state.military.squads[id].deployed).length;
+    const ready = readySquads(state).length;
     if (!ready) return { ok: false, stage: 'hold', reason: 'Every squad is already out.' };
     return { ok: true, stage: 'hold' };
   }

@@ -123,6 +123,20 @@ function collapseSilo(state, rng, silo) {
       type: 'WORLD_PATCH',
       patches: [{ id: silo.id, status: 'collapsed', contact: 'none' }],
     },
+  ];
+
+  // A holding that collapses stops being a holding.
+  //
+  // Nothing removed the entry, so `tickSatellites` went on paying its yield
+  // off a dead silo's `power.economy`, went on ticking its order, and it went
+  // on counting toward `dominionSilosRequired` — a player could hold the
+  // ending open with silos that had stopped transmitting. Reachable through
+  // `warStabilityDrain` on a held silo.
+  if ((state.world.satellites || []).some((s) => s.siloId === silo.id)) {
+    actions.push({ type: 'SATELLITE_REVOLT', siloId: silo.id, cause: 'collapse' });
+  }
+
+  actions.push(
     {
       type: 'TRANSMISSION',
       transmission: {
@@ -131,8 +145,8 @@ function collapseSilo(state, rng, silo) {
         kind: 'collapse',
         text: `${silo.name} has stopped transmitting. The carrier is still up. Nobody is answering it.`,
       },
-    },
-  ];
+    }
+  );
 
   const roll = rng.next();
   if (roll < W.collapseRefugeeChance && silo.known) {

@@ -162,6 +162,25 @@ export function squadMembers(state, squadId) {
 }
 
 /**
+ * Squad ids that could actually go somewhere: home, and crewed by enough
+ * living people to be a squad.
+ *
+ * One predicate, in one place, because three copies of it had already drifted
+ * apart. The conquest breach gate counted `squadIds.filter(id => !deployed)`,
+ * which `SQUAD_CREATE` satisfies with `members: []` — so "Needs 2 squads
+ * standing by" was cleared by pressing New Squad twice and never crewing the
+ * second one. The radio panel that calls that gate was meanwhile filtering on
+ * living members and `squadMin`, so the button and the gate behind it
+ * disagreed about what a squad is.
+ */
+export function readySquads(state) {
+  return state.military.squadIds.filter((id) => {
+    const sq = state.military.squads[id];
+    return sq && !sq.deployed && squadMembers(state, id).length >= BAL.military.squadMin;
+  });
+}
+
+/**
  * Readiness, 0-1. A weighted blend of training, equipment, health, morale and
  * whether there is ammunition in the armoury (spec §10).
  */
@@ -285,7 +304,24 @@ export function simulateDay(state) {
       }
     }
 
-    if (sq.assignment === 'garrison' && homeGarrisons-- > 0) {
+    // Same predicate the counter above was built from, which it was not: the
+    // budget counts `!deployed && assignment === 'garrison'` and this spent it
+    // on the assignment alone.
+    //
+    // Tidiness, not a fix — and the honest version of this comment is the
+    // second one, because the first claimed a bug that does not exist. The
+    // budget caps the total either way. With H squads home, D deployed but
+    // still labelled 'garrison', and S satellites, the old code paid
+    // `min(max(0, H-S), H+D)`, which is `max(0, H-S)` for every non-negative
+    // D — exactly what the new code pays. Only *which* squad is credited
+    // changes, and the action carries no squad id, so nothing can observe it.
+    // Mutation-tested: reverting this line is invisible to the whole suite,
+    // and no test was added, because a test that cannot fail is worse than the
+    // gap it pretends to close.
+    //
+    // It stays because one budget should have one predicate, and a fourth way
+    // to set an assignment would turn an equivalence into a bug.
+    if (!sq.deployed && sq.assignment === 'garrison' && homeGarrisons-- > 0) {
       actions.push({
         type: 'ORDER_DELTA',
         amount: BAL.military.garrisonOrderBonusPerSquad,

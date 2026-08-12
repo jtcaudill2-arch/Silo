@@ -35,6 +35,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
 import { conquestState, CONQUEST_STAGES } from './diplomacy.js';
+import { readySquads } from './military.js';
 import { getItem, LOOT } from '../data/items.js';
 
 const Q = BAL.conquest;
@@ -77,10 +78,12 @@ export function canLaunchRun(state, siloId) {
     if (!state.research.completed.includes('breaching_charges')) {
       return { ok: false, stage, reason: 'Breaching charges are not researched.' };
     }
-    // The `!sq` guard `raid.defenders` has and this did not. Nothing in the
-    // game produces a squadId without a squad, but a gate that throws is a
-    // worse answer than a gate that says no.
-    const ready = state.military.squadIds.filter((id) => !state.military.squads[id]?.deployed).length;
+    // Crewed squads, not squad records. This counted `!deployed` alone, and
+    // `SQUAD_CREATE` makes a squad with `members: []` — so the hardest gate in
+    // the game was cleared by pressing New Squad twice. `readySquads` is the
+    // same predicate the radio panel draws its button from, so the two cannot
+    // disagree about what a squad is again.
+    const ready = readySquads(state).length;
     if (ready < Q.breachSquadsRequired) {
       return {
         ok: false,

@@ -118,11 +118,32 @@ if (gate.ok || !/squads/i.test(gate.reason)) {
 for (let i = 0; i < BAL.conquest.breachSquadsRequired; i++) {
   store.dispatch({ type: 'SQUAD_CREATE', name: `Column ${i + 1}` });
 }
+
+// Paper squads do not open it. This fixture used to stop at SQUAD_CREATE and
+// assert the gate was now satisfied — which it was, because the gate counted
+// squad records rather than people. Two presses of New Squad cleared the
+// hardest requirement in the game, and this test was what said that was
+// correct. It is now the regression check for the opposite.
+gate = canAdvance(s, TARGET);
+if (gate.ok) {
+  fail(`${BAL.conquest.breachSquadsRequired} squads with nobody in them opened the assault`);
+} else {
+  ok(`empty squads do not count: "${gate.reason}"`);
+}
+
+const crew = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+let next = 0;
+for (const sqId of s.military.squadIds) {
+  for (let i = 0; i < BAL.military.squadMin; i++) {
+    const c = crew[next++];
+    if (c) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+  }
+}
 gate = canAdvance(s, TARGET);
 if (!gate.ok || gate.stage !== 'hold') {
   fail(`a fully-prepared silo could not breach (${gate.reason})`);
 } else {
-  ok(`${BAL.conquest.breachSquadsRequired} squads and the charges open the assault`);
+  ok(`${BAL.conquest.breachSquadsRequired} crewed squads and the charges open the assault`);
 }
 
 // ---------------------------------------------------------------- stage 4 --
