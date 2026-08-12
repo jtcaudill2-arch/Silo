@@ -1160,6 +1160,36 @@ console.log('');
   }
 }
 
+// ---- 17. every room the game has, the art tool knows about ------------------
+//
+// `heat_exchange` was added to the game and never to `tools/art/rooms.mjs`,
+// so the atlas carried 28 frames for 29 room types and the Heat Exchange fell
+// through to the procedural tile everywhere it appeared. Nothing failed —
+// that fallback is deliberate and works — which is exactly why it went
+// unnoticed for as long as it did.
+//
+// Checked against the source rather than against a copy of the list, so
+// adding a room to data/rooms.js and forgetting the art is a red suite rather
+// than a quiet downgrade.
+{
+  const art = readSource('../tools/art/rooms.mjs');
+  const ids = art.match(/export const ROOM_IDS = \[([\s\S]*?)\];/);
+  if (!ids) {
+    fail('could not find ROOM_IDS in tools/art/rooms.mjs — this check has gone stale');
+  } else {
+    const drawn = new Set([...ids[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
+    const missing = ROOM_LIST.map((r) => r.id).filter((id) => !drawn.has(id));
+    const extra = [...drawn].filter((id) => !ROOM_LIST.some((r) => r.id === id));
+    if (missing.length) {
+      fail(`the art tool has no drawing for ${missing.join(', ')} — those rooms fall back to the procedural tile`);
+    } else if (extra.length) {
+      fail(`the art tool draws ${extra.join(', ')}, which are not room types any more`);
+    } else {
+      ok(`all ${ROOM_LIST.length} room types have art in the atlas`);
+    }
+  }
+}
+
 // ---- 7. migrations write what they promise ----------------------------------
 {
   const s = createNewGame({ seed: 9, now: 1 });

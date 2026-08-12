@@ -67,10 +67,17 @@ export const ROOM_ART = {
   schoolhouse: null,
   suit_bay: null,
   maintenance_bay: null,
-  // Explicitly null rather than absent. `roomArt` treats both the same, but
-  // `missingRoomArt()` reports the nulls — so a room type that is simply not
-  // in this table drops off the list of art still to draw, which is how this
-  // one went unnoticed after it was added.
+  // Null like its nine neighbours, and null is right: the values in this table
+  // are names from the art brief (`water_reclamation`, `air_scrubbers`), not
+  // room ids, and they address an imported batch that has never shipped —
+  // assets/art/ holds an empty index.json and nothing else. Pointing this at
+  // the procedural atlas frame added in tools/art/rooms.mjs would be a
+  // category error and a 404.
+  //
+  // It is listed rather than absent so `missingRoomArt()` counts it. Being
+  // absent from this table is worse than being null in it: the reporter walks
+  // the nulls, so a room that is not here at all drops off the list of art
+  // still to draw, which is how this one went unnoticed.
   heat_exchange: null,
 };
 

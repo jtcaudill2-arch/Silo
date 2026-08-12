@@ -203,6 +203,11 @@ export const ROOM_IDS = [
   'recycling', 'foundry', 'munitions', 'armory', 'barracks', 'training_yard',
   'sheriffs_office', 'holding_cells', 'laboratory', 'archive', 'schoolhouse',
   'radio_room', 'airlock', 'suit_bay', 'storage_depot', 'deep_mine', 'maintenance_bay',
+  // Added late to the game and never to this list, so the atlas carried 28
+  // frames for 29 room types and the Heat Exchange fell through to the
+  // procedural tile everywhere. `missingRoomArt()` could not report it either,
+  // because it was absent from ROOM_ART rather than null in it.
+  'heat_exchange',
 ];
 
 // =============================================================================
@@ -1836,6 +1841,36 @@ const FIXTURE_ART = {
   },
 
   // Racked and stacked. Boring, cheap, always the right call.
+  // Ore in at the top, coolant out at the bottom. The read is a bank of
+  // finned tubes with a condensate drum under it — deliberately cold in
+  // palette where the Foundry and the Reactor are hot, since the two sit
+  // beside each other in the Deeps and the player picks them apart at a
+  // glance.
+  heat_exchange(p, s) {
+    ground(p, s);
+    // The hot feed and the condensate gutter both run the full width, because
+    // this room is two slots wide and its art is drawn once per bay: a shape
+    // that stops short of the edge makes one room read as two dioramas. The
+    // self-test checks for it — six joining rows, at least one at working
+    // height — and caught exactly that on the first attempt.
+    pipeh(p, 0, 5, FX_W, 3, tone(PAL.rust, -0.3));
+    for (let i = 6; i < FX_W - 6; i += 14) collarH(p, i, 5, 3);
+    // The tube bank: five finned verticals, alternating so the fins read.
+    solid(p, 4, 9, 40, 18, DARK, { lit: 0.2, dark: -0.26 });
+    for (let k = 0; k < 5; k++) {
+      const x = 7 + k * 8;
+      inner(p, x, 11, 4, 14, tone(PAL.steel, k % 2 ? 0.06 : -0.12));
+      for (let y = 12; y < 25; y += 3) p.hline(x - 1, y, 6, tone(PAL.verdigris, -0.28));
+    }
+    // Condensate, running off the bank into the drum.
+    motes(p, 6, 26, 36, 3, tone(PAL.verdigris, 0.12), 6, s + ':drip');
+    pipeh(p, 0, 28, FX_W, 3, tone(PAL.verdigris, -0.34));
+    // The cold line out, low and to the right.
+    drum(p, 47, 16, 14, 16, tone(PAL.verdigris, -0.34));
+    pipev(p, 52, 8, 8, 3, tone(PAL.verdigris, -0.2));
+    tap(p, 54, 31);
+  },
+
   storage_depot(p, s) {
     ground(p, s);
     solid(p, 1, 6, 32, 27, DARK, { lit: 0.2, dark: -0.26 });
@@ -2678,6 +2713,29 @@ const CUTAWAY_ART = {
     p.hline(6, 71, 14, tone(IRON, -0.4));
   },
 
+  // The same read at four times the size: the tube bank fills the left, the
+  // condensate drum and the cold line stand on the right, and the hot feed
+  // crosses the top. Cold palette throughout, against the Foundry's rust.
+  heat_exchange(p, s) {
+    vaultShell(p, s, { coneW: 58 });
+    wallPipes(p, 13, 8, 112, tone(PAL.rust, -0.34), 3, 30);
+    solid(p, 6, 22, 68, 56, DARK, { lit: 0.2, dark: -0.26 });
+    for (let k = 0; k < 6; k++) {
+      const x = 11 + k * 11;
+      inner(p, x, 26, 6, 44, tone(PAL.steel, k % 2 ? 0.06 : -0.14));
+      for (let y = 28; y < 69; y += 5) p.hline(x - 2, y, 10, tone(PAL.verdigris, -0.3));
+    }
+    inner(p, 8, 71, 64, 4, tone(DARK, -0.32));
+    motes(p, 10, 66, 60, 6, tone(PAL.verdigris, 0.12), 10, s + ':drip');
+    drum(p, 80, 40, 20, 38, tone(PAL.verdigris, -0.34));
+    drum(p, 104, 52, 18, 26, tone(PAL.verdigris, -0.22));
+    pipev(p, 88, 22, 18, 4, tone(PAL.verdigris, -0.2));
+    tap(p, 91, 77, 7);
+    p.speckle(76, 76, 48, 6, tone(PAL.verdigris, -0.4), 0.07, s + ':wet');
+    contact(p, 79, 79, 22);
+    contact(p, 103, 79, 20);
+  },
+
   storage_depot(p, s) {
     vaultShell(p, s, { coneW: 58 });
     solid(p, 4, 16, 64, 62, DARK, { lit: 0.2, dark: -0.26 });
@@ -2823,6 +2881,7 @@ export const ROOM_WIDTHS = {
   recycling: 2, foundry: 2, munitions: 2, armory: 2, barracks: 2, training_yard: 2,
   sheriffs_office: 1, holding_cells: 1, laboratory: 2, archive: 2, schoolhouse: 2,
   radio_room: 1, airlock: 2, suit_bay: 2, storage_depot: 1, deep_mine: 3, maintenance_bay: 1,
+  heat_exchange: 2,
 };
 
 export default {
