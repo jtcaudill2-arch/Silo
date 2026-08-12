@@ -252,6 +252,33 @@ if (runs.every((r) => Object.keys(r.s.flags.crises || {}).length >= 3)) {
 // running the tick. What matters here is that any raid which *does* happen
 // resolves, and the "still pending" check in `faults` above covers that.
 
+// Conquest has to actually happen in a campaign.
+//
+// It read `silos taken 0` for a long time and nobody noticed, because the
+// reference player did not know conquest existed — the ladder was proven in
+// test/wiring.mjs and never in play. That is the same shape as every other
+// bug this branch has been about: a system that is correct and never runs.
+//
+// The autopilot reaches `breaching_charges` last, so this only holds over a
+// campaign long enough to finish the tree. Under that, it is not asserted —
+// a short run has not earned the right to expect a conquest.
+const LONG = 600;
+for (const r of runs) {
+  if (r.lastDay < LONG) continue;
+  if (!(r.s.stats.silosTaken > 0)) {
+    fail(
+      `0x${r.seed.toString(16)} ran ${r.lastDay} days, finished ${r.s.research.completed.length} research nodes ` +
+      'and never took a silo — conquest is not reachable by playing'
+    );
+  }
+}
+{
+  const long = runs.filter((r) => r.lastDay >= LONG);
+  if (long.length && long.every((r) => r.s.stats.silosTaken > 0)) {
+    ok(`conquest happens in a full campaign: ${long.map((r) => r.s.stats.silosTaken).join(' and ')} silos taken`);
+  }
+}
+
 // A campaign that dies on day 30 has not exercised anything. This is not a
 // balance assertion — it is a floor under the other one, so "no faults found"
 // cannot be bought by not playing.

@@ -26,7 +26,9 @@ import { employableCitizens } from '../src/sim/jobs.js';
 import {
   formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear, getItem,
 } from '../src/sim/military.js';
-import { canLaunch, launch, airlockCapacity } from '../src/sim/expedition.js';
+import { canLaunch, launch, launchConquest, airlockCapacity } from '../src/sim/expedition.js';
+import { canLaunchRun } from '../src/sim/conquest.js';
+import { PLAYER_SILO_ID } from '../src/data/silos.js';
 
 /**
  * Research order: unblock the economy, then climb the suit line, then finish.
@@ -89,6 +91,15 @@ const RESEARCH_ORDER = [
   'radio_range_3',
   'pre_collapse_archives',
   'origin_record',
+  // And, last, the door into somebody else's silo.
+  //
+  // Last on purpose. A competent player does not beeline this: it is 1,580
+  // points that buy no food, no power and no depth, and the endgame chain
+  // above it is what every ending needs. Putting it here means the autopilot
+  // reaches it only on a campaign that has already done everything else —
+  // which is the honest reading of when conquest is worth the squads.
+  'explosives',
+  'breaching_charges',
 ];
 
 /**
@@ -489,6 +500,23 @@ function runSurface(state) {
     return actions;
   }
 
+  // ---- taking a silo, once the door is researched ------------------------
+  //
+  // Deliberately behind `breaching_charges`, which sits last in
+  // RESEARCH_ORDER — so this engages only on a campaign that has already
+  // finished the economy, the suit line and the ending chain. Every suite
+  // that drives this file for two hundred days or fewer never reaches it, and
+  // their numbers are unchanged.
+  //
+  // It uses a *second* squad. The first one keeps walking to the surface: an
+  // autopilot that stopped salvaging to go conquering would be trading a
+  // known return for a speculative one, which is not what "competent but not
+  // clever" does.
+  if (isComplete(state, 'breaching_charges')) {
+    const acts = conquer(state);
+    if (acts.length) return acts;
+  }
+
   // One squad, kept at strength.
   if (!state.military.squadIds.length) {
     actions.push(...formSquad(state));
@@ -575,6 +603,79 @@ function runSurface(state) {
     }
   }
   return actions;
+}
+
+/**
+ * Raise a second squad and send it at the softest silo it can reach.
+ *
+ * The softest, not the richest: this is the autopilot, and a player who has
+ * just unlocked the charges takes the target they can actually hold before
+ * they take the one worth holding. `canLaunchRun` decides which stage the run
+ * attempts; this only decides whether to send anybody.
+ *
+ * Crewed from people with no job, never by stripping a post. A conquest that
+ * costs the silo its water plant is not a conquest, and the whole reason this
+ * file gates every room order on spare hands is that the same mistake in the
+ * other direction killed campaigns.
+ */
+function conquer(state) {
+  const actions = [];
+
+  // A second squad, so the surface programme keeps running.
+  if (state.military.squadIds.length < 2) {
+    if (state.military.squadIds.length >= BAL.military.maxSquads) return actions;
+    return formSquad(state);
+  }
+  const squadId = state.military.squadIds[1];
+  const squad = state.military.squads[squadId];
+  if (!squad || squad.deployed) return actions;
+
+  const members = squadMembers(state, squadId);
+  const want = Math.min(BAL.military.squadMax, Math.max(BAL.military.squadMin, airlockCapacity(state)));
+  if (members.length < want) {
+    // The same rule the first squad is crewed by — `SQUAD_MEMBER` takes a
+    // soldier off whatever post they were on. Requiring `!c.job` instead was
+    // the first attempt and it never filled a single slot: in a mature silo
+    // every employable citizen has a post, so the second squad sat at 0 of 4
+    // for two hundred and fifty days while the charges gathered dust.
+    const candidate = employableCitizens(state)
+      .filter((c) => c.squadId == null && c.age >= 18 && c.age < 50 && c.health > 60)
+      .sort((a, b) => (b.skills.combat || 0) - (a.skills.combat || 0))[0];
+    if (!candidate) return actions;
+    actions.push({ type: 'SQUAD_MEMBER', squadId, citizenId: candidate.id });
+    actions.push(...equipBest(state, candidate.id));
+    return actions;
+  }
+
+  // Kit it the way the first squad is kitted: issue what is on the rack, and
+  // craft what is not. The approach band needs tier-3 suits, and a second
+  // squad in hand-me-downs is a squad that never leaves.
+  for (const kind of ['suit', 'weapon', 'armor']) {
+    const best = craftableItems(state).filter((i) => i.kind === kind).sort((a, b) => b.tier - a.tier)[0];
+    const bestTier = best?.tier ?? 0;
+    const behind = members.filter((c) => {
+      const worn = c.gear?.[kind] ? state.military.gear[c.gear[kind]] : null;
+      return !worn || (getItem(worn.item)?.tier ?? 0) < bestTier;
+    }).length;
+    if (!behind) continue;
+    if (unassignedGear(state, kind).filter((g) => (getItem(g.item)?.tier ?? 0) >= bestTier).length) {
+      actions.push(...equipGroup(state, members.map((c) => c.id)));
+      return actions;
+    }
+    if (best && canCraft(state, best.id).ok) {
+      actions.push(...craft(state, best.id));
+      return actions;
+    }
+    if (members.some((c) => !c.gear?.[kind])) return actions;
+  }
+
+  const target = Object.values(state.world.silos)
+    .filter((x) => x.id !== PLAYER_SILO_ID && x.status !== 'collapsed' && x.contact !== 'satellite')
+    .filter((x) => canLaunchRun(state, x.id).ok)
+    .sort((a, b) => (a.power?.military ?? 99) - (b.power?.military ?? 99))[0];
+  if (!target) return actions;
+  if (!canLaunch(state, squadId, BAL.conquest.band).ok) return actions;
+  return launchConquest(state, squadId, target.id);
 }
 
 /** First floor with a free bay that this room type is allowed to occupy. */
