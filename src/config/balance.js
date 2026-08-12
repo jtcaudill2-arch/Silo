@@ -1253,6 +1253,14 @@ export const BAL = {
     //   0.03           1 and 17           136 and 144
     //   0.02           1 and 11           136 and 144
     //
+    // Those four rows were measured while the trigger still sat inside the
+    // contact-gated loop in diplomacy.js, which suppressed 84% of it. With
+    // the raid pass lifted out of that gate the same 0.02 reads 4 and 11
+    // raids and 144 floors on both seeds — more raids and *more* depth, which
+    // is the gate having been the thing distorting it rather than the rate.
+    // The rate was left at 0.02: it is the one that was chosen against the
+    // depth measurement, and the depth is now comfortably intact.
+    //
     // 0.02 is the rate that leaves the bottom of the silo reachable. The gap
     // between the two seeds is the world, not the dice: a silo whose
     // aggressive neighbours collapse early is genuinely safer than one next
@@ -1547,33 +1555,28 @@ export const BAL = {
     // that the same squad meets on an ordinary deep run.
     //
     // 6 was measured, not guessed. Forty seeds per cell, a full squad of
-    // `squadMax`, tier-4 suits and mag rifles, defences undermined to 0.75:
+    // `squadMax` in tier-4 suits and mag rifles, defences undermined to 0.75,
+    // *through the shipped path* — which now includes `garrisonResponse`, so
+    // these are what a player meets rather than what this constant does on
+    // its own:
     //
     //                 breach            hold (5 fights, one load-out)
-    //   military 20   40W / 0L          40/40 taken, 0.0 dead
-    //   military 40   39W / 1L          38/40 taken, 1.2 dead
-    //   military 60   30W / 10L         21/40 taken, 2.9 dead
-    //   military 88   14W / 26L          5/40 taken, 3.9 dead
+    //   military 20   40W /  0L         40/40 taken, 0.1 dead
+    //   military 40   39W /  1L         26/40 taken, 2.5 dead
+    //   military 60   20W / 20L          5/40 taken, 4.5 dead
+    //   military 88    4W / 36L          0/40 taken, 4.6 dead
     //
-    // Which is the curve the design asks for: the agrarian silo is a
-    // formality once you can reach it, and the one whose hook is "the main
-    // military threat" is a campaign you will lose people over and may lose
-    // outright. Re-measured after the audit fixes: 40W/0L, 40W/0L, 34W/6L,
-    // 15W/25L, with the hold and casualty columns unchanged — the table
-    // holds.
+    // Note the crew: those are citizens at their default combat skill. The
+    // same eight *trained* to 45 breach military 95 twenty-one times in
+    // twenty-five and hold it eleven — see `garrisonResponse`, which is what
+    // makes training the axis rather than headcount. Untrained troops in the
+    // best kit in the game cannot take the hardest silo, and that is the
+    // intended reading.
     //
-    // What it does NOT hold for is a *better* party, and that is the real
-    // limit of this constant. `garrisonForce` scales with the target only, so
-    // the hardest garrison in the game is a fixed ceiling at 95 x 6 = 570,
-    // while a party's force scales with headcount, gear and training without
-    // bound: eight troopers at the load-out above are about 203, the same
-    // eight with trained combat skill are past 550, and the curve above
-    // flattens to 25/25 everywhere. A design judge measuring at combat 45
-    // read that as this table being wrong; it is not — it is a different
-    // squad. But the observation underneath is correct and unfixed: past a
-    // certain squad, the military column stops deciding anything, and the
-    // number that decides it is `military.squadMax`. Scaling the garrison
-    // with the party is the fix, and it is not made here.
+    // Measured without the response — this constant alone, as it shipped
+    // before that fix — the same cells read 40W/0L, 40W/0L, 34W/6L, 15W/25L
+    // with 40/40, 38/40, 21/40, 5/40 held. Recorded because the two tables
+    // are easy to confuse and only one of them is the game.
     garrisonPowerPerMilitary: 6,
     // The breach is one fight against everything they have at the door.
     breachGarrisonScale: 1,
