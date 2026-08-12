@@ -1776,6 +1776,131 @@ console.log('');
   }
 }
 
+// ---- 27. the things that could be deleted without a suite noticing ---------
+//
+// A mutation sweep over this branch found twelve changes that reverted in
+// silence. The four with real consequences are pinned here. The rest are
+// covered by the sections above, or were judged not worth a fixture that
+// could only pass — see the note in military.js about one budget and one
+// predicate.
+{
+  // A non-aggression pact stops a raid. §10 sets `treaties = []`, so its
+  // fixture could never see this guard at all: deleting it left the suite
+  // green while every pact in the game stopped meaning anything.
+  const raidsWith = (treaties) => {
+    const store = newStore(9001);
+    const s = store.state;
+    const silo = s.world.silos[5];
+    silo.contact = 'radio';
+    silo.reputation = BAL.diplomacy.raidGrudgeReputation - 50;
+    silo.treaties = treaties;
+    let n = 0;
+    for (let d = 0; d < 400; d++) {
+      s.clock.day = d;
+      for (const a of diploTick(s)) {
+        if (a.type === 'WORLD_EVENT_QUEUE' && a.event?.kind === 'raid' && a.event.siloId === 5) n++;
+      }
+    }
+    return n;
+  };
+  const without = raidsWith([]);
+  const withNap = raidsWith([{ kind: 'nap', with: 12, since: 0 }]);
+  if (!without) fail('the pact fixture never produced a raid, so it cannot show a pact stopping one');
+  else if (withNap) fail(`a non-aggression pact did not stop the raids: ${withNap} over 400 days`);
+  else ok(`a non-aggression pact stops the raids it promises to: ${without} without one, 0 with`);
+}
+{
+  // The hold's ammunition runs out. `holdAmmoDecayPerFight` and the
+  // `ammoFactorOverride` that carries it were untested anywhere, §11
+  // included — "no resupply inside somebody else's silo" is the stage's
+  // stated difficulty and nothing checked it happened.
+  const run = () => {
+    const store = newStore(4242);
+    const s = store.state;
+    s.clock.day = 300;
+    s.resources.ammo = 9000;
+    const ids = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+    let g = 0;
+    for (const cid of ids) {
+      for (const [kind, item] of [['suit', 'suit_4'], ['weapon', 'mag_rifle'], ['armor', 'composite_rig']]) {
+        const id = 'g' + ++g;
+        s.military.gear[id] = { id, item, kind, durability: BAL.gear.durabilityMax, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), [kind]: id };
+      }
+    }
+    s.world.silos[6].conquest = { stage: 'hold', scoutRuns: 2, undermined: true, defenseMult: 0.75 };
+    return resolveConquestRun(s, { id: 61, band: 'approach', target: 6, purpose: 'hold', roster: ids, leaderId: ids[0] });
+  };
+  // The override has to actually reach the fight, which asserting the
+  // constant does not show: reading `BAL.conquest.holdAmmoDecayPerFight` here
+  // passes just as well against a combat.js that has stopped consulting
+  // `ammoFactorOverride` at all. So the same squad fights the same garrison
+  // on the same seed at full pouches and at a fifth of them, and the two must
+  // not come out the same.
+  const out = run();
+  const floors = (out.journal.join('\n').match(/^— Floor /gm) || []).length;
+  if (floors < 3) {
+    fail(`the hold fixture only reached ${floors} floors — too few to show the ammunition running down`);
+  }
+
+  const store = newStore(4242);
+  const s = store.state;
+  s.clock.day = 300;
+  s.resources.ammo = 9000;
+  const squad = s.citizenIds.filter((i) => s.citizens[i].age >= 20).slice(0, BAL.military.squadMax);
+  const enemy = garrisonForce(s.world.silos[6], BAL.conquest.holdGarrisonScale, 0.75, 0);
+  const at = (ammo) => resolveCombat(s, squad, enemy, { battleId: 'ammo-probe', ammoFactorOverride: ammo }).ratio;
+  const full = at(1);
+  const dry = at(0.2);
+
+  if (!(full > dry * 1.5)) {
+    fail(
+      `the same squad fights the same garrison at ${full.toFixed(2)} on full pouches and ${dry.toFixed(2)} ` +
+      'on a fifth of them — ammoFactorOverride is not reaching the fight, so the hold resupplies itself'
+    );
+  } else if (!(BAL.conquest.holdAmmoDecayPerFight > 0)) {
+    fail('holdAmmoDecayPerFight is zero — the pouches never run down however well the override works');
+  } else {
+    ok(
+      `the hold runs out of ammunition: ${floors} floors on one load-out, and the override bites ` +
+      `(${full.toFixed(2)} full against ${dry.toFixed(2)} dry)`
+    );
+  }
+}
+{
+  // The v16 backfill. wiring §7 walks the chain but asserts only floors,
+  // found rooms and shoring; catchup §5 checks crises, ending and floors. So
+  // making the whole of migration 16 a no-op — dropping `world.pendingRaid`,
+  // every silo's `conquest` block and the three raid stats — was invisible,
+  // and a v15 save would load into a build whose raid and conquest code reads
+  // all three.
+  let state = { v: 15, world: { silos: { 5: { id: 5 } }, satellites: [] }, stats: {} };
+  for (let v = 15; v < SCHEMA_VERSION; v++) if (MIGRATIONS[v]) state = MIGRATIONS[v](state) || state;
+  const missing = [];
+  if (!('pendingRaid' in state.world)) missing.push('world.pendingRaid');
+  if (!state.world.silos[5].conquest) missing.push('silo.conquest');
+  for (const k of ['raidsRepelled', 'raidsLost', 'silosTaken']) {
+    if (!(k in state.stats)) missing.push(`stats.${k}`);
+  }
+  if (missing.length) {
+    fail(`migrating a v15 save left ${missing.join(', ')} undefined — the raid and conquest code reads all of them`);
+  } else {
+    ok('a v15 save is backfilled with everything the raid and conquest code reads');
+  }
+}
+{
+  // Two raids maturing on the same day take the stronger, not the later.
+  const store = newStore(77);
+  const s = store.state;
+  store.dispatch({ type: 'PENDING_RAID', siloId: 5, strength: 0.9 });
+  store.dispatch({ type: 'PENDING_RAID', siloId: 16, strength: 0.2 });
+  if (s.world.pendingRaid?.strength !== 0.9) {
+    fail(`a weaker second raid replaced a stronger pending one (strength ${s.world.pendingRaid?.strength})`);
+  } else {
+    ok('two raids on one day merge to the stronger, rather than the later overwriting it');
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }
