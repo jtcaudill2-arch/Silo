@@ -65,7 +65,7 @@ export function canLaunchRun(state, siloId) {
   const stage = c.stage || 'scout';
 
   // 'held' is a terminal marker, not a stage anyone can run. `resolveRun` has
-  // no branch for it, so letting a squad launch on it burned twelve days and a
+  // no branch for it, so letting a squad launch on it burned six days and a
   // supply load for nothing. It is reachable: a satellite that revolts used to
   // keep this marker (see SATELLITE_REVOLT, which now clears it), and an
   // in-flight run can land after another has taken the silo.
@@ -109,9 +109,20 @@ export function isConquestRun(expedition) {
  * to them, and `scale` is how much of the garrison this particular fight
  * meets: all of it at the door, a share of it on each floor above.
  *
- * `human: true` on purpose. It hands the fight to combat.js's
- * `raiderFleeLossFraction` cap, which is the difference between a hard fight
- * and a squad wipe — these are people defending their home, and they break.
+ * `human: true` on purpose, but not for the reason this comment used to give.
+ * It claimed the flag bought the `raiderFleeLossFraction` cap, "the difference
+ * between a hard fight and a squad wipe". It buys no such thing:
+ * combat.js:200 applies that cap only when `outcome.win` is true, and the
+ * worst winning band already caps casualties at 0.35 against a fraction of
+ * 0.4, so `Math.min` never binds at any squad size. A wipe happens on defeat
+ * or rout, where the clause is skipped entirely.
+ *
+ * What the flag actually does is keep `rollEnemyForce` from rolling mutation
+ * levels and modifiers onto them (combat.js:96) — which `garrisonForce`
+ * bypasses anyway by building the enemy object here — and make
+ * expedition.js:393 record the dead as `raidersKilled` rather than
+ * `mutantsKilled`. That last one is the honest reason to keep it: these are
+ * people, and the tally should say so.
  */
 export function garrisonForce(silo, scale = 1, defenseMult = 1, partyForce = 0) {
   const military = silo?.power?.military ?? 40;
@@ -273,7 +284,7 @@ export function accumulate(hurt, patches, state) {
  * the salvage run it borrows its band from — and since the stages stay put on
  * failure, it could be cycled forever.
  *
- * Same arithmetic as expedition.js, deliberately: this is the same twelve days
+ * Same arithmetic as expedition.js, deliberately: this is the same six days
  * on the same ground in the same suits.
  */
 function outsideWear(state, expedition, roster) {
@@ -363,7 +374,7 @@ export function resolveRun(state, expedition) {
 
   // ---- the ladder may have moved while they were walking ------------------
   //
-  // `purpose` is frozen at launch and the run is six days out each way, so by
+  // `purpose` is frozen at launch and the whole run is six days, so by
   // the time it reports the stage can be somewhere else — another squad's run
   // landed first, or a satellite revolted. Writing the stage unconditionally
   // dragged the ladder *backwards*: a scout report arriving after the breach
@@ -396,7 +407,7 @@ export function resolveRun(state, expedition) {
   // ---- and the target may no longer be a target ---------------------------
   //
   // Gated at launch, and that is not enough: the world collapses silos on its
-  // own and a run is twelve days round trip. Unchecked, an in-flight assault
+  // own and a run is six days round trip. Unchecked, an in-flight assault
   // conquered rubble — `SATELLITE_ADD` writes `status: 'satellite'`, which
   // resurrected a collapsed silo as a productive holding — or took one the
   // player already held, pushing a second entry for it.
@@ -632,7 +643,7 @@ export function resolveRun(state, expedition) {
     // Both are required, not optional. The reducer reads `a.suitIntegrity ??
     // 100`, so omitting it does not mean "leave the suits alone" — it means
     // "write every suit back to full". Same for the dose: `a.radiation || 0`
-    // sends a squad home from twelve days outside with nothing to
+    // sends a squad home from six days outside with nothing to
     // decontaminate.
     loot,
     artifacts,

@@ -296,8 +296,8 @@ export const RESEARCH = {
   // Measured, three seeds, seven hundred days of competent play: `firearms_3`
   // lands on day 540 and `breaching_charges` lands *never*, on any of them,
   // in campaigns that end between day 676 and day 849. The full closure was
-  // 3,450 points and three artifacts, and a conquest is four sorties of
-  // twelve days on top of it — so the one feature the metallurgy line exists
+  // 3,450 points and three artifacts, and a conquest is five sorties of
+  // six days on top of it — so the one feature the metallurgy line exists
   // to open unlocked at the credits, if at all. The world was not the
   // problem; no high-military silo collapsed in any of those runs. The door
   // was.
@@ -324,8 +324,8 @@ export const RESEARCH = {
   // then sat for the remaining five hundred and fifty. The chain was never
   // the binding constraint; one alloy ingot and one intact servo were. That
   // is the same die roll in the middle of the same kind of line, and this
-  // node is worse than the excavation one was, because a conquest is four
-  // sorties of twelve days *after* the gate opens — so an artifact that
+  // node is worse than the excavation one was, because a conquest is five
+  // sorties of six days *after* the gate opens — so an artifact that
   // arrives late does not delay the reward, it deletes it.
   //
   // Still 1,100 points and thirty-six shifts, still behind Explosives, and

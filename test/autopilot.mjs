@@ -35,7 +35,7 @@ import { PLAYER_SILO_ID } from '../src/data/silos.js';
  *
  * The suit line is load-bearing and it is easy to under-rate. The near ruins
  * drop no artifacts at all, so a silo that never fields tier-2 suits never
- * recovers a single artifact, and every artifact-gated node — twelve of the
+ * recovers a single artifact, and every artifact-gated node — eleven of the
  * forty-eight, including all three endings — sits permanently out of reach while
  * the lab keeps busy on yield upgrades. This list used to stop at the
  * economy nodes and reached env_suit_2 only by accident, four hundred days

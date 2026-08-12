@@ -1057,11 +1057,15 @@ const worldReducers = {
       state.world.pendingRaid.strength = Math.max(state.world.pendingRaid.strength, a.strength);
       return;
     }
-    // Written, and — today — never read. `RAID_RESOLVED` below is dispatched
-    // from nowhere in src/ or test/, and no sim module looks at
-    // `world.pendingRaid`, so a raid announces itself and then nothing
-    // happens. Kept rather than deleted because the event and the reducer are
-    // the half that already works; what is missing is a resolver.
+    // Read by `sim/raid.js`, which resolves it from the day loop one day
+    // later and always ends with `RAID_RESOLVED`.
+    //
+    // This comment used to say the opposite — that nothing read the field and
+    // no module dispatched `RAID_RESOLVED`, so a raid announced itself and
+    // then nothing happened. That was true when it was written and false two
+    // commits later, when the resolver it describes as missing was added; it
+    // then sat directly under a *new* comment six lines above calling that
+    // same resolver "the raid module". Both cannot be right.
     state.world.pendingRaid = { siloId: a.siloId, strength: a.strength, day: state.clock.day };
     emit('alert', { kind: 'warn', glyph: '⚑', text: 'Raiders at the airlock' });
   },

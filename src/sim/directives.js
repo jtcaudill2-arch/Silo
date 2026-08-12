@@ -57,7 +57,14 @@ import { canStart, isComplete } from './research.js';
  *   85-   a room about to fail, 85 minus its condition
  *   76-79 no income at all of a resource every single room is built from,
  *         with the first Laboratory at the bottom of the band
- *   74-75 income of one that exists but is running short
+ *   74-79 income of one that exists but is running short — a base of 75 for
+ *         scrap and 74 for parts, plus up to `incomeUrgencyRange` (4) as the
+ *         flow falls toward nothing. The guard is `flow < want`, so the
+ *         urgency term is always above zero and the true floor is just over
+ *         74. This row read "74-75" until the arithmetic was checked; it
+ *         deliberately overlaps the band above, because a Workshop running at
+ *         a tenth of what the silo needs is worth more than a resource that
+ *         merely has no source yet
  *   72    rooms standing empty, which is free output being thrown away
  *   62    a Laboratory with nothing on the bench
  *   51-55 the surface chain, and the munitions line at the end of it

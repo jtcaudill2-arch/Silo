@@ -6,9 +6,11 @@
  * This is the one that arrives whether or not anybody is ready, which is what
  * makes keeping a squad *home* a decision rather than an oversight.
  *
- * The half that already existed: `world.js` queues a `raid` event when a
- * hostile silo has a grudge and an army, `data/events.js` fires a scripted
- * one five hours in, and `PENDING_RAID` writes `world.pendingRaid`. Nothing
+ * The half that already existed: `diplomacy.js` queues a `raid` event when a
+ * hostile silo either holds a grudge or simply likes the look of you — the
+ * opportunity clause is the one a peaceful player actually meets — `world.js`
+ * applies it when it matures, `data/events.js` fires a scripted one five
+ * hours in, and `PENDING_RAID` writes `world.pendingRaid`. Nothing
  * read it. The alert went up, the coaching line in shell.js said "Squads
  * defend the silo; without one, the raid takes what it wants", and then the
  * raid stood at the door for the rest of the campaign.
@@ -33,7 +35,7 @@ const R = BAL.raid;
  * Which of the four human bands turns up, from the attacker's strength.
  *
  * `strength` is the raiding silo's `power.military / 100`, so it is a rating
- * of them rather than a roll: Silo 5 at military 88 sends a warband every
+ * of them rather than a roll: The Anvil at military 95 sends a warband every
  * time, and a scavenger silo sends scrappers every time. Deliberately not
  * randomised — the world table tells the player who is dangerous, and a raid
  * that contradicted it would make that table a decoration.

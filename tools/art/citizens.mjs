@@ -91,24 +91,31 @@ export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4 };
  * What the game actually asks the atlas for, and what this module must be able
  * to answer with.
  *
- * src/render/sprites.js:citizenFrame() names frames
- * `citizen_<palette>_<state><n>` and citizenRole() can only ever return one
- * of five palettes: worker, idle, hurt, irradiated, child. It samples walk at
- * four frames and work at two. This module was written around a richer set of
- * nine job roles and a six-frame walk, which is a better sprite sheet and a
- * vocabulary the consumer cannot address — every one of those roles except
- * 'child' would have been unreachable art.
+ * The two vocabularies have converged, and this note used to describe the
+ * split as though it were still open. It said `citizenRole()` "can only ever
+ * return one of five palettes: worker, idle, hurt, irradiated, child" and
+ * "samples walk at four frames and work at two". None of that is true now, and
+ * three of those five names are not among the things it returns at all.
  *
- * Rather than throw the roles away or fork the file, both vocabularies live
- * here. CONSUMER_ROLES are the five names sprites.js will ask for, each an
- * alias onto the role design that fits it; ROLES is the full palette an atlas
- * generator can bake once sprites.js grows a job-role input. Nothing is
- * duplicated: an alias resolves to a role in config() and draws identically.
+ * src/render/sprites.js:citizenFrame() names frames
+ * `citizen_<role>_<action><n>`, and `citizenRole()` returns exactly the ten
+ * ids in ROLES below — base, farmer, mechanic, medic, deputy, militia, child,
+ * elder, hazmat, irradiated — so every role this module draws is reachable
+ * art. Its FRAME_COUNTS matches ACTIONS above exactly: walk 6, idle 4, work 4,
+ * sleep 2, injured 4.
+ *
+ * CONSUMER_ROLES survives as a compatibility alias for the old five names.
+ * Only `irradiated` and `child` are still asked for and both map to
+ * themselves; `worker`, `idle` and `hurt` are aliases onto 'base' that nothing
+ * requests any more. An alias resolves to a role in config() and draws
+ * identically, so keeping them costs nothing and an older caller still works.
  *
  * WALK SAMPLING. A four-frame consumer reading a six-frame cycle wraps 3 -> 0,
  * which lands mid-stride and pops. WALK_4 is therefore not a slice of WALK: it
  * is the same stride resampled at four phases that close, so `walkFrames(4)`
- * is a clean loop and `walkFrames(6)` is the full one.
+ * is a clean loop and `walkFrames(6)` is the full one. The shipped renderer
+ * takes the six, but CONSUMER_ACTIONS below still describes the four-frame
+ * sampling, and the resampled cycle is what makes that safe.
  */
 export const CONSUMER_ROLES = {
   worker: 'base',

@@ -1042,7 +1042,7 @@ console.log('');
 // of fighting returned the satellite stream and nothing else. A design review
 // measured it against salvage on the same band with the same squad over 330
 // days — +950 stores and *zero* artifacts, against +4,257 and 25 — and since
-// twelve of the forty-eight research nodes and all three endings are
+// eleven of the forty-eight research nodes and all three endings are
 // artifact-gated, that is not a weaker option but a strictly dominated one.
 //
 // Conquest is not meant to out-earn salvage. It is meant to pay for different

@@ -822,8 +822,8 @@ export const BAL = {
     // days, day 175 to day 275, in which the tree did not move at all. At 2.4
     // the same run reaches fourteen by day 300 and thirty-eight by day 700,
     // which is a tree the player can see the shape of. It is deliberately not
-    // enough to outrun the artifact gates: a quarter of the nodes — twelve of
-    // the forty-eight — still need something carried in from the surface, and
+    // enough to outrun the artifact gates: eleven of the forty-eight nodes
+    // still need something carried in from the surface, and
     // no amount of bench time substitutes for opening the airlock.
     pointsPerLabPerCycleBase: 2.4,
     scientistSkillWeight: 0.9,
@@ -1357,8 +1357,8 @@ export const BAL = {
     homeTerrain: 1,
     // Raiders come as one of the four human bands in data/encounters.js,
     // picked by the strength the world event carried. `strength` is the
-    // attacker's `power.military / 100`, so Silo 5 at military 88 sends a
-    // warband and a scavenger silo sends scrappers.
+    // attacker's `power.military / 100`, so Silo 5 — The Anvil, at military
+    // 95 — sends a warband and a scavenger silo sends scrappers.
     bandByStrength: [0.25, 0.45, 0.7],
     // A raiding party is a detachment, not an army. This started at 1.4 — on
     // the reasoning that a raid is everything a silo can spare — and that was
@@ -1383,8 +1383,12 @@ export const BAL = {
     // guns turn back scrappers and nothing else; the Slag Crews are what
     // makes the Armory's tier-3 kit worth building; a Warband off The Anvil
     // is survivable only by a silo that kept a full, well-armed squad at home
-    // on purpose. Three of the twenty silos can send one — The Anvil (95),
-    // Pell (82) and Gallow Deep (74).
+    // on purpose. Two of the twenty silos can send one, which is what the
+    // `raidAggression` note above this block says and what the code does:
+    // `aggression > 0.6` admits only The Anvil (0.95) and Gallow Deep (0.7).
+    // This used to read "three — The Anvil (95), Pell (82) and Gallow Deep
+    // (74)", which listed military ratings while claiming to gate on
+    // aggression. Pell's aggression is 0.4 and it can never raid at all.
     sizeScale: 0.5,
     // What they carry off. Portable things only — nobody walks out with a
     // reclaimer, and power and water are not in barrels. Ammunition is on the
@@ -1465,7 +1469,7 @@ export const BAL = {
     // sorties and a month of fighting returned the satellite stream and
     // literally nothing else — measured against salvage on the same band with
     // the same squad over 330 days: +950 stores and 0 artifacts, against
-    // +4,257 and 25. Since twelve of the forty-eight research nodes and all
+    // +4,257 and 25. Since eleven of the forty-eight research nodes and all
     // three endings are artifact-gated, that is not a weaker option, it is a
     // strictly dominated one, and a strictly dominated option is dead content
     // whatever else is true of it.
@@ -1484,8 +1488,9 @@ export const BAL = {
     // which for six phases.
     sack: {
       // Units of stores per point of the target's `power.economy`, split
-      // across what a storeroom actually holds. Ferrous at economy 95 gives
-      // about 1,050 — under a third of what 330 days of salvage returns, but
+      // across what a storeroom actually holds. Ferrous, the richest silo in
+      // the table at economy 90, gives 990 — under a quarter of what 330 days
+      // of salvage returns, but
       // arriving at once, and on top of the satellite.
       perEconomy: 11,
       keys: ['scrap', 'parts', 'alloy', 'food', 'meds', 'ammo', 'fuel'],
@@ -1548,7 +1553,7 @@ export const BAL = {
     // This was 1.15 first, which was picked by eye and was wrong by about a
     // factor of five. The tell was not that fights were easy, it was that the
     // *target did not matter*: a four-person squad in tier-4 gear took Selby
-    // (military 20) and The Anvil (military 88) with the same zero
+    // (military 20) and The Anvil (military 95) with the same zero
     // casualties, so the world table's military column — the one number that
     // says which silos are dangerous — decided nothing. For scale, at 1.15
     // the hardest silo in the game fielded 76 power against a Warband of 960
