@@ -1601,6 +1601,25 @@ export const BAL = {
       // Rifle is the only way to hold one.
       gearChancePerMilitary: 0.010,
       gearTable: ['garrison_rifle', 'slag_plate'],
+      // The hardest silos keep something the benches cannot make.
+      //
+      // Tier-5 otherwise exists only behind `env_suit_4`, which lands with a
+      // hundred and twenty days left in a campaign, so the top of the ladder
+      // was reachable by exactly one route through a closing door. This is
+      // the second one, and it is the one the player asked for: the harder
+      // the target, the better what is on its racks. Below `sackEliteMinimum`
+      // it pays nothing at all, so softening up Selby is not a farm.
+      // 50, because 60 was unreachable. Measured across six campaigns the
+      // reference player takes nineteen silos and the hardest is rated 58, so
+      // a threshold of 60 meant this branch never once executed — priced
+      // content behind a door nothing opens, which is the exact fault this
+      // branch has spent its life removing. At 50 it fires on the top few
+      // targets and can be measured; a player who deliberately goes after The
+      // Anvil at 95 gets roughly twice the yield of one who takes a mid silo,
+      // which is the gradient the whole idea is for.
+      sackEliteMinimum: 50,
+      sackEliteChancePerMilitary: 0.008,
+      sackEliteTable: ['rail_carbine', 'compact_cuirass'],
     },
 
     // ---- what a stage costs to actually attempt ----

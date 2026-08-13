@@ -57,7 +57,7 @@ import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { getEnemy, ENEMIES } from '../src/data/encounters.js';
-import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
+import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun, sack as sackSilo } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower, rollEnemyForce, applyResolution } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
 import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
@@ -2758,7 +2758,54 @@ console.log('');
   const withWholeTree = craftableItems(s);
   const dead = ITEM_LIST.filter((i) => i.craft && !withWholeTree.some((c) => c.id === i.id));
 
-  if (dead.length) {
+  // The other direction, which this section was missing entirely.
+  //
+  // Deleting the unlock check in `craftableItems`, or replacing its tier gate
+  // with `return true`, or deleting `canCraft`'s unlock gate, each left the
+  // whole suite green: a build in which every item is craftable on day one
+  // passed. "Buildable once the unlock is done" is only half a gate, and the
+  // half that was missing is the one a player would notice on their first day.
+  s.research.completed = [];
+  const tooEarly = craftableItems(s).filter((i) => i.craft && i.unlock);
+
+  // `canCraft` needs a fixture where research is the ONLY thing that can
+  // refuse. Without one, deleting its unlock gate is invisible: the next gate
+  // down answers "Needs an Armory" and the item still is not craftable, so a
+  // test that only checks `ok` passes against a build with no tech gate at
+  // all. That mutation survived the first version of this section.
+  const bench = newStore(90);
+  const bs = bench.state;
+  let bid = 0;
+  for (const type of ['armory', 'suit_bay']) {
+    const id = `bench${++bid}`;
+    bs.silo.rooms[id] = {
+      id, type, floor: 1, slot: bid, width: 1, level: 1,
+      powered: true, buildingUntilCycle: 0, condition: 100, staff: [], found: true,
+    };
+  }
+  for (const k of Object.keys(bs.resources)) bs.resources[k] = 1e6;
+  bs.research.completed = [];
+  const slipped = ITEM_LIST.filter((i) => i.craft && i.unlock)
+    .filter((i) => !/Needs research/.test(canCraft(bs, i.id).reason || ''));
+
+  // One mutation is deliberately not covered, and it is worth naming rather
+  // than leaving as a silent hole: replacing `craftableItems`' tier gate with
+  // `return true` survives this suite. It survives because it is genuinely
+  // redundant against the shipped data — since the armour grants were
+  // corrected, every gated item's `unlock` node grants exactly its tier, so
+  // the unlock check alone already refuses everything the tier check would.
+  // There is no reachable state where one passes and the other fails. The
+  // first half of this section asserts that alignment directly, so if an item
+  // is ever added whose unlock does not grant its tier, that assertion fails
+  // and this note stops being true at the same moment.
+
+  if (tooEarly.length) {
+    fail(`${tooEarly.map((i) => `${i.id} (needs ${i.unlock})`).join(', ')} is craftable with no research ` +
+      'completed at all — the tech gate is not gating anything');
+  } else if (slipped.length) {
+    fail(`${slipped.map((i) => `${i.id} (${canCraft(bs, i.id).reason || 'allowed'})`).join(', ')} — ` +
+      'canCraft did not refuse these on research grounds at a fully equipped bench with unlimited stores');
+  } else if (dead.length) {
     fail(`${dead.map((i) => i.id).join(', ')} cannot be built with every research node in the game ` +
       'completed — it is priced content no player can reach');
   } else if (late.length) {
@@ -2766,7 +2813,8 @@ console.log('');
   } else if (unreachable.length) {
     fail(`${unreachable.join(', ')} has no unlock and still cannot be built`);
   } else {
-    ok(`all ${ITEM_LIST.filter((i) => i.craft).length} priced items are buildable, each by the node it names`);
+    ok(`all ${ITEM_LIST.filter((i) => i.craft).length} priced items are buildable, each by the node it ` +
+      `names — and none of the ${ITEM_LIST.filter((i) => i.craft && i.unlock).length} gated ones before it`);
   }
 }
 
@@ -3107,7 +3155,10 @@ console.log('');
         if (a.type !== 'GEAR_CRAFT') continue;
         pieces++;
         if (!a.loot) fail(`a sack minted a ${a.item} without marking it loot`);
-        if (!BAL.conquest.sack.gearTable.includes(a.item)) fail(`a sack produced ${a.item}, which is not on its table`);
+        // Two tables now: what any garrison keeps, and what only a hard one
+        // does. Both are legitimate output of a sack; anything else is not.
+        const sackTables = [...BAL.conquest.sack.gearTable, ...BAL.conquest.sack.sackEliteTable];
+        if (!sackTables.includes(a.item)) fail(`a sack produced ${a.item}, which is on neither of its tables`);
         if (!out.journal.some((l) => l.includes(getItem(a.item).name))) {
           fail(`a ${a.item} came out of a silo and the report never mentioned it`);
         }
@@ -4223,6 +4274,80 @@ console.log('');
   else {
     ok(`commendations always have somewhere to go: ${cost} buys +${BAL.combat.commendSkill} combat on a ` +
       `soldier, stops at ${BAL.citizens.skillMax}, and refuses a civilian or an empty ledger`);
+  }
+}
+
+// ---- 53. the hardest silos keep the best kit --------------------------------
+//
+// Tier-5 existed behind exactly one door: `env_suit_4`, which opens on day
+// 572-684 of a campaign that ends around 719. A hundred and twenty days, one
+// route, and a Compact Cuirass landing on day 721 of a 725-day run. This is
+// the second route, and it is the literal reading of "the harder the
+// challenge, the better the gear" — what a silo has on its racks scales with
+// the garrison that was defending them.
+//
+// It is also the branch most at risk of being unreachable: the first version
+// set the floor at military 60, and across six campaigns the reference player
+// takes nineteen silos of which the hardest is rated 58, so it never executed
+// once. This section asserts the gradient rather than the constant, so a floor
+// raised out of reach fails here rather than passing silently.
+{
+  const S = BAL.conquest.sack;
+  const elite = new Set(S.sackEliteTable);
+  const problems = [];
+
+  // Every id in the table has to be a real item, and a tier-5 one — the whole
+  // point is that it sits above anything the benches can make.
+  for (const gid of S.sackEliteTable) {
+    const item = getItem(gid);
+    if (!item) problems.push(`${gid} is not an item`);
+    else if (item.craft) problems.push(`${gid} can be built at a bench, so taking a silo for it is pointless`);
+    else if (item.tier < 5) problems.push(`${gid} is tier ${item.tier}, not above the crafted ladder`);
+  }
+
+  // The floor has to be somewhere a player actually goes. The world's own
+  // silo table is the evidence: if nothing in it is at or above the floor,
+  // this branch is unreachable by construction.
+  const store = newStore(76);
+  const ratings = Object.values(store.state.world.silos)
+    .map((x) => Math.round(x.power?.military ?? 0))
+    .sort((a, b) => b - a);
+  const reachable = ratings.filter((m) => m >= S.sackEliteMinimum).length;
+  if (!reachable) {
+    problems.push(`no silo in the world is rated ${S.sackEliteMinimum} or above (hardest is ${ratings[0]}), ` +
+      'so the elite sack never fires');
+  }
+
+  // And it has to pay more for a harder target than an easier one. Measured
+  // by sacking the same silo at two ratings across many seeds rather than
+  // reading the formula, so a branch that ignores `military` fails.
+  const yieldAt = (military) => {
+    let n = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      const st = newStore(1000 + seed).state;
+      const target = Object.values(st.world.silos)[0];
+      target.power = { ...(target.power || {}), military };
+      const out = sackSilo(target, streamFor(seed, 'sack-probe', military), 1);
+      for (const a of out.gear || []) {
+        const item = getItem(a.item);
+        if (item && elite.has(item.id)) n++;
+      }
+    }
+    return n;
+  };
+  const soft = yieldAt(S.sackEliteMinimum - 20);
+  const hard = yieldAt(95);
+
+  if (soft !== 0) {
+    problems.push(`a silo rated ${S.sackEliteMinimum - 20}, below the floor, still paid ${soft} tier-5 pieces`);
+  } else if (hard === 0) {
+    problems.push('a silo rated 95 paid no tier-5 kit at all across 300 sacks');
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else {
+    ok(`the hardest silos keep what nobody here can build: ${hard} tier-5 pieces over 300 sacks at ` +
+      `military 95, none at ${S.sackEliteMinimum - 20}, and ${reachable} silos in the world are worth taking for it`);
   }
 }
 

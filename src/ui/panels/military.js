@@ -16,7 +16,7 @@ import {
 import { employableCitizens } from '../../sim/jobs.js';
 import { lockReason } from '../../sim/unlocks.js';
 import { DOCTRINES, NODE_LIST as DOCTRINE_NODES } from '../../data/doctrine.js';
-import { ledger, spent as doctrineSpent } from '../../sim/doctrine.js';
+import { ledger, spent as doctrineSpent, has as doctrineHas } from '../../sim/doctrine.js';
 import { portraitCanvas } from '../../render/portraits.js';
 import { frameCanvas } from '../../render/sprites.js';
 import { openCitizen } from '../citizenCard.js';
@@ -90,7 +90,19 @@ export const militaryPanel = {
 function tabBtn(id, label, shell) {
   return el(
     'button.tab' + (tab === id ? '.active' : ''),
-    { type: 'button', onclick: () => { tab = id; shell.renderPanel(true); } },
+    {
+      type: 'button',
+      onclick: () => {
+        tab = id;
+        shell.renderPanel(true);
+        // Scroll position persisted across tabs, so switching from a
+        // scrolled Armory into Doctrine landed you mid-tree, past the
+        // commendation counter and past the only explanation of how they
+        // are earned. Every tab change was a random landing.
+        const b = document.querySelector('.panel-body');
+        if (b) b.scrollTop = 0;
+      },
+    },
     label
   );
 }
@@ -115,6 +127,17 @@ function renderSquads(state, body, shell) {
           'div.squad-head',
           el('div.squad-name', sq.name),
           sq.deployed ? chip('outside', 'warn') : chip(sq.assignment),
+          // Spearhead pays a party of four or fewer, and the natural thing a
+          // player does — upgrade the airlock, take more people — silently
+          // switches off a talent they spent twelve commendations on. The
+          // condition is in the node's description; the moment it stops
+          // applying is not, and that is the half that matters.
+          doctrineHas(state, 'spearhead')
+            ? chip(
+                members.length <= BAL.combat.spearheadMaxParty ? 'spearhead' : 'over strength',
+                members.length <= BAL.combat.spearheadMaxParty ? 'good' : 'warn'
+              )
+            : null,
           el('div.squad-count.mono', `${members.length}/${squadCap(state)}`)
         ),
         el(

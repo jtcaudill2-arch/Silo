@@ -213,7 +213,14 @@ function contest(state, roster, silo, rng, detection) {
  * `origin_shard` on tier 4 means the Scar is still somewhere you have to walk
  * to — conquest is a second road to the research tree, not a bypass round it.
  */
-function sack(silo, rng, share) {
+/**
+ * Exported for the same reason `accumulate` is: what a sack pays is a balance
+ * claim, and a balance claim that can only be reached through a whole resolved
+ * conquest run cannot be measured across three hundred seeds without also
+ * dragging in combat, casualties and the world table. Nothing outside this
+ * module calls it in play.
+ */
+export function sack(silo, rng, share) {
   const S = Q.sack;
   const economy = silo?.power?.economy ?? 40;
   const science = silo?.power?.science ?? 30;
@@ -252,6 +259,16 @@ function sack(silo, rng, share) {
     if (!got) continue;
     gear.push(got.action);
     taken.push(`a ${got.item.name} off their racks`);
+  }
+  // And, off a silo that could really fight, something nobody here can build.
+  if (military >= S.sackEliteMinimum) {
+    for (const gid of S.sackEliteTable) {
+      if (!rng.chance(military * S.sackEliteChancePerMilitary * share)) continue;
+      const got = lootGear(gid);
+      if (!got) continue;
+      gear.push(got.action);
+      taken.push(`a ${got.item.name}, which nobody in Silo 12 could have made`);
+    }
   }
   return { loot, artifacts, taken, gear };
 }

@@ -249,9 +249,24 @@ export const LOOT = {
   4: {
     resources: { alloy: [40, 110], parts: [30, 70], meds: [20, 50], ammo: [40, 120], coolant: [10, 45] },
     artifacts: { origin_shard: 0.28, reactor_core: 0.22, suit_weave: 0.25, optics_array: 0.25 },
+    // The tier-5 rates are 0.09, not 0.04, and the reason is the window
+    // rather than the rate.
+    //
+    // Measured over six campaigns: the deep band opens on day 405-480 and
+    // tier-4 loot is plentiful — 5.8 Slag Plates and 3.7 Slag Autoguns a
+    // campaign, first sighted around day 490, so roughly 230 days of use. The
+    // Scar opens day 572-684 against campaigns that end around 719, which is
+    // a hundred and twenty days, and at 0.04 that paid 2.3 tier-5 pieces
+    // across all three types put together. A Compact Cuirass landing on day
+    // 721 of a 725-day run is not a reward, it is a receipt.
+    //
+    // These are the only three items in the game that exist above the crafted
+    // ladder, and they drop from the hardest ground there is. They should kit
+    // part of a squad by the end, not arrive one at a time as the credits
+    // roll.
     gear: {
       slag_autogun: 0.06, slag_plate: 0.07,
-      rail_carbine: 0.04, compact_cuirass: 0.04, registry_skin: 0.04,
+      rail_carbine: 0.09, compact_cuirass: 0.09, registry_skin: 0.09,
     },
     chance: { survivor: 0.25 },
   },
