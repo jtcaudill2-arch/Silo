@@ -17,6 +17,7 @@
  */
 
 import { BAL } from '../config/balance.js';
+import { doctrineMod } from './doctrine.js';
 import { streamFor } from '../core/rng.js';
 import { getItem, SUITS } from '../data/items.js';
 import { fullName } from './population.js';
@@ -64,7 +65,15 @@ export function unitPower(state, c, opts = {}) {
     (1 + (opts.leaderBonus ?? 0)) *
     (1 + (research.combatBonus || 0)) *
     traitMod(c.traits, 'combatPower') *
-    traitMod(c.traits, 'combatEvade')
+    traitMod(c.traits, 'combatEvade') *
+    // Spearhead pays a small party; Wardens pays a party facing something
+    // that is not people. Both come in through opts because neither is a fact
+    // about the citizen: `unitPower` is also called with no context at all by
+    // the conquest and raid previews, and there the identity is right — a
+    // preview should not promise a bonus that depends on who turns up.
+    (opts.partySize != null && opts.partySize <= C.spearheadMaxParty
+      ? doctrineMod(state, 'smallPartyPower') : 1) *
+    (opts.mutant ? doctrineMod(state, 'mutantPower') : 1)
   );
 }
 
@@ -133,7 +142,12 @@ export function ammoFactor(state, members) {
   if (have >= need) return C.ammoFactorFull;
   if (need <= 0) return C.ammoFactorFull;
   const ratio = Math.max(0, have / need);
-  return C.ammoFactorEmpty + (C.ammoFactorFull - C.ammoFactorEmpty) * ratio;
+  const factor = C.ammoFactorEmpty + (C.ammoFactorFull - C.ammoFactorEmpty) * ratio;
+  // Door Cache: rounds sealed at the airlock and counted separately, so a
+  // fight never opens dry. A floor rather than a bonus — it does nothing at
+  // all for a silo with full stores, and everything for one that has just been
+  // sacked, which is the silo that is about to be raided again.
+  return Math.max(factor, doctrineMod(state, 'ammoFloor') * C.ammoFactorFull);
 }
 
 /** Leader bonus applies to the whole squad. */
@@ -216,7 +230,9 @@ export function resolve(state, memberIds, enemy, opts = {}) {
   // ---- our effective power ----------------------------------------------
   const powers = members.map((c) => ({
     c,
-    p: unitPower(state, c, { ammoFactor: af, leaderBonus: lb }),
+    p: unitPower(state, c, {
+      ammoFactor: af, leaderBonus: lb, partySize: members.length, mutant: enemy.def ? !enemy.def.human : false,
+    }),
   }));
   let squadPower = powers.reduce((a, b) => a + b.p, 0);
 
@@ -289,7 +305,7 @@ export function resolve(state, memberIds, enemy, opts = {}) {
       rng.int(C.injury.survivorHealthLoss[0], C.injury.survivorHealthLoss[1]) *
         (outcome.win ? 0.7 : 1.2) *
         (1 - soak) *
-        traitMod(c.traits, 'injuryTaken')
+        traitMod(c.traits, 'injuryTaken') * doctrineMod(state, 'injuryTaken')
     );
     const inj = { id: c.id, health: -hurt, rad: 0, trait: null };
     if (enemy.def?.bleed) inj.bleed = enemy.def.bleed;

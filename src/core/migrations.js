@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -244,6 +244,38 @@ export const MIGRATIONS = {
       if (!Number.isFinite(g.durability)) g.durability = BAL.gear.durabilityMax;
       if (!Number.isFinite(g.integrity)) g.integrity = BAL.gear.suit.integrityMax;
     }
+    return state;
+  },
+
+  // 18 -> 19: Doctrine. The talent tree needs a ledger, and an existing silo
+  // needs to arrive at one without being punished for having played already.
+  //
+  // `frontier` is the interesting field. Commendations only pay for a run at
+  // or beyond the deepest reward tier the silo has ever come back from, and a
+  // save from before this feature has no such record — so a day-600 silo that
+  // has been to the Scar a dozen times would load with a frontier of 0 and
+  // then be paid full doctrine for pottering around the near ruins, which is
+  // exactly the farm the rule exists to close.
+  //
+  // It is recovered instead of defaulted. `expeditions.history` is capped at
+  // 30 entries, so it is not a complete record and cannot be treated as one —
+  // but it is a *lower bound*, and a lower bound is the safe direction to be
+  // wrong in: the worst case is a silo that gets paid for one band it had
+  // already outgrown, and the frontier corrects itself on the next real run.
+  // Defaulting to 0 has no such ceiling.
+  18: (state) => {
+    if (!state.doctrine) {
+      let frontier = 0;
+      for (const exp of state.expeditions?.history || []) {
+        const tier = (BAL.expedition.bands || []).find((b) => b.key === exp.band)?.rewardTier || 0;
+        if (tier > frontier) frontier = tier;
+      }
+      state.doctrine = { points: 0, earned: 0, taken: [], frontier };
+    }
+    state.doctrine.points ??= 0;
+    state.doctrine.earned ??= 0;
+    state.doctrine.taken ??= [];
+    state.doctrine.frontier ??= 0;
     return state;
   },
 };

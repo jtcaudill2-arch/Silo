@@ -551,6 +551,12 @@ export const BAL = {
     schoolGrowthMult: 2.2,
     schoolMinAge: 6,
     schoolMaxAge: 17,
+    // What a soldier gains in combat skill per day under Hard School, before
+    // the node's own multiplier. At 1.6 that is 0.6 x this a day: about nine
+    // points over two hundred days, which turns a fresh recruit into somebody
+    // worth standing next to over the course of a campaign without ever
+    // reaching what a career veteran starts with.
+    soldierSkillPerDay: 0.08,
     workingAgeMin: 16,
     // The chance each day that grief lifts. At 0.012 the median is about
     // fifty-eight days and the tail runs past two hundred, which is what
@@ -1195,6 +1201,11 @@ export const BAL = {
     //
     // What is left here is the one case with no item to hang it on.
     unarmedPower: 0.8, // bare hands, and a weapon nobody has heard of
+    // Party size at or below which Spearhead pays. `squadMin` is 4, so this
+    // is "a squad at its smallest" — a player who takes Spearhead is choosing
+    // to run under-strength on purpose, and paying for it in headcount at the
+    // door.
+    spearheadMaxParty: 4,
     ammoFactorFull: 1.0,
     ammoFactorEmpty: 0.45,
     moraleModBase: 0.8,

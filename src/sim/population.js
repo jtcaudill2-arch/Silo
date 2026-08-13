@@ -16,6 +16,7 @@ import { streamFor } from '../core/rng.js';
 import { makeName, pickGender } from '../data/names.js';
 import { BIRTH_TRAITS, traitMod, traitFlag, TRAITS } from '../data/traits.js';
 import { SKILLS } from '../data/rooms.js';
+import { doctrineMod } from './doctrine.js';
 
 const C = BAL.citizens;
 
@@ -265,6 +266,31 @@ export function simulateDay(state, ctx) {
     mDelta *= traitMod(c.traits, 'moraleSwing');
     morale = clamp(morale + mDelta, C.morale.min, C.morale.max);
     p.morale = morale;
+
+    // ---- soldiers ---------------------------------------------------------
+    //
+    // The skill block below requires a `job`, and a soldier does not have one:
+    // squad members carry `status: 'training'` and `job: null`, so they fall
+    // through it entirely. A militia that stands watch for six hundred days
+    // gets no better at fighting — measured over a campaign, the mean combat
+    // skill of a silo's soldiers *falls*, 49.7 to 41.6 across 600 days, because
+    // recruits arrive worse than the veterans and nobody improves.
+    //
+    // Hard School is what fixes it, and deliberately only Hard School. Every
+    // win rate in this game was measured against a militia that does not
+    // improve; making all soldiers grow would move all of them at once. As a
+    // doctrine it is a thing the player chooses, against a sibling that keeps
+    // what a dead soldier knew rather than growing what a live one has.
+    if (c.squadId != null) {
+      const mult = doctrineMod(state, 'soldierSkillGrowth');
+      if (mult > 1) {
+        const cur = c.skills.combat || 0;
+        const gain = C.soldierSkillPerDay * (mult - 1) * traitMod(c.traits, 'skillGrowth');
+        if (gain > 0) {
+          p.skills = { ...(p.skills || c.skills), combat: Math.min(C.skillMax, cur + gain) };
+        }
+      }
+    }
 
     // ---- skill growth ----------------------------------------------------
     if (c.job && c.status === 'working') {

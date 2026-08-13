@@ -216,6 +216,12 @@ export function createNewGame(opts = {}) {
       causes: {},
     },
 
+    // Doctrine. `frontier` is the deepest reward tier ever returned from, and
+    // it starts at 0 rather than 1 so the very first near-ruins run still pays
+    // — the rule is "at or beyond the frontier", and a silo that has been
+    // nowhere has no frontier to fall short of.
+    doctrine: { points: 0, earned: 0, taken: [], frontier: 0 },
+
     flags: { brownout: false, crises: {}, firstContact: false, tutorialSeen: false },
 
     settings: {

@@ -23,6 +23,7 @@ import { effects as researchEffects } from './research.js';
 import { rollEnemyForce, resolve as resolveCombat, applyResolution, ammoAppetite, averageSuitStat } from './combat.js';
 import { squadMembers, readiness, lootGear } from './military.js';
 import { isConquestRun, resolveRun as resolveConquestRun, canLaunchRun, accumulate } from './conquest.js';
+import { doctrineMod } from './doctrine.js';
 
 export const BANDS = BAL.expedition.bands;
 
@@ -646,10 +647,16 @@ function runMoral(ctx, enc) {
 
 function addLoot(ctx, tier, mult, bias, artifactBonus = 0) {
   const table = LOOT[tier] || LOOT[1];
-  const { rng, loot, artifacts, journal } = ctx;
+  const { rng, loot, artifacts, journal, state } = ctx;
   const taken = [];
+  // Full Pockets weighs the crates; Prospectors reads the labels. They are
+  // kept on separate terms on purpose: one node makes a run pay more tonnage
+  // and the other makes it pay more research, and a player choosing between
+  // them is choosing which of those the silo is short of. Neither touches the
+  // gear chance below, which is priced against a measured yield of its own.
+  const lootMult = mult * doctrineMod(state, 'lootMult');
   for (const [res, range] of Object.entries(table.resources)) {
-    let amount = rng.int(range[0], range[1]) * mult;
+    let amount = rng.int(range[0], range[1]) * lootMult;
     if (bias === res) amount *= 1.8;
     amount = Math.round(amount);
     if (amount <= 0) continue;
@@ -657,7 +664,7 @@ function addLoot(ctx, tier, mult, bias, artifactBonus = 0) {
     taken.push(`${amount} ${res}`);
   }
   for (const [aid, chance] of Object.entries(table.artifacts)) {
-    if (rng.chance(chance * mult + artifactBonus)) {
+    if (rng.chance(chance * mult * doctrineMod(state, 'artifactMult') + artifactBonus)) {
       artifacts[aid] = (artifacts[aid] || 0) + 1;
       taken.push(`a ${aid.replace(/_/g, ' ')}`);
     }

@@ -15,6 +15,8 @@ import { registerReducers } from './store.js';
 import { fullName } from '../sim/population.js';
 import { getRoom } from '../data/rooms.js';
 import { emit } from './events.js';
+import { commendationsFor, frontierAfter, doctrineMod, doctrineFlag, canTake } from '../sim/doctrine.js';
+import { NODES } from '../data/doctrine.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -334,6 +336,30 @@ const citizenReducers = {
     const c = state.citizens[a.id];
     if (!c || c.status === 'dead') return;
 
+    // Succession, before the squad membership is unwound below.
+    //
+    // What a soldier knew does not go in the ground with them: the best
+    // remaining member of the same squad inherits half the gap between their
+    // combat skill and the dead one's. Half the gap and not the whole of it,
+    // so a squad cannot be farmed upward by feeding it casualties — a chain of
+    // deaths converges on the dead soldier's number instead of exceeding it,
+    // and the node stays a consolation rather than a strategy.
+    if (doctrineFlag(state, 'succession') && c.squadId != null) {
+      const sq = state.military.squads[c.squadId];
+      const heir = (sq?.members || [])
+        .map((id) => state.citizens[id])
+        .filter((m) => m && m.id !== c.id && m.status !== 'dead')
+        .sort((x, y) => (y.skills.combat || 0) - (x.skills.combat || 0))[0];
+      const gap = (c.skills.combat || 0) - (heir?.skills.combat || 0);
+      if (heir && gap > 0) {
+        heir.skills = { ...heir.skills, combat: (heir.skills.combat || 0) + gap / 2 };
+        heir.history.push({
+          day: a.day ?? state.clock.day,
+          text: `Took over from ${fullName(c)}.`,
+        });
+      }
+    }
+
     c.status = 'dead';
     c.causeOfDeath = a.cause;
     c.deathDay = a.day ?? state.clock.day;
@@ -485,6 +511,22 @@ const citizenReducers = {
     if (!c) return;
     c.history.push({ day: a.day ?? state.clock.day, text: a.text });
     if (c.history.length > 40) c.history.shift();
+  },
+
+  /**
+   * Buy a doctrine node.
+   *
+   * Re-checks `canTake` rather than trusting the caller. The panel already
+   * greys out what cannot be bought, but a reducer that takes the UI's word
+   * for it is one double-tap away from a silo with negative Commendations and
+   * both halves of a pair that is supposed to be a choice.
+   */
+  DOCTRINE_TAKE(state, a) {
+    if (!state.doctrine || !canTake(state, a.id)) return;
+    const node = NODES[a.id];
+    state.doctrine.points -= node.cost;
+    state.doctrine.taken = [...state.doctrine.taken, a.id];
+    pushLog(state, { kind: 'unlock', text: `Doctrine adopted: ${node.name}. ${node.desc}` });
   },
 
   CITIZEN_TRAIT(state, a) {
@@ -775,7 +817,7 @@ const militaryReducers = {
       if (c.status === 'training') c.status = 'idle';
       return;
     }
-    if (sq.members.length >= BAL.military.squadMax) return;
+    if (sq.members.length >= BAL.military.squadMax + doctrineMod(state, 'squadMaxBonus')) return;
     // A soldier leaves whatever post they were on.
     if (c.job) {
       const room = state.silo.rooms[c.job.roomId];
@@ -857,6 +899,30 @@ const expeditionReducers = {
       state.stats.peakPopulation = Math.max(state.stats.peakPopulation, state.citizenIds.length);
     }
 
+    // ---- Commendations --------------------------------------------------
+    //
+    // Minted here because this is the only place that knows all three facts at
+    // once: which band they went to, who came back, and who did not. Doing it
+    // in the day loop would mean re-deriving a resolved expedition's casualty
+    // list from the roster, which is exactly the sort of second source of
+    // truth that goes stale.
+    //
+    // The frontier moves first and the award is read against the value from
+    // *before* the move, or the first Scar run would be measured against a
+    // frontier it had just set and every run would pay for ever.
+    if (state.doctrine) {
+      const earned = commendationsFor(state, { band: exp.band, casualties: a.casualties || [] });
+      state.doctrine.frontier = frontierAfter(state, exp.band);
+      if (earned > 0) {
+        state.doctrine.points += earned;
+        state.doctrine.earned += earned;
+        pushLog(state, {
+          kind: 'plain',
+          text: `The ${exp.band} party came back whole. ${earned} commendation${earned === 1 ? '' : 's'}.`,
+        });
+      }
+    }
+
     state.stats.expeditionsReturned = (state.stats.expeditionsReturned || 0) + 1;
     // Two squads back on the same day queue together rather than one erasing
     // the other.
@@ -917,7 +983,13 @@ const expeditionReducers = {
       for (const id of a.members || []) {
         const c = state.citizens[id];
         if (!c) continue;
-        c.radiation = clamp(c.radiation * (1 - D.radRemovedFraction), 0, BAL.citizens.radiation.max);
+        // Clean Room works on what is *left*, not on the fraction removed:
+        // scaling `radRemovedFraction` directly would run past 1.0 at any
+        // meaningful rate and start handing people negative dose. Removing
+        // 75% becomes removing 83%, and a hypothetical rate of 10 still only
+        // approaches removing all of it.
+        const removed = 1 - (1 - D.radRemovedFraction) / doctrineMod(state, 'deconRate');
+        c.radiation = clamp(c.radiation * (1 - removed), 0, BAL.citizens.radiation.max);
       }
       pushLog(state, {
         kind: 'plain',

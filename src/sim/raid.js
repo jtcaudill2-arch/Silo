@@ -25,6 +25,7 @@
 
 import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
+import { doctrineFlag, doctrineMod } from './doctrine.js';
 import { RAIDERS } from '../data/encounters.js';
 import { rollEnemyForce, resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
 import { lootGear } from './military.js';
@@ -125,12 +126,32 @@ function raidVerdict(ratio) {
  */
 export function defenders(state) {
   const out = [];
+  const seen = new Set();
   for (const id of state.military.squadIds) {
     const sq = state.military.squads[id];
     if (!sq || sq.deployed) continue;
     for (const cid of sq.members || []) {
       const c = state.citizens[cid];
-      if (c && c.status !== 'dead' && c.status !== 'expedition') out.push(cid);
+      if (c && c.status !== 'dead' && c.status !== 'expedition' && !seen.has(cid)) {
+        seen.add(cid);
+        out.push(cid);
+      }
+    }
+  }
+  // Muster: everyone who has been outside and come back turns out, squad or
+  // no squad. `veteran` is granted on an expedition's return (reducers.js), so
+  // this is exactly "has been through the airlock and lived" — a pool that
+  // grows on its own as the silo runs expeditions, and one a player who keeps
+  // rotating people through the door builds without meaning to.
+  if (doctrineFlag(state, 'musterVeterans')) {
+    for (const cid of state.citizenIds) {
+      const c = state.citizens[cid];
+      if (!c || seen.has(cid)) continue;
+      if (c.status === 'dead' || c.status === 'expedition') continue;
+      if (c.age < BAL.citizens.workingAgeMin) continue;
+      if (!c.traits.includes('veteran')) continue;
+      seen.add(cid);
+      out.push(cid);
     }
   }
   return out;
@@ -218,7 +239,7 @@ export function simulateDay(state) {
   if (!ours.length) {
     // Nobody home. This is the branch the coaching line promised and the game
     // never had.
-    const { deltas, taken } = theft(state, R.undefendedTheft);
+    const { deltas, taken } = theft(state, R.undefendedTheft * doctrineMod(state, 'raidTheft'));
     const what = theftText(taken);
     if (Object.keys(deltas).length) actions.push({ type: 'RESOURCE_DELTA', deltas });
     actions.push(...civilianLosses(state, rng, siloName));
@@ -251,7 +272,8 @@ export function simulateDay(state) {
     ...applyResolution(state, res, { context: 'raid', kiaKind: 'killed defending the airlock' })
   );
 
-  const fraction = res.outcome.win ? R.theftOnWin : R.defendedTheftOnLoss;
+  const fraction = (res.outcome.win ? R.theftOnWin : R.defendedTheftOnLoss) *
+    doctrineMod(state, 'raidTheft');
   const { deltas, taken } = theft(state, fraction);
   const what = theftText(taken);
   if (Object.keys(deltas).length) actions.push({ type: 'RESOURCE_DELTA', deltas });

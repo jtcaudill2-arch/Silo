@@ -15,6 +15,8 @@ import {
 } from '../../sim/military.js';
 import { employableCitizens } from '../../sim/jobs.js';
 import { lockReason } from '../../sim/unlocks.js';
+import { DOCTRINES, NODE_LIST as DOCTRINE_NODES } from '../../data/doctrine.js';
+import { ledger, spent as doctrineSpent } from '../../sim/doctrine.js';
 import { portraitCanvas } from '../../render/portraits.js';
 import { frameCanvas } from '../../render/sprites.js';
 import { openCitizen } from '../citizenCard.js';
@@ -73,10 +75,12 @@ export const militaryPanel = {
     const tabs = el(
       'div.tabs',
       tabBtn('squads', 'Squads', shell),
-      tabBtn('armory', 'Armory', shell)
+      tabBtn('armory', 'Armory', shell),
+      tabBtn('doctrine', 'Doctrine', shell)
     );
 
     if (tab === 'squads') renderSquads(state, body, shell);
+    else if (tab === 'doctrine') renderDoctrine(state, body, shell);
     else renderArmory(state, body, shell);
 
     return el('div', { style: { display: 'contents' } }, tabs, body);
@@ -365,3 +369,78 @@ function tile(k, v, cls = '') {
 }
 
 export default militaryPanel;
+
+/**
+ * Doctrine — the talent tree.
+ *
+ * It lives here rather than in the navbar because the navbar is full: the
+ * mobile suite asserts all eight panels fit 390px at exactly 390px, so a ninth
+ * would push the game off the screen it is built for. Military is the right
+ * home anyway — this is bought by squads coming back and spent on squads
+ * going out.
+ *
+ * Rows are laid out as pairs, because the pair is the decision. Showing them
+ * as a flat list of thirteen would hide the only rule that matters: taking one
+ * closes the other, permanently.
+ */
+function renderDoctrine(state, body, shell) {
+  const d = state.doctrine || { points: 0, earned: 0, taken: [], frontier: 0 };
+  const rows = ledger(state);
+  const at = (id) => rows.find((r) => r.node.id === id);
+  const bandName = ['nowhere yet', 'the near ruins', 'the mid waste', 'the deep', 'the Scar'][d.frontier] || '—';
+
+  body.appendChild(
+    el(
+      'div.grid-3',
+      tile('Commendations', d.points),
+      tile('Earned', d.earned),
+      tile('Spent', doctrineSpent(state))
+    )
+  );
+  body.appendChild(
+    el(
+      'div.note',
+      `A party that comes home from ${bandName} or deeper with nobody lost is worth ` +
+        'commendations. One that loses somebody is worth none, and neither is a run ' +
+        'somewhere you have already outgrown.'
+    )
+  );
+
+  const nodeRow = (id) => {
+    const r = at(id);
+    if (!r) return null;
+    const { node, taken, closed } = r;
+    const cls = taken ? '.gear-row.gear-found' : closed ? '.gear-row.locked' : '.gear-row';
+    const affordable = !r.reason;
+    return el(
+      taken || closed ? ('div' + cls) : ('button' + cls),
+      taken || closed ? {} : {
+        type: 'button',
+        disabled: !affordable,
+        onclick: () => {
+          shell.store.dispatch({ type: 'DOCTRINE_TAKE', id: node.id });
+          shell.renderPanel(true);
+        },
+      },
+      el(
+        'div.gear-main',
+        el('div.gear-name', `${node.name} `, taken ? chip('adopted', 'good') : chip(`${node.cost}`)),
+        el('div.gear-desc', node.desc),
+        !taken && r.reason ? el('div.gear-why', r.reason) : null
+      ),
+      affordable ? el('div.row-chevron', '+') : null
+    );
+  };
+
+  body.appendChild(sectionLabel('Where it starts'));
+  body.appendChild(nodeRow('debrief'));
+
+  for (const doc of DOCTRINES) {
+    body.appendChild(sectionLabel(doc.name));
+    body.appendChild(el('div.note.quiet', doc.blurb));
+    for (const rank of [1, 2]) {
+      const pair = DOCTRINE_NODES.filter((n) => n.doctrine === doc.id && n.rank === rank);
+      for (const n of pair) body.appendChild(nodeRow(n.id));
+    }
+  }
+}

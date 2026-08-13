@@ -64,6 +64,9 @@ import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad, unassignedGear, equipBest, canCraft, readiness, simulateCycle as militaryCycle } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
+import { NODES as DOCTRINE_NODES, NODE_LIST as DOCTRINE_LIST } from '../src/data/doctrine.js';
+import { commendationsFor, doctrineMod, whyNot, spent as doctrineSpent } from '../src/sim/doctrine.js';
+import { ammoFactor } from '../src/sim/combat.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -1292,6 +1295,9 @@ console.log('');
   s.military.gear.old1 = { id: 'old1', item: 'service_rifle', assignedTo: null };
   s.military.gear.old2 = { id: 'old2', item: 'suit_2', durability: 100, assignedTo: null };
   s.military.gear.old3 = { id: 'old3', item: 'mag_rifle', durability: 71, integrity: 100, assignedTo: null };
+  // And no doctrine block at all, on a silo that has plainly been to the deep.
+  delete s.doctrine;
+  s.expeditions.history = [{ id: 1, band: 'near' }, { id: 2, band: 'deep' }, { id: 3, band: 'mid' }];
 
   let state = s;
   for (let v = 10; v < SCHEMA_VERSION; v++) if (MIGRATIONS[v]) state = MIGRATIONS[v](state) || state;
@@ -1317,6 +1323,26 @@ console.log('');
     // *value* should be is §40's question, not this one.
     if (!Number.isFinite(getItem(g.old3.item)?.stats?.power)) {
       problems.push('a migrated Mag Rifle came back with no power stat at all');
+    }
+  }
+  {
+    // The doctrine step, and specifically the frontier.
+    //
+    // Commendations only pay for a run at or beyond the deepest tier the silo
+    // has come back from, and a save from before this feature says nothing
+    // about that. Defaulting it to 0 would hand a day-600 veteran silo full
+    // doctrine for pottering around the near ruins — exactly the farm the rule
+    // exists to close. It is recovered from expedition history instead, which
+    // is capped at 30 entries and so is only a lower bound: being wrong low
+    // costs one band the silo had already outgrown and self-corrects on the
+    // next real run, where being wrong at 0 has no such ceiling.
+    const d = state.doctrine;
+    if (!d) problems.push('no doctrine block after migrating');
+    else {
+      if (d.points !== 0 || d.earned !== 0 || d.taken.length) problems.push('migrated silo did not start the tree empty');
+      if (d.frontier !== 3) {
+        problems.push(`a silo with a deep run in its history migrated to frontier ${d.frontier}, not 3`);
+      }
     }
   }
   if (state.silo.floors.length !== BAL.silo.totalFloors) problems.push(`floors ${state.silo.floors.length}`);
@@ -3612,6 +3638,212 @@ console.log('');
     ok(`\`wear\` is where the tier-5 suit earns its place: six days out ends at ${t3.integrity.toFixed(0)}` +
       ` / ${t4.integrity.toFixed(0)} / ${skin.integrity.toFixed(0)} integrity, the Skin and the tier-4 ` +
       `suit at the same ${skin.dose.toFixed(0)} rad (mean of 10 runs each)`);
+  }
+}
+
+// ---- 46. every doctrine node does something ---------------------------------
+//
+// This is the section the whole feature rests on.
+//
+// The characteristic bug in this codebase is a declared effect that nothing
+// reads. `durabilityLossPerCombat` and `GEAR_WEAR` were dead for the entire
+// project. `traits.temporary` was read nowhere, so grief never lifted and a
+// quarter of the silo carried it permanently. `armorTier` was off by one, so a
+// priced tier-4 plate could not be built with all 48 research nodes complete.
+// Every one of those shipped green, because nothing asked whether the number
+// was connected to anything.
+//
+// A talent tree is the worst place in the game to do that again: the player
+// spends a scarce currency, permanently, on a node whose only evidence is its
+// own description. So this does not test thirteen hand-picked behaviours — it
+// **iterates the node table** and demands a probe for every entry. Add a
+// fourteenth node and this section fails until somebody proves it works.
+//
+// Each probe returns a number, measured with the node off and then on. The
+// direction is asserted too, because "it changed" is satisfied by a sign error.
+{
+  const withNodes = (store, ids) => {
+    store.state.doctrine = { points: 0, earned: 0, taken: ids, frontier: 0 };
+    return store.state;
+  };
+
+  /** A silo with one crewed squad, kitted, for the probes that need a fight. */
+  const squadFixture = (seed, ids) => {
+    const store = newStore(seed);
+    const s = withNodes(store, ids);
+    new Game(store).runDays(2);
+    store.dispatchAll(autoAssign(s));
+    const roster = s.citizenIds.slice(0, 6);
+    s.military.squads[1] = { id: 1, name: 'Probe', members: roster, leaderId: roster[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
+    for (const id of roster) {
+      const c = s.citizens[id];
+      c.squadId = 1;
+      c.status = 'training';
+      c.skills.combat = 20;
+      c.health = 100;
+    }
+    return { store, s, roster };
+  };
+
+  // Probe per node id. Each returns a number that the node claims to move.
+  const PROBES = {
+    debrief: (ids) => {
+      const s = withNodes(newStore(3), ids);
+      return commendationsFor(s, { band: 'near', casualties: [] });
+    },
+    cadre: (ids) => {
+      const { store, s } = squadFixture(51, ids);
+      // Feed it people until the reducer refuses.
+      for (const id of s.citizenIds) {
+        store.dispatch({ type: 'SQUAD_MEMBER', squadId: 1, citizenId: id });
+      }
+      return s.military.squads[1].members.length;
+    },
+    spearhead: (ids) => {
+      const { s, roster } = squadFixture(52, ids);
+      return unitPower(s, s.citizens[roster[0]], { partySize: 4 });
+    },
+    succession: (ids) => {
+      const { store, s, roster } = squadFixture(53, ids);
+      s.citizens[roster[0]].skills.combat = 60;
+      s.citizens[roster[1]].skills.combat = 20;
+      store.dispatch({ type: 'CITIZEN_DIE', id: roster[0], cause: 'a probe', text: 'a probe' });
+      return s.citizens[roster[1]].skills.combat;
+    },
+    hard_school: (ids) => {
+      const { s, roster } = squadFixture(54, ids);
+      const c = s.citizens[roster[0]];
+      const before = c.skills.combat;
+      for (let d = 0; d < 30; d++) {
+        s.clock.day += 1;
+        for (const a of populationDay(s, {})) {
+          if (a.type !== 'CITIZENS_PATCH') continue;
+          for (const p of a.patches) {
+            if (p.id === c.id && p.skills) c.skills = p.skills;
+          }
+        }
+      }
+      return c.skills.combat - before;
+    },
+    discipline: (ids) => {
+      // Wounds are rolled, so this is a sum over fixed seeds rather than one
+      // fight: a single roll can land the same either way.
+      let total = 0;
+      for (let seed = 0; seed < 8; seed++) {
+        const { s, roster } = squadFixture(200 + seed, ids);
+        const before = roster.reduce((a, id) => a + s.citizens[id].health, 0);
+        const out = resolveExpedition(s, {
+          id: 1, squadId: 1, band: 'deep', purpose: 'salvage', target: null,
+          launchDay: 10, returnDay: 10, roster, leaderId: roster[0], resolved: false,
+        });
+        for (const a of out.actions) {
+          if (a.type === 'CITIZENS_PATCH') {
+            for (const p of a.patches || []) {
+              if (p.health != null && s.citizens[p.id]) s.citizens[p.id].health = p.health;
+            }
+          } else if (a.type === 'CITIZEN_INJURE' && s.citizens[a.id]) {
+            s.citizens[a.id].health += a.health || 0;
+          }
+        }
+        total += before - roster.reduce((a, id) => a + s.citizens[id].health, 0);
+      }
+      return total;
+    },
+    pockets: (ids) => sumFromRuns(ids, 'loot'),
+    prospectors: (ids) => sumFromRuns(ids, 'artifacts'),
+    wardens: (ids) => {
+      const { s, roster } = squadFixture(55, ids);
+      return unitPower(s, s.citizens[roster[0]], { mutant: true });
+    },
+    muster: (ids) => {
+      const { s, roster } = squadFixture(56, ids);
+      // Somebody who has been outside and is not in a squad.
+      const outsider = s.citizens[s.citizenIds.find((id) => !roster.includes(id))];
+      outsider.traits = [...outsider.traits, 'veteran'];
+      outsider.status = 'idle';
+      outsider.age = 30;
+      return raid.defenders(s).length;
+    },
+    cache: (ids) => {
+      const s = withNodes(newStore(57), ids);
+      s.resources.ammo = 0;
+      return ammoFactor(s, 6);
+    },
+    clean_room: (ids) => {
+      const { store, s, roster } = squadFixture(58, ids);
+      for (const id of roster) s.citizens[id].radiation = 40;
+      s.resources.filters = 100;
+      store.dispatch({ type: 'DECON', members: roster, radiation: 40 });
+      // Lower is better here, so return what is left removed-side-up.
+      return 40 - s.citizens[roster[0]].radiation;
+    },
+    sealed: (ids) => {
+      const { store, s } = squadFixture(59, ids);
+      s.world.pendingRaid = { siloId: Object.keys(s.world.silos)[0], day: 1, strength: 30 };
+      s.clock.day = 1 + BAL.raid.graceDays;
+      for (const k of BAL.raid.theftKeys) s.resources[k] = 1000;
+      let stolen = 0;
+      for (const a of raid.simulateDay(s)) {
+        if (a.type !== 'RESOURCE_DELTA') continue;
+        for (const v of Object.values(a.deltas || {})) if (v < 0) stolen -= v;
+      }
+      return stolen;
+    },
+  };
+
+  /** Total loot tonnage or artifact count over fixed seeds. */
+  function sumFromRuns(ids, which) {
+    let total = 0;
+    for (let seed = 0; seed < 8; seed++) {
+      const { s, roster } = squadFixture(300 + seed, ids);
+      const out = resolveExpedition(s, {
+        id: 1, squadId: 1, band: 'deep', purpose: 'salvage', target: null,
+        launchDay: 10, returnDay: 10, roster, leaderId: roster[0], resolved: false,
+      });
+      const res = out.actions.find((a) => a.type === 'EXPEDITION_RESOLVE');
+      const bag = (which === 'loot' ? res?.loot : res?.artifacts) || {};
+      for (const v of Object.values(bag)) total += v;
+    }
+    return total;
+  }
+
+  // Which way each node should move its probe.
+  const UP = new Set(['debrief', 'cadre', 'spearhead', 'succession', 'hard_school',
+    'pockets', 'prospectors', 'wardens', 'muster', 'cache', 'clean_room']);
+
+  const missing = DOCTRINE_LIST.filter((n) => !PROBES[n.id]).map((n) => n.id);
+  if (missing.length) {
+    fail(`${missing.join(', ')} has no probe here, so nothing proves the node does anything — ` +
+      'add one before shipping a talent the player pays for');
+  }
+
+  const dead = [];
+  const backwards = [];
+  const lines = [];
+  for (const node of DOCTRINE_LIST) {
+    const probe = PROBES[node.id];
+    if (!probe) continue;
+    // The node under test plus whatever it needs to be legal. The ledger is
+    // set directly rather than bought, because this section is about the
+    // effect, not the shop — §47 covers the buying.
+    const off = probe([]);
+    const on = probe([node.id]);
+    lines.push(`${node.id} ${Number(off).toFixed(2)}→${Number(on).toFixed(2)}`);
+    if (on === off) { dead.push(`${node.id} (${node.proves} stayed at ${off})`); continue; }
+    const wentUp = on > off;
+    if (wentUp !== UP.has(node.id)) {
+      backwards.push(`${node.id} (${off} → ${on}, expected to go ${UP.has(node.id) ? 'up' : 'down'})`);
+    }
+  }
+
+  if (dead.length) {
+    fail(`${dead.join('; ')} — the player buys this and nothing happens`);
+  } else if (backwards.length) {
+    fail(`${backwards.join('; ')} — the effect is wired backwards`);
+  } else {
+    ok(`all ${DOCTRINE_LIST.length} doctrine nodes move the number they claim to`);
+    ok(`  ${lines.join('  ')}`);
   }
 }
 
