@@ -17,6 +17,7 @@ import { getRoom } from '../data/rooms.js';
 import { emit } from './events.js';
 import { commendationsFor, frontierAfter, doctrineMod, doctrineFlag, canTake } from '../sim/doctrine.js';
 import { NODES } from '../data/doctrine.js';
+import { squadCap } from '../sim/military.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -817,7 +818,7 @@ const militaryReducers = {
       if (c.status === 'training') c.status = 'idle';
       return;
     }
-    if (sq.members.length >= BAL.military.squadMax + doctrineMod(state, 'squadMaxBonus')) return;
+    if (sq.members.length >= squadCap(state)) return;
     // A soldier leaves whatever post they were on.
     if (c.job) {
       const room = state.silo.rooms[c.job.roomId];

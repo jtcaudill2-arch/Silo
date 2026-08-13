@@ -67,6 +67,7 @@ import * as raid from '../src/sim/raid.js';
 import { NODES as DOCTRINE_NODES, NODE_LIST as DOCTRINE_LIST } from '../src/data/doctrine.js';
 import { commendationsFor, doctrineMod, whyNot, spent as doctrineSpent } from '../src/sim/doctrine.js';
 import { ammoFactor } from '../src/sim/combat.js';
+import { squadCap } from '../src/sim/military.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -3844,6 +3845,129 @@ console.log('');
   } else {
     ok(`all ${DOCTRINE_LIST.length} doctrine nodes move the number they claim to`);
     ok(`  ${lines.join('  ')}`);
+  }
+}
+
+// ---- 47. the player can actually reach what they paid for ------------------
+//
+// §46 proves every doctrine node moves a number. It proved that for Cadre by
+// dispatching `SQUAD_MEMBER` directly — and `SQUAD_MEMBER` is dispatched from
+// exactly one place in the whole game, the `+` button on a squad card, which
+// was gated on the bare `BAL.military.squadMax`. So the reducer honoured Cadre
+// and the only path a player has did not. Twelve commendations, spent
+// permanently, closing the other half of a pair, for nothing — and if a squad
+// somehow reached ten the card printed "10/8".
+//
+// Testing the reducer is not testing the game. This section covers the two
+// halves of that lesson: the cap has one definition, and the UI uses it.
+{
+  // One definition. A second copy of a rule is how the first one goes stale,
+  // and this is a source check because that is the level the bug lived at:
+  // both expressions were individually correct and they disagreed.
+  const sim = readSource('../src/sim/military.js');
+  const offenders = [];
+  for (const rel of ['../src/ui/panels/military.js', '../src/core/reducers.js']) {
+    if (readSource(rel).includes('BAL.military.squadMax')) offenders.push(rel.replace('../', ''));
+  }
+  if (!sim.includes('export function squadCap')) {
+    fail('sim/military.js no longer exports squadCap, so there is no single definition of the cap');
+  } else if (offenders.length) {
+    fail(`${offenders.join(', ')} reads BAL.military.squadMax directly instead of squadCap(state) — ` +
+      'that is exactly how Cadre came to be unreachable');
+  } else {
+    ok('the squad cap has one definition, and the reducer and the panel both use it');
+  }
+
+  // And behaviourally: the gate the `+` button consults must move with the
+  // node, not just the gate inside the reducer.
+  const store = newStore(71);
+  const s = store.state;
+  new Game(store).runDays(2);
+  store.dispatchAll(autoAssign(s));
+  const bare = squadCap(s);
+  s.doctrine = { points: 0, earned: 0, taken: ['debrief', 'cadre'], frontier: 0 };
+  const withCadre = squadCap(s);
+
+  if (withCadre !== bare + DOCTRINE_NODES.cadre.effect.squadMaxBonus) {
+    fail(`the cap the panel reads went ${bare} -> ${withCadre}, which is not what Cadre grants`);
+  } else {
+    // Fill a squad through the reducer and check the panel's own gate agrees
+    // that it is full at the new number rather than the old one.
+    s.military.squads[1] = { id: 1, name: 'Probe', members: [], leaderId: null, deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
+    for (const id of s.citizenIds) store.dispatch({ type: 'SQUAD_MEMBER', squadId: 1, citizenId: id });
+    const filled = s.military.squads[1].members.length;
+    if (filled !== withCadre) {
+      fail(`a squad filled to ${filled} against a displayed cap of ${withCadre} — the card would print ${filled}/${withCadre}`);
+    } else {
+      ok(`and Cadre reaches the player: the card's own gate goes ${bare} to ${withCadre}, and a squad fills to ${filled}`);
+    }
+  }
+}
+
+// ---- 48. the auto-equipper issues the better weapon ------------------------
+//
+// `equipBest` is the ONLY thing in the whole game that dispatches
+// `GEAR_ASSIGN` — there is no manual loadout screen — so whatever it prefers
+// is what every soldier carries, permanently and without appeal. It ranked on
+// `tier` and broke ties on `durability`, which was correct while a tier *was*
+// its stats. The loot items ended that: two pieces now share a tier and
+// differ, and the ranking could not see the difference.
+//
+// Measured before the fix: a freshly looted Slag Autogun outranked a lightly
+// worn Magnetic Rifle, so the best soldier in the silo was handed the weapon
+// that costs 82% more ammunition for 4% more power and a lost pierce tier.
+{
+  const store = newStore(83);
+  const s = store.state;
+  new Game(store).runDays(2);
+  store.dispatchAll(autoAssign(s));
+  const c = s.citizens[s.citizenIds[0]];
+  c.gear = { weapon: null, armor: null, suit: null };
+
+  // The exact trap: the worse weapon in perfect condition against the better
+  // one that has seen a couple of fights.
+  // Two tier-4 weapons where the tier ranking and the power ranking disagree:
+  // the Garrison Rifle is pristine and weaker, the Magnetic Rifle is slightly
+  // worn and stronger. On tier they tie, so durability decides and the worse
+  // gun wins; on effective power the better gun wins by 0.05. Any fixture
+  // where the two rankings agree proves nothing about which one is in use.
+  s.military.gear.trap = { id: 'trap', item: 'garrison_rifle', kind: 'weapon', durability: 100, integrity: 100, assignedTo: null, loot: true };
+  s.military.gear.good = { id: 'good', item: 'mag_rifle', kind: 'weapon', durability: 95, integrity: 100, assignedTo: null, loot: false };
+
+  store.dispatchAll(equipBest(s, c.id));
+  const got = s.military.gear[c.gear.weapon];
+  const gotPower = getItem(got.item).stats.power * (0.6 + 0.4 * got.durability / BAL.gear.durabilityMax);
+  const otherId = got.id === 'trap' ? 'good' : 'trap';
+  const other = s.military.gear[otherId];
+  const otherPower = getItem(other.item).stats.power * (0.6 + 0.4 * other.durability / BAL.gear.durabilityMax);
+
+  if (gotPower < otherPower) {
+    fail(`the armoury issued a ${getItem(got.item).name} at ${gotPower.toFixed(2)} effective power over a ` +
+      `${getItem(other.item).name} at ${otherPower.toFixed(2)} — it is still ranking on the tier chip`);
+  } else {
+    ok(`the armoury issues on power, not the tier chip (${getItem(got.item).name} ${gotPower.toFixed(2)} over ` +
+      `${getItem(other.item).name} ${otherPower.toFixed(2)})`);
+  }
+
+  // And nothing in the game may be strictly worse than something else on every
+  // axis at once. A dominated item is a row the player can only ever be wrong
+  // to pick, which is not a choice — it is a mistake with a description.
+  const dominated = [];
+  const weapons = ITEM_LIST.filter((i) => i.kind === 'weapon');
+  for (const a of weapons) {
+    const by = weapons.filter((b) => b.id !== a.id &&
+      b.stats.power >= a.stats.power && b.stats.ammo <= a.stats.ammo && b.stats.pierce >= a.stats.pierce &&
+      (b.stats.power > a.stats.power || b.stats.ammo < a.stats.ammo || b.stats.pierce > a.stats.pierce));
+    // The crafted ladder is a ladder on purpose: a later rung should beat an
+    // earlier one outright. Only the looted kit has to earn its place, because
+    // that is the kit the player chooses between rather than climbs.
+    if (a.loot && by.length) dominated.push(`${a.id} (by ${by.map((b) => b.id).join(', ')})`);
+  }
+  if (dominated.length) {
+    fail(`${dominated.join('; ')} is beaten on every axis at once — a looted piece nobody should ever carry`);
+  } else {
+    ok('and no looted weapon is beaten on power, ammunition and pierce all at once');
   }
 }
 

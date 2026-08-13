@@ -11,7 +11,7 @@ import { getItem, itemsOfKind, allOfKind } from '../../data/items.js';
 import { fullName, topSkill } from '../../sim/population.js';
 import {
   readiness, squadMembers, formSquad, craft, canCraft, craftableItems,
-  equipBest, militarySummary, unassignedGear, gearStorageCap,
+  equipBest, militarySummary, unassignedGear, gearStorageCap, squadCap,
 } from '../../sim/military.js';
 import { employableCitizens } from '../../sim/jobs.js';
 import { lockReason } from '../../sim/unlocks.js';
@@ -115,7 +115,7 @@ function renderSquads(state, body, shell) {
           'div.squad-head',
           el('div.squad-name', sq.name),
           sq.deployed ? chip('outside', 'warn') : chip(sq.assignment),
-          el('div.squad-count.mono', `${members.length}/${BAL.military.squadMax}`)
+          el('div.squad-count.mono', `${members.length}/${squadCap(state)}`)
         ),
         el(
           'div.squad-ready',
@@ -136,7 +136,7 @@ function renderSquads(state, body, shell) {
               el('span.squad-member-gear.mono', gearGlyphs(state, c))
             );
           }),
-          members.length < BAL.military.squadMax && !sq.deployed
+          members.length < squadCap(state) && !sq.deployed
             ? el(
                 'button.squad-add',
                 { type: 'button', onclick: () => pickSoldier(state, shell, id) },
@@ -280,6 +280,7 @@ function renderArmory(state, body, shell) {
             'div.gear-main',
             el('div.gear-name', `${item.name} `, chip(`T${item.tier}`)),
             el('div.gear-desc', item.desc),
+            el('div.gear-meta', ...statChips(item)),
             el(
               'div.gear-meta',
               chip(Object.entries(item.craft).map(([k, v]) => `${v} ${k}`).join(', ')),
@@ -313,6 +314,38 @@ function renderArmory(state, body, shell) {
  * as everything else, so a Slag Autogun and a Magnetic Rifle can be compared
  * where the player actually chooses between them.
  */
+/**
+ * The stats, on the row.
+ *
+ * Eighteen items shipped with eight designed stats between them and not one of
+ * them reached a screen: the row showed an icon, a name, a tier chip and prose.
+ * So the only comparison the Armory offered was the tier digit — and the tier
+ * digit is exactly the comparison the loot items are built to break. Slag
+ * Autogun and Magnetic Rifle are both T4, and the difference between them is
+ * twice the ammunition for a pierce tier. The player was being asked to choose
+ * on a difference the game knew and never said.
+ *
+ * Short labels because this is a phone. `soak` and a suit's `wear` are shown
+ * only when they are doing something, so a Padded Vest that soaks nothing does
+ * not advertise a zero.
+ */
+function statChips(item) {
+  const st = item.stats || {};
+  const out = [];
+  if (item.kind === 'weapon') {
+    out.push(chip(`POW ${st.power?.toFixed(1)}`));
+    out.push(chip(`AMMO x${st.ammo?.toFixed(2)}`, st.ammo > 1.5 ? 'warn' : ''));
+    out.push(chip(`PIERCE ${st.pierce}`));
+  } else if (item.kind === 'armor') {
+    out.push(chip(`DR ${Math.round(st.dr * 100)}%`));
+    if (st.soak > 0) out.push(chip(`SOAK ${Math.round(st.soak * 100)}%`, 'good'));
+  } else {
+    out.push(chip(`BAND ${st.band}`));
+    out.push(chip(`WEAR ${st.wear?.toFixed(2)}`, st.wear <= 0.12 ? 'good' : ''));
+  }
+  return out;
+}
+
 function lootRows(state, body, kind) {
   for (const item of allOfKind(kind)) {
     if (!item.loot) continue;
@@ -328,6 +361,7 @@ function lootRows(state, body, kind) {
           'div.gear-main',
           el('div.gear-name', `${item.name} `, chip(`T${item.tier}`), chip('found', 'warn')),
           el('div.gear-desc', item.desc),
+          el('div.gear-meta', ...statChips(item)),
           el(
             'div.gear-meta',
             chip(`${owned.length} racked, ${spare} spare`, spare ? 'good' : ''),
@@ -417,10 +451,7 @@ function renderDoctrine(state, body, shell) {
       taken || closed ? {} : {
         type: 'button',
         disabled: !affordable,
-        onclick: () => {
-          shell.store.dispatch({ type: 'DOCTRINE_TAKE', id: node.id });
-          shell.renderPanel(true);
-        },
+        onclick: () => confirmDoctrine(node, shell),
       },
       el(
         'div.gear-main',
@@ -440,7 +471,52 @@ function renderDoctrine(state, body, shell) {
     body.appendChild(el('div.note.quiet', doc.blurb));
     for (const rank of [1, 2]) {
       const pair = DOCTRINE_NODES.filter((n) => n.doctrine === doc.id && n.rank === rank);
-      for (const n of pair) body.appendChild(nodeRow(n.id));
+      // Drawn as a pair with the word between them, because the pair *is* the
+      // decision. Two identical rows in a scrolling list said nothing about the
+      // only rule that matters — the exclusivity was announced by "Closed by
+      // Cadre", which arrives after it is too late to act on.
+      const group = el('div.doctrine-pair');
+      pair.forEach((n, i) => {
+        if (i) group.appendChild(el('div.doctrine-or', 'or'));
+        group.appendChild(nodeRow(n.id));
+      });
+      body.appendChild(group);
     }
   }
+}
+
+/**
+ * Confirm before closing a branch for the rest of the run.
+ *
+ * Adopting a doctrine was one tap on a full-width row in a long scrolling
+ * list: twelve to thirty-four commendations gone and the other half of the
+ * pair shut permanently, with no dialog and no undo. On a phone a mis-fired
+ * tap during a scroll is the commonest input error there is, and this list is
+ * nothing but stacked full-width targets. Everything else in this game that
+ * cannot be taken back asks first.
+ */
+function confirmDoctrine(node, shell) {
+  const other = node.excludes ? DOCTRINE_NODES.find((n) => n.id === node.excludes) : null;
+  const close = modal({
+    title: node.name,
+    body: el(
+      'div',
+      el('p', node.desc),
+      other
+        ? el('p.warn', `Adopting this closes ${other.name} for the rest of this run. That cannot be undone.`)
+        : null,
+      el('p.quiet', `Costs ${node.cost} commendations.`)
+    ),
+    actions: [
+      button('Cancel', { onclick: () => close() }),
+      button(`Adopt ${node.name}`, {
+        class: 'primary',
+        onclick: () => {
+          shell.store.dispatch({ type: 'DOCTRINE_TAKE', id: node.id });
+          close();
+          shell.renderPanel(true);
+        },
+      }),
+    ],
+  });
 }

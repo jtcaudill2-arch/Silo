@@ -14,8 +14,27 @@ import { fullName } from './population.js';
 import { effects as researchEffects } from './research.js';
 import { ammoAppetite } from './combat.js';
 import { SQUAD_NAMES } from '../data/names.js';
+import { doctrineMod } from './doctrine.js';
 
 // ------------------------------------------------------------------ gear ---
+
+/**
+ * How many people a squad may hold.
+ *
+ * There is exactly one of these on purpose. Cadre (+2) was written into the
+ * `SQUAD_MEMBER` reducer and *not* into the panel, and `SQUAD_MEMBER` is
+ * dispatched from exactly one place in the whole game — the `+` button on a
+ * squad card — which was gated on the bare constant. So the node was
+ * unreachable through the only path a player has: they paid 12 commendations
+ * for a permanent, branch-closing talent that did nothing, and if a squad ever
+ * did reach ten the card printed "10/8".
+ *
+ * The wiring test caught nothing because it dispatched the action directly.
+ * Testing the reducer is not testing the game.
+ */
+export function squadCap(state) {
+  return BAL.military.squadMax + doctrineMod(state, 'squadMaxBonus');
+}
 
 export function craftableItems(state) {
   const e = researchEffects(state);
@@ -136,8 +155,29 @@ export function equipBest(state, citizenId, claimed = new Set()) {
   const actions = [];
   const c = state.citizens[citizenId];
   if (!c) return actions;
-  const better = (a, b) =>
-    (getItem(b.item)?.tier ?? 0) - (getItem(a.item)?.tier ?? 0) || b.durability - a.durability;
+  // Rank by the stat that decides the fight, not by the tier chip.
+  //
+  // This sorted on `tier` and broke ties on `durability`, which was fine while
+  // tier *was* the stats — one number per rung, monotonic. It stopped being
+  // fine the moment two items shared a tier and differed: a freshly looted
+  // Slag Autogun (T4, durability 100) outranked a lightly worn Magnetic Rifle
+  // (T4, durability 90) and got handed to the best soldier in the silo,
+  // costing 81% more ammunition per run for 4% more power and a pierce tier.
+  // The game auto-equipped the trap and the player had no way to stop it.
+  //
+  // Each kind ranks on its own axis, because they do not share one: a weapon
+  // is worth its power, a plate its damage reduction, and a suit the band it
+  // opens — band first and always, since the airlock gate reads the *worst*
+  // suit going out, so a better-wearing suit that cannot reach the ground is
+  // not the better suit.
+  const rank = (g) => {
+    const st = getItem(g.item)?.stats || {};
+    const wear = 0.6 + 0.4 * ((g.durability ?? 100) / BAL.gear.durabilityMax);
+    if (getItem(g.item)?.kind === 'weapon') return (st.power ?? 0) * wear;
+    if (getItem(g.item)?.kind === 'armor') return (st.dr ?? 0) + (st.soak ?? 0) * 0.5;
+    return (st.band ?? 0) * 10 - (st.wear ?? 1);
+  };
+  const better = (a, b) => rank(b) - rank(a) || b.durability - a.durability;
 
   for (const kind of ['weapon', 'armor', 'suit']) {
     // `claimed` is what earlier citizens in this same batch have already been

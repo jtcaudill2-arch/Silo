@@ -1580,3 +1580,27 @@ html.large-text .policy-desc { font-size: 13px; }
   border-left: 1px solid var(--hairline);
   font-family: var(--font-mono); font-size: 14px; color: var(--bone-faint);
 }
+
+/* ---- doctrine pairs -------------------------------------------------------
+   The two halves of a rank are one decision, so they are drawn as one bordered
+   block with the word between them rather than as two rows in a list. Rendered
+   as a flat list they were two identical rows with two identical chevrons, and
+   nothing anywhere said that taking one closed the other — the exclusivity was
+   announced by "Closed by Cadre", which arrives after it is too late to act. */
+.doctrine-pair {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.doctrine-or {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bone-faint);
+  padding: 3px 0;
+  background: var(--concrete-deeper);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}

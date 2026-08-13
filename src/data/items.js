@@ -68,7 +68,14 @@ export const WEAPONS = [
   },
   {
     id: 'slag_autogun', name: 'Slag Autogun', kind: 'weapon', tier: 4, loot: true,
-    stats: { power: 2.6, ammo: 2.0, pierce: 3 },
+    // 3.0, not 2.6. At 2.6 this was +4% power over a Magnetic Rifle for +82%
+    // ammunition and a lost pierce tier — a trade nobody who could see the
+    // numbers would ever take, and one the auto-equipper took for them. It is
+    // now the hardest-hitting weapon in the game, including the tier-5
+    // Rail-Carbine, and still cannot open a tier-4 gate and still eats twice
+    // the rounds. That is a choice; the old numbers were a mistake with a
+    // description attached.
+    stats: { power: 3.0, ammo: 2.0, pierce: 3 },
     desc: 'Belt-fed, welded together out of two other guns. Hits harder than anything the benches make, and empties the pouches doing it.',
   },
   {
