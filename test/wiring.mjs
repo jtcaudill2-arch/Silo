@@ -2374,6 +2374,36 @@ console.log('');
     else ok('a tap clears the mark it landed on, and only that one');
   }
 
+  // A campaign kills steadily, so the marks are capped — newest first, older
+  // ones hidden rather than dismissed. Without this a day-220 silo stood with
+  // fifteen skulls in it and the living were unreadable behind them.
+  {
+    const many = newStore(1234);
+    const m = many.state;
+    new Game(many).runDays(3);
+    many.dispatchAll(autoAssign(m));
+    const victims = m.citizenIds.slice(0, BAL.render.maxDeathMarks + 4);
+    for (const id of victims) {
+      m.clock.tick++;
+      many.dispatch({ type: 'CITIZEN_DIE', id, cause: 'a test', text: 'x' });
+    }
+    const shown = deathMarks(m);
+    if (shown.length !== BAL.render.maxDeathMarks) {
+      fail(`${victims.length} deaths put ${shown.length} marks on screen, not ${BAL.render.maxDeathMarks}`);
+    } else if (!shown.every((x) => victims.slice(-BAL.render.maxDeathMarks).includes(x.c.id))) {
+      fail('the marks shown are not the most recent deaths');
+    } else {
+      ok(`${victims.length} deaths show ${shown.length} marks, newest first`);
+    }
+    // Hidden, not forgotten: clearing one brings the next up.
+    many.dispatch({ type: 'DEATH_ACKNOWLEDGE', id: shown[0].c.id });
+    if (deathMarks(m).length !== BAL.render.maxDeathMarks) {
+      fail('clearing a mark did not bring an older one up — the hidden deaths were lost');
+    } else {
+      ok('and clearing one brings an older one up, so none are lost');
+    }
+  }
+
   // And a tap nowhere near one does nothing, or every tap on the silo would
   // silently dismiss a death somewhere off screen.
   const far = deathMarkAt(s, target.x + 400, target.y + 400);

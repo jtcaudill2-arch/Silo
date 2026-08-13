@@ -192,7 +192,10 @@ export function deathMarks(state, from = 1, to = BAL.silo.totalFloors) {
       floor: floorN,
     });
   }
-  return out;
+  // Newest first, capped. See `maxDeathMarks` — the older ones are hidden
+  // rather than dismissed, so clearing one brings the next up.
+  out.sort((a, b) => b.c.deathTick - a.c.deathTick);
+  return out.slice(0, BAL.render.maxDeathMarks);
 }
 
 /**

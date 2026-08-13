@@ -1709,6 +1709,16 @@ export const BAL = {
     // Night. Off-duty people on a floor with beds sleep through these shifts,
     // which is what finally makes the sleep frames reachable.
     nightShifts: [0, 1, 7],
+    // The most unacknowledged deaths that can be marked at once, newest first.
+    //
+    // Marks wait to be tapped rather than expiring, which is the point of
+    // them — but a campaign kills people steadily, and a day-220 silo had
+    // fifteen skulls standing in it at the same time. That is a graveyard the
+    // player has to clear by hand before they can read their own floors, and
+    // it buries the living. The older ones are not dismissed, only hidden:
+    // clear one and the next comes up, so nothing is lost and the
+    // cross-section never fills.
+    maxDeathMarks: 6,
     // How close a tap has to land to clear a death mark, in world units. A
     // skull is 16 world units and test/mobile.mjs holds every control to 30
     // screen px, so the box is deliberately larger than the sprite.
