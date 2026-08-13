@@ -31,6 +31,22 @@ const failures = [];
 const fail = (m) => failures.push(m);
 const ok = (m) => console.log(`  ✓ ${m}`);
 
+/**
+ * Get past the title screen, the way a player does.
+ *
+ * Every launch opens on it now, so every page this file opens has to go
+ * through it. The primary button is Continue when there is a save and New silo
+ * when there is not, and it stays disabled until the save layer has answered —
+ * which is what makes waiting on it a reliable signal rather than a race.
+ */
+async function enterSilo(page) {
+  await page.waitForSelector('#title-primary:not([disabled])', { timeout: 20000 });
+  const label = await page.$eval('#title-primary .title-btn-label', (n) => n.textContent);
+  await page.click('#title-primary');
+  await page.waitForSelector('#title', { state: 'detached', timeout: 10000 });
+  return label;
+}
+
 // ---- dev server ------------------------------------------------------------
 const server = spawn(process.execPath, [join(ROOT, 'tools/serve.mjs')], {
   env: { ...process.env, PORT: String(PORT) },
@@ -65,6 +81,34 @@ try {
 
   // ---- 1. boot -------------------------------------------------------------
   await page.goto(BASE, { waitUntil: 'load' });
+
+  // The title screen, which is what a launch actually opens on. It has to be
+  // up and offering something before the game behind it is reachable, and it
+  // has to get out of the way on one tap.
+  const titleUp = await page.waitForSelector('#title', { timeout: 15000 }).then(() => true);
+  const titleShot = await page.evaluate(() => {
+    const t = document.getElementById('title');
+    const c = t.querySelector('.title-canvas');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4 * 97) {
+      seen.add(`${d[i]},${d[i + 1]},${d[i + 2]}`);
+      if (seen.size > 8) break;
+    }
+    return {
+      name: t.querySelector('.title-word')?.textContent,
+      level: t.querySelector('.title-level')?.textContent,
+      colours: seen.size,
+    };
+  });
+  if (!titleUp || titleShot.name !== 'DEEPWATER') fail(`title screen reads "${titleShot.name}"`);
+  else if (titleShot.colours < 4) {
+    fail(`the title backdrop looks blank (${titleShot.colours} distinct colours sampled)`);
+  } else ok(`title screen is up and drawing (${titleShot.colours}+ colours, ${titleShot.level})`);
+
+  const startedWith = await enterSilo(page);
+  ok(`one tap on "${startedWith}" opens the silo`);
+
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await page.waitForFunction(() => !document.getElementById('boot'), { timeout: 15000 });
   ok('boots and removes the boot screen');
@@ -551,6 +595,9 @@ try {
   const offlineErrors = [];
   offlinePage.on('pageerror', (e) => offlineErrors.push(e.message));
   await offlinePage.goto(BASE, { waitUntil: 'load' });
+  // The title screen has to come up offline too — it is served from the
+  // precache like everything else, and it is the only way in.
+  await enterSilo(offlinePage);
   await offlinePage.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await offlinePage.waitForFunction(() => !!window.DEEPWATER, { timeout: 15000 });
 
@@ -638,6 +685,21 @@ try {
   const returnErrors = [];
   returning.on('pageerror', (e) => returnErrors.push(e.message));
   await returning.goto(BASE, { waitUntil: 'load' });
+  // A returning player's title screen offers the silo back by name, with the
+  // day and the headcount on the button — the point of the screen for anybody
+  // who is not launching it for the first time.
+  const cont = await returning.waitForSelector('#title-primary:not([disabled])', { timeout: 20000 })
+    .then(() =>
+      returning.evaluate(() => ({
+        label: document.querySelector('#title-primary .title-btn-label')?.textContent,
+        sub: document.querySelector('#title-primary .title-btn-sub')?.textContent,
+      }))
+    );
+  if (cont.label !== 'Continue') fail(`a save exists but the title offers "${cont.label}"`);
+  else if (!/Day \d+ · \d+ resident/.test(cont.sub || '')) {
+    fail(`Continue does not say what it is continuing: "${cont.sub}"`);
+  } else ok(`title offers the save back: "${cont.label} — ${cont.sub}"`);
+  await enterSilo(returning);
   await returning.waitForSelector('.report', { timeout: 20000 });
 
   const reportText = await returning.evaluate(() => {

@@ -34,6 +34,7 @@ import {
   THREATS, THREAT_SIZES, PROPS, PROP_SIZE, TILE, SKYLINE_W, SKYLINE_H,
 } from './art/scenery.mjs';
 import { GEAR, GEAR_SIZE } from './art/gear.mjs';
+import { UI_SPRITES, cssBlock, spliceCss, initCodec } from './art/ui.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const OUT = join(ROOT, 'assets');
@@ -126,6 +127,19 @@ for (const [id, draw] of Object.entries(GEAR)) {
   draw(sheet.sprite(`gear_${id}`, GEAR_SIZE, GEAR_SIZE));
 }
 
+// -------------------------------------------------------------------- ui ---
+
+// Panel frames, button states, navbar icons and resource glyphs, from
+// tools/art/ui.mjs. These are the only frames in the sheet the DOM paints
+// WITHOUT going through src/render/sprites.js: the stylesheet carries the same
+// pixels as base64 PNGs, because 22 canvases rebuilt every cycle is not a way
+// to draw a navbar. They are packed here anyway so the canvas layer can use
+// them, so the contact-sheet tools can see them, and so there is exactly one
+// place the art comes from. See the note at the top of ui.mjs.
+for (const [name, spec] of Object.entries(UI_SPRITES)) {
+  spec.draw(sheet.sprite(name, spec.w, spec.h));
+}
+
 // ------------------------------------------------------------ bitmap font ---
 
 /**
@@ -200,6 +214,23 @@ await writeFile(
   join(OUT, 'atlas.json'),
   JSON.stringify({ width: SIZE, height: usedHeight, tile: TILE, frames: sheet.frames }, null, 1)
 );
+
+// The interface's copy of the ui_ frames, as base64 PNGs inside a generated
+// block in the stylesheet — the same arrangement gen-precache.mjs has with
+// sw.js, and for the same reason: a hand-maintained copy of generated data
+// drifts the first time anybody touches either side. tools/art/ui.mjs's
+// self-test regenerates this and fails if the file has fallen behind.
+{
+  const { readFile } = await import('node:fs/promises');
+  await initCodec();
+  const cssPath = join(ROOT, 'src', 'ui', 'styles.css');
+  const before = await readFile(cssPath, 'utf8');
+  const after = spliceCss(before, cssBlock());
+  if (after !== before) {
+    await writeFile(cssPath, after);
+    console.log('gen-atlas: src/ui/styles.css sprite block updated');
+  }
+}
 
 const kinds = {};
 for (const n of Object.keys(sheet.frames)) {

@@ -36,6 +36,18 @@ const failures = [];
 const fail = (m) => failures.push(m);
 const ok = (m) => console.log(`  ✓ ${m}`);
 
+/**
+ * Get past the title screen with a finger. Every launch opens on it, so every
+ * page opened here has to go through it — and on a phone that means tapping
+ * it, not clicking it.
+ */
+async function enterSilo(page, tap = false) {
+  await page.waitForSelector('#title-primary:not([disabled])', { timeout: 20000 });
+  if (tap) await page.tap('#title-primary');
+  else await page.click('#title-primary');
+  await page.waitForSelector('#title', { state: 'detached', timeout: 10000 });
+}
+
 const run = (args) =>
   new Promise((res, rej) => {
     const p = spawn(process.execPath, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -108,6 +120,33 @@ try {
 
   // ---- 1. boots from a subpath ---------------------------------------------
   await page.goto(BASE, { waitUntil: 'load' });
+
+  // The title screen, by finger. Its controls are the first thing any thumb
+  // in this game touches, so they are held to the same 30px floor as the rest
+  // — and it must not be possible to scroll or zoom the screen it is on.
+  await page.waitForSelector('#title-primary:not([disabled])', { timeout: 20000 });
+  const door = await page.evaluate(() => {
+    const t = document.getElementById('title');
+    const btns = [...t.querySelectorAll('button')].filter((n) => n.offsetParent !== null);
+    const r = t.getBoundingClientRect();
+    return {
+      buttons: btns.length,
+      small: btns
+        .map((n) => n.getBoundingClientRect())
+        .filter((b) => b.height < 30 || b.width < 30).length,
+      wide: btns.filter((n) => n.getBoundingClientRect().right > window.innerWidth + 1).length,
+      overflows: r.width > window.innerWidth + 1 || r.height > window.innerHeight + 1,
+      touchAction: getComputedStyle(t).touchAction,
+    };
+  });
+  if (door.small) fail(`${door.small} title controls under 30px`);
+  else if (door.wide) fail(`${door.wide} title controls run off the edge of the phone`);
+  else if (door.overflows) fail('the title screen is bigger than the viewport');
+  else ok(`title screen fits the phone: ${door.buttons} thumb-sized controls, touch-action ${door.touchAction}`);
+
+  await enterSilo(page, true);
+  ok('one tap on the title opens the silo');
+
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await page.waitForFunction(() => !document.getElementById('boot'), { timeout: 15000 });
   ok(`boots served from ${MOUNT}`);
@@ -551,6 +590,7 @@ try {
   const offlineErrors = [];
   offline.on('pageerror', (e) => offlineErrors.push(e.message));
   await offline.goto(BASE, { waitUntil: 'load' });
+  await enterSilo(offline);
   await offline.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await offline.waitForFunction(() => !!window.DEEPWATER, { timeout: 15000 });
   const snap = await offline.evaluate(() => {

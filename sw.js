@@ -97,6 +97,8 @@ const PRECACHE = [
   './src/ui/settings.js',
   './src/ui/shell.js',
   './src/ui/styles.css',
+  './src/ui/title.css',
+  './src/ui/title.js',
   './src/ui/tutorial.css',
   './src/ui/tutorial.js',
 ];

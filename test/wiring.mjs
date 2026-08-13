@@ -4708,28 +4708,45 @@ console.log('');
 // as a lit window in the silo was true by care rather than by construction,
 // and would have stopped being true the first time either side was edited.
 //
-// Two claims: every colour in the stylesheet is a palette colour, and the
+// Two claims: every colour in *every* stylesheet is a palette colour, and the
 // tokens that name palette entries carry that entry's exact value.
+//
+// (a) runs over each stylesheet the page loads, not just the big one. A second
+// stylesheet is exactly where an off-palette colour gets in: it is written in
+// one sitting, by somebody looking at a screen rather than at the palette, and
+// nothing about it is obviously covered by a check named after styles.css.
 {
-  const css = readSource('../src/ui/styles.css');
+  const SHEETS = ['../src/ui/styles.css', '../src/ui/title.css', '../src/ui/tutorial.css'];
   const hexOf = (c) => '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('');
   const allowed = new Set(Object.values(PAL).map(hexOf));
   const problems = [];
 
-  // (a) No off-palette colour literals anywhere in the file.
-  for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
-    const h = m[0].toLowerCase();
-    const full = h.length === 4 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h.slice(0, 7);
-    if (!allowed.has(full)) problems.push(`${m[0]} is not in the art palette`);
+  // (a) No off-palette colour literals anywhere in any of them.
+  for (const sheet of SHEETS) {
+    let css;
+    try {
+      css = readSource(sheet);
+    } catch {
+      problems.push(`${sheet.replace('../', '')} is missing`);
+      continue;
+    }
+    const where = sheet.split('/').pop();
+    for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
+      const h = m[0].toLowerCase();
+      const full = h.length === 4 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h.slice(0, 7);
+      if (!allowed.has(full)) problems.push(`${where}: ${m[0]} is not in the art palette`);
+    }
+    // rgb()/rgba() triples too, except pure black — scrims and drop shadows are
+    // an absence of light rather than a colour, and the art has no entry for
+    // "transparent dark".
+    for (const m of css.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
+      const rgb = [+m[1], +m[2], +m[3]];
+      if (rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0) continue;
+      if (!allowed.has(hexOf(rgb))) problems.push(`${where}: ${m[0]}) is not in the art palette`);
+    }
   }
-  // rgb()/rgba() triples too, except pure black — scrims and drop shadows are
-  // an absence of light rather than a colour, and the art has no entry for
-  // "transparent dark".
-  for (const m of css.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
-    const rgb = [+m[1], +m[2], +m[3]];
-    if (rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0) continue;
-    if (!allowed.has(hexOf(rgb))) problems.push(`${m[0]}) is not in the art palette`);
-  }
+
+  const css = readSource('../src/ui/styles.css');
 
   // (b) The named tokens still carry the palette's own values.
   const TOKENS = {
@@ -4748,7 +4765,7 @@ console.log('');
   }
 
   if (problems.length) fail(problems.slice(0, 6).join('; ') + (problems.length > 6 ? ` (+${problems.length - 6} more)` : ''));
-  else ok(`the interface draws from the art's own palette: ${Object.keys(TOKENS).length} tokens matched to PAL, no off-palette colour in the stylesheet`);
+  else ok(`the interface draws from the art's own palette: ${Object.keys(TOKENS).length} tokens matched to PAL, no off-palette colour in any of the ${SHEETS.length} stylesheets`);
 }
 
 // ---- 59. the game says how big it is, correctly -----------------------------

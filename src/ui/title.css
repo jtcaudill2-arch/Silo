@@ -1,0 +1,265 @@
+/* ============================================================================
+   title.css — the door.
+
+   Same palette discipline as styles.css: every colour here is a var() off the
+   palette block, or pure black. Black is not a palette entry and is not meant
+   to be one — a scrim is an absence of light rather than a colour, which is
+   the only reason the game is allowed to draw one.
+
+   The layout is three bands down a phone: the name at the top, the descending
+   cross-section behind everything, the menu at the bottom under a thumb. The
+   canvas is the whole screen rather than a panel, because the point being made
+   is that the silo does not fit on it.
+   ========================================================================= */
+
+.title {
+  position: fixed;
+  inset: 0;
+  /* Above the game (0) and its rails, below the modal root (60) — Settings
+     opens the real sheet, and it has to land on top of this. */
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--concrete-deep);
+  overflow: hidden;
+  /* The whole screen is a tap target; nothing here should ever be a scroll or
+     a double-tap zoom. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Opaque from the first frame, and it fades only on the way out.
+ *
+ * It used to fade in as well, which looked considerate and was wrong twice
+ * over. There is nothing behind it to fade in *from* — the boot screen it
+ * replaces is the same concrete — and the game's own interface comes up
+ * underneath while the boot continues, so a quarter of a second of partial
+ * opacity put the topbar, the standing order and the navbar on screen through
+ * the title. Measured at first paint: the resource counters, "STANDING ORDER:
+ * Build a Recycling Plant" and four nav labels, all legible through the name
+ * of the game.
+ */
+.title.is-out {
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+}
+
+.title-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Top and bottom wash, so display type never has to compete with a lit room
+   sliding underneath it. Heaviest at the two edges the text lives on. */
+.title-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.92) 0%,
+      rgba(0, 0, 0, 0.84) 16%,
+      rgba(0, 0, 0, 0.56) 30%,
+      rgba(0, 0, 0, 0.18) 42%,
+      rgba(0, 0, 0, 0.14) 54%,
+      rgba(0, 0, 0, 0.34) 64%,
+      rgba(0, 0, 0, 0.76) 76%,
+      rgba(0, 0, 0, 0.94) 90%
+    );
+}
+
+/* ------------------------------------------------------------- the name --- */
+.title-plate {
+  position: relative;
+  padding: calc(env(safe-area-inset-top) + 46px) 22px 0;
+  text-align: left;
+}
+/* Text sits over a cross-section that is different on every frame, so every
+   line on this screen carries its own shadow rather than trusting the wash. */
+.title-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sodium);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.title-word {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(46px, 15vw, 68px);
+  line-height: 0.92;
+  letter-spacing: 0.1em;
+  color: var(--bone);
+  /* The name is a stencil on a bulkhead, not a logo: it sits on the metal. */
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 2px 12px rgba(0, 0, 0, 0.85);
+}
+.title-rule {
+  width: 74px;
+  height: 2px;
+  margin: 14px 0 12px;
+  background: var(--sodium);
+}
+.title-sub {
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--bone-dim);
+  max-width: 22em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.8);
+}
+
+/* The depth counter, ticking past as the camera falls. It is the one number
+   on this screen and it is the whole pitch. */
+.title-level {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 14px);
+  right: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--bone-faint);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* ------------------------------------------------------------- the menu --- */
+.title-menu {
+  position: relative;
+  /* Everything above this is top-anchored; the controls go under a thumb. */
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px calc(env(safe-area-inset-bottom) + 18px);
+}
+
+.title-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 14px;
+  border: 1px solid var(--steel-dark);
+  border-radius: var(--radius);
+  background: var(--concrete-deep);
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.title-btn:active { background: var(--concrete); }
+.title-btn:focus-visible {
+  outline: 2px solid var(--sodium);
+  outline-offset: 2px;
+}
+.title-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.title-btn[hidden] { display: none; }
+
+.title-btn-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.title-btn-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--bone-faint);
+  line-height: 1.2;
+}
+.title-btn-sub:empty { display: none; }
+
+/* Every button is opaque. A translucent control over a moving cross-section
+   is a control you cannot read on half the frames it is drawn over — the
+   amber wash goes on top of the concrete, not instead of it. */
+.title-btn.primary {
+  border-color: var(--sodium);
+  background-image: linear-gradient(var(--sodium-dim), var(--sodium-dim));
+}
+.title-btn.primary .title-btn-label { color: var(--sodium); }
+.title-btn.primary:active {
+  background-image: linear-gradient(var(--sodium-line), var(--sodium-line));
+}
+
+.title-btn.ghost {
+  min-height: 44px;
+  border-color: transparent;
+  background-color: rgba(0, 0, 0, 0.35);
+}
+.title-btn.ghost .title-btn-label {
+  font-size: 14px;
+  color: var(--bone-faint);
+}
+.title-btn.ghost:active { background-color: rgba(0, 0, 0, 0.6); }
+
+.title-btn.warn { border-color: var(--rust); }
+.title-btn.warn .title-btn-label { color: var(--rust); }
+
+/* The one destructive answer on the screen, asked in the menu rather than in
+   a dialog stacked over it. */
+.title-confirm {
+  padding: 10px 12px;
+  border-left: 2px solid var(--rust);
+  background: rgba(0, 0, 0, 0.55);
+}
+.title-confirm-q {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  color: var(--bone);
+}
+.title-confirm-a {
+  margin-top: 3px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--bone-dim);
+}
+
+/* Short screens: the name gives up its top margin before the menu gives up
+   any of its height. A control you cannot reach is worse than a small name. */
+@media (max-height: 700px) {
+  .title-plate { padding-top: calc(env(safe-area-inset-top) + 22px); }
+  .title-word { font-size: clamp(38px, 12vw, 52px); }
+  .title-rule { margin: 10px 0 8px; }
+  .title-btn { min-height: 46px; }
+}
+
+/* Wide screens: this is a phone game, but a desktop browser must not stretch
+   the menu across a metre of glass. */
+@media (min-width: 620px) {
+  .title-plate { padding-left: 36px; padding-right: 36px; }
+  .title-menu {
+    width: 420px;
+    padding-left: 34px;
+    padding-right: 34px;
+  }
+}
+
+/* Motion. The canvas stops itself — the camera parks and the clock is frozen,
+   so the flicker and the gait stop with it — and this stops the rest. */
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .title.is-out { transition: none; }
+}
+body.reduced-motion .title,
+body.reduced-motion .title.is-out { transition: none; }

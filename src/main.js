@@ -13,11 +13,12 @@ import { createNewGame, rehydrate } from './core/newgame.js';
 import { Game } from './core/game.js';
 import { on, emit } from './core/events.js';
 import { autoAssign } from './sim/jobs.js';
-import { loadGame, Autosave } from './core/save.js';
+import { loadGame, Autosave, summarise } from './core/save.js';
 import { runCatchup } from './core/catchup.js';
 import { showReturnReport } from './ui/returnReport.js';
 import { showEnding } from './ui/ending.js';
 import { showBriefing } from './ui/briefing.js';
+import { openTitle } from './ui/title.js';
 import { COLD_OPEN } from './data/briefing.js';
 import { ALERT_COACH } from './data/tutorial.js';
 import { startTutorial } from './ui/tutorial.js';
@@ -62,6 +63,25 @@ async function main() {
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   if (reduced) document.body.classList.add('reduced-motion');
 
+  // ---- the title screen ---------------------------------------------------
+  // First, and before anything is awaited. It draws a silo it generates
+  // itself, so the descent is on screen while IndexedDB is still being asked
+  // whether there is a save — see ui/title.js for why that matters. The whole
+  // boot below happens behind it; the player's choice is taken at the end.
+  let title = null;
+  try {
+    title = openTitle({ onFirstPaint: () => boot?.remove() });
+  } catch (err) {
+    // A broken door must not lock the player out of the building: log it, drop
+    // whatever half of the screen made it into the document, and boot.
+    console.error('[boot] the title screen did not come up:', err);
+    document.getElementById('title')?.remove();
+    title = null;
+  }
+  // Kicked off here rather than awaited at first use: the title draws people,
+  // and this is the only thing on the boot path that goes to the network.
+  loadAtlas('./assets/');
+
   // ---- load or create -----------------------------------------------------
   status('Looking for a silo…');
   let loaded = null;
@@ -100,25 +120,18 @@ async function main() {
   document.body.classList.toggle('reduced-motion', !!state.settings.reducedMotion);
   const store = createStore(rehydrate(state));
 
+  // The door now knows what is behind it: Continue, with the day and the
+  // headcount on it, or nothing to continue. Reduced motion is the player's
+  // own setting rather than the OS default, so the title takes it from here.
+  title?.setReducedMotion(state.settings.reducedMotion);
+  title?.setSave(isNewGame ? null : summarise(store.state));
+
   if (isNewGame) {
     // Staff the silo so the player opens on a running building, not a still one.
     store.dispatchAll(autoAssign(store.state));
   }
 
   const game = new Game(store);
-
-  // ---- catch up on the absence -------------------------------------------
-  // This runs before anything is drawn: the player should never see the silo
-  // in its pre-absence state and watch it jump.
-  let report = null;
-  if (!isNewGame) {
-    status('Reading the shift logs…');
-    try {
-      report = runCatchup(store, game);
-    } catch (err) {
-      console.error('[boot] catch-up failed:', err);
-    }
-  }
 
   // ---- render -------------------------------------------------------------
   status('Bringing up the lights…');
@@ -234,13 +247,67 @@ async function main() {
     renderer.render(dt);
     gauge.render(dt);
   });
-  game.start();
 
   // ---- expose for debugging ----------------------------------------------
-  window.DEEPWATER = { store, game, shell, renderer, gauge, autosave, BAL, emit, runCatchup };
+  window.DEEPWATER = { store, game, shell, renderer, gauge, autosave, BAL, emit, runCatchup, title };
 
   status('Ready.');
-  boot.remove();
+  boot?.remove();
+
+  // ---- the door ------------------------------------------------------------
+  // Everything above is built and nothing is ticking yet. The title screen has
+  // been on the glass since the first frame; this is where the tap it has been
+  // waiting for lands.
+
+  // Settings opens for real from the title, and the guided first session does
+  // not exist until the silo does. Asking to replay it from that screen means
+  // "when I get in" rather than "now" — without this the button is simply dead
+  // there, because `shell.onReplayGuide` is not wired until much further down.
+  let replayGuideOnEntry = false;
+  shell.onReplayGuide = () => {
+    replayGuideOnEntry = true;
+  };
+
+  if (title) {
+    title.ready({ onSettings: () => openSettings(store, game, shell) });
+    const choice = await title.choice();
+    // "New silo" over a silo that already exists is the only destructive
+    // answer in the game, and the title has already asked before it gets here.
+    // The swap is done in place rather than by reloading the page: nothing has
+    // ticked, drawn or autosaved, so there is no half-played silo to leave
+    // behind — and a reload would cost the player a second launch and a second
+    // tap on the same button.
+    if (choice === 'new' && !isNewGame) {
+      isNewGame = true;
+      store.replace(rehydrate(createNewGame({})));
+      // A fresh silo takes the OS preference again, the same as one created at
+      // the top of this function. Through a dispatch, not by hand: the store
+      // exists now, and nothing outside a reducer writes to state.
+      store.dispatch({ type: 'SETTING_SET', settings: { reducedMotion: reduced } });
+      document.body.classList.toggle('reduced-motion', !!reduced);
+      store.dispatchAll(autoAssign(store.state));
+      shell.renderChrome();
+      renderer.focusFloor(store.state.ui.cameraFloor ?? 3, true);
+    }
+  }
+
+  // ---- catch up on the absence -------------------------------------------
+  // After the choice, so a player starting again never waits on a week of
+  // somebody else's absence — and still before the first frame of the real
+  // silo, so nobody sees it in its pre-absence state and watches it jump.
+  let report = null;
+  if (!isNewGame) {
+    status('Reading the shift logs…');
+    try {
+      report = runCatchup(store, game);
+    } catch (err) {
+      console.error('[boot] catch-up failed:', err);
+    }
+    renderer.focusFloor(store.state.ui.cameraFloor ?? 3, true);
+  }
+
+  await title?.close();
+  game.start();
 
   // A new silo opens on two screens of the previous mayor's handover — who is
   // handing over, and that the clock does not stop — with the silo paused
@@ -312,6 +379,7 @@ async function main() {
     runGuide();
   };
 
+  if (replayGuideOnEntry) store.dispatch({ type: 'FLAG_SET', flags: { tutorialStep: 0 } });
   runGuide();
 
   // The report is the reward for coming back, so it gets the screen to
