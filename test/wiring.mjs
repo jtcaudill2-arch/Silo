@@ -4819,6 +4819,81 @@ console.log('');
   else ok(`the silo says it is ${n} floors deep everywhere it says anything, including the install card`);
 }
 
+// ---- 60. the interface moves like a machine --------------------------------
+//
+// Three things move now: the nav and resource glyphs idle, panels slide in,
+// and a counter rolls to its new value rather than cutting to it. The first
+// is covered by `tools/art/ui.mjs`'s own loop-distinctness gate. These are the
+// other two, and the counter is the one worth testing because it is the only
+// one with arithmetic in it — a roll that does not converge is a number that
+// never tells the truth, which is worse than one that snaps.
+{
+  const problems = [];
+  const M = BAL.legibility;
+
+  // A pure ease converges only if the step is a real fraction of the gap.
+  if (!(M.counterEase > 0 && M.counterEase < 1)) {
+    problems.push(`counterEase is ${M.counterEase}, which does not converge`);
+  }
+
+  // Simulate the roll against a fixed target and require it to arrive, and to
+  // arrive quickly enough that the number is not lying for long. The strip
+  // paints at 2Hz, so ~20 steps is ten seconds and far too slow.
+  let shown = 0;
+  const target = 100;
+  let steps = 0;
+  while (Math.abs(target - shown) >= M.counterSnapAt && steps < 500) {
+    shown += (target - shown) * M.counterEase;
+    steps++;
+  }
+  // In real time, not in paints. A roll advances once per animation frame —
+  // the shell keeps its own rAF alive while anything is still moving, because
+  // `renderChrome` is otherwise driven by state changes at about 1Hz and a
+  // roll on that cadence would take twenty seconds to arrive.
+  const ms = steps * (1000 / 60);
+  if (steps >= 500) problems.push('a counter roll never reached its target');
+  else if (ms > 600) problems.push(`a counter takes ${Math.round(ms)}ms to arrive, which is a number that lies`);
+  const shellSrc = readSource('../src/ui/shell.js');
+  if (!/_rolling/.test(shellSrc) || !/if \(this\._rolling\) this\.markDirty\(\)/.test(shellSrc)) {
+    problems.push('a rolling counter does not drive its own frames, so it advances at the state-change rate');
+  }
+
+  // And a big jump must not roll at all.
+  if (!(M.counterSnapAbove > 0)) {
+    problems.push('counterSnapAbove is not set, so loading a save rolls every counter like a slot machine');
+  }
+
+  // The panel animation exists, is short, and is not a fade.
+  const css = readSource('../src/ui/styles.css');
+  const anim = css.match(/\.panel-host\s*\{[^}]*animation:\s*panel-in\s+(\d+)ms/);
+  if (!anim) problems.push('panels no longer animate in');
+  else if (+anim[1] > 250) problems.push(`the panel animation is ${anim[1]}ms — long enough to be the thing you notice`);
+  // The `from` frame specifically, not just any translateY in the block — the
+  // `to` frame is `translateY(0)`, so a looser match calls a pure fade a slide.
+  const kfAt = css.indexOf('@keyframes panel-in');
+  const fromFrame = kfAt < 0 ? null : css.slice(kfAt, kfAt + 240).match(/from\s*\{([^}]*)\}/);
+  const travel = fromFrame && fromFrame[1].match(/translateY\(\s*(-?[\d.]+)px/);
+  if (!travel || Math.abs(+travel[1]) < 4) {
+    problems.push('the panel animation does not move the panel, it only fades it');
+  }
+
+  // Reduced motion has to reach all of it, and there must not be a second
+  // switch to keep in sync with the first.
+  if (!/body\.reduced-motion \*/.test(css)) {
+    problems.push('the explicit reduced-motion toggle no longer covers everything');
+  }
+  const shell = readSource('../src/ui/shell.js');
+  if (!/reduced-motion/.test(shell)) {
+    problems.push('the counter roll ignores reduced motion');
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else {
+    ok(`the interface moves and stops moving on request: a counter arrives in ${Math.round(ms)}ms, ` +
+      `panels slide in ${anim[1]}ms, and reduced motion reaches both`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }

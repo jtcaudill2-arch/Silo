@@ -1950,6 +1950,19 @@ export const BAL = {
     // has to move in one shift before it counts as having moved at all —
     // whichever of the two is larger, so small stores are not permanently lit
     // and large ones are not silent.
+    // How a counter moves to its new value.
+    //
+    // `counterEase` is the fraction of the remaining gap closed each paint, so
+    // the roll always converges even though the target moves — a store both
+    // fills and drains every cycle, and a fixed-duration tween restarts on
+    // every change and never arrives. `counterSnapAt` stops it crawling the
+    // last fraction for ever; `counterSnapAbove` skips the roll entirely for a
+    // jump that is not a trickle, because rolling a counter from 300 to 4,000
+    // after a catch-up is a slot machine rather than a readout.
+    counterEase: 0.22,
+    counterRollMs: 420,
+    counterSnapAt: 0.5,
+    counterSnapAbove: 120,
     counterFlashMs: 2600,
     stockMoveFraction: 0.04,
     stockMoveMin: 5,

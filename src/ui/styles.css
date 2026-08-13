@@ -1820,3 +1820,42 @@ html.large-text .policy-desc { font-size: 13px; }
   text-transform: uppercase;
   color: var(--sodium);
 }
+
+/* ---- panels arrive, they do not fade in ----------------------------------
+   A panel is a bulkhead sliding across, not a dialog dissolving. Fast, one
+   ease, and it overshoots by nothing — `cubic-bezier(.16,1,.3,1)` decelerates
+   hard, which reads as something heavy being pushed into place and stopping
+   against a frame. 150ms because the whole point of the bottom bar is that a
+   panel is one tap away; anything longer and the animation is the thing you
+   notice instead of the panel.
+
+   Opacity rides along for the first third only. A pure slide on a dark panel
+   over a dark cross-section reads as a glitch rather than a movement, because
+   there is not enough contrast at the leading edge to see the edge move.
+
+   The global reduced-motion rules already collapse this to 0.001ms, so there
+   is no second switch to keep in sync. */
+@keyframes panel-in {
+  from { transform: translateY(14px); opacity: 0; }
+  35%  { opacity: 1; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.panel-host {
+  animation: panel-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
+}
+/* Modals deliberately do NOT get this treatment, and it cost a while to work
+   out why they should not.
+   
+   Giving them the same 140ms slide made the browser suite hang for thirty
+   seconds on a click that had always worked. A modal here is rebuilt rather
+   than updated — `citizenCard.js` re-renders by closing and re-showing, so the
+   element the animation is attached to is a new element every time — and
+   Playwright waits for a node to stop moving before it will click it. An
+   animation that restarts whenever the card refreshes is a node that is
+   never stable.
+   
+   The panel host is a single long-lived element and animates cleanly. A modal
+   would need the animation moved onto a wrapper that survives its own
+   re-render, which is a change to how dialogs are built for the sake of
+   140ms of polish on something that is already only one tap deep. */

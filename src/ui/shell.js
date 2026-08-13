@@ -133,6 +133,8 @@ export class Shell {
     this.unreadChanges = 0;
     this._snap = null;
     this._flash = new Map(); // resource key -> {dir, until}
+    this._shownRes = new Map(); // resource key -> the figure currently on screen
+    this._rollUntil = new Map(); // resource key -> when its roll must stop
     this._flashTimer = null;
     this.buildChangeLine();
     on('cycle', () => this.onCycle());
@@ -453,12 +455,14 @@ export class Shell {
 
   renderChrome() {
     const state = this.state;
+    this._rolling = false;
     this.renderStrip(state);
     this.renderCrew(state);
     this.renderDirective(state);
     this.checkUnlocks(state);
     this.renderChangeLine(state);
     this.clockDate.textContent = fmtClock(state.clock);
+    if (this._rolling) this.markDirty();
     this.clockShift.textContent = `SHIFT ${state.clock.shift + 1}/${BAL.time.CYCLES_PER_DAY}`;
     this.syncNav();
     if (this.activePanel) this.renderPanel();
@@ -743,6 +747,74 @@ export class Shell {
       ". Crew wear their unit's colour; everyone else wears grey.";
   }
 
+  /**
+   * Roll a counter toward its true value instead of snapping to it.
+   *
+   * The silo is a machine that is always running, and the top strip was the
+   * one place that said so and didn't: every number cut straight to its new
+   * value, so a shift's worth of production read as a jump cut. Easing the
+   * displayed figure makes the bar feel driven by something rather than
+   * repainted.
+   *
+   * Eased toward the target rather than animated over a fixed duration,
+   * because the target moves while the animation is running — a store both
+   * fills and drains every cycle — and a fixed-duration tween restarts on
+   * every change and never arrives. This always converges, and `snapAt` stops
+   * it crawling the last fraction forever.
+   *
+   * A big jump is not eased at all. Loading a save, finishing catch-up, or
+   * taking a silo moves stores by thousands, and rolling a counter from 300 to
+   * 4,000 is a slot machine rather than a readout.
+   */
+  tickToward(key, target) {
+    const M = BAL.legibility;
+    if (document.body.classList.contains('reduced-motion')) return target;
+    const shown = this._shownRes.get(key);
+    if (shown == null || Math.abs(target - shown) > Math.max(M.counterSnapAbove, Math.abs(target) * 0.5)) {
+      this._shownRes.set(key, target);
+      return target;
+    }
+    // Time-boxed, and it has to be.
+    //
+    // The first version eased toward the target and re-armed a frame whenever
+    // anything was still moving. That never terminates: the stores change
+    // every tick, so a counter is essentially always chasing, `_rolling`
+    // stayed true for ever, and the shell went from repainting on state change
+    // to repainting at 60fps for the life of the session. It cost battery, and
+    // it broke the browser suite in a way that took a while to read — Playwright
+    // waits for an element to stop animating before clicking it, and a modal
+    // inside a chrome that never stops repainting is never stable, so a click
+    // on a citizen card's close button timed out after thirty seconds.
+    //
+    // Each counter now gets a deadline. Rolling is bounded whatever the target
+    // does, and when the last one expires the shell goes back to being
+    // event-driven.
+    const now = performance.now();
+    let until = this._rollUntil.get(key);
+    if (until == null || Math.abs(target - shown) >= M.counterSnapAt) {
+      if (until == null || now > until) { until = now + M.counterRollMs; this._rollUntil.set(key, until); }
+    }
+    if (now > until) {
+      this._shownRes.set(key, target);
+      this._rollUntil.delete(key);
+      return target;
+    }
+    const next = shown + (target - shown) * M.counterEase;
+    const done = Math.abs(target - next) < M.counterSnapAt;
+    this._shownRes.set(key, done ? target : next);
+    if (done) this._rollUntil.delete(key);
+    // A rolling counter has to ask for the next frame itself.
+    //
+    // `renderChrome` runs off `markDirty`, which fires when the *state*
+    // changes — about once a second. Left to that cadence a roll would advance
+    // one step a second and take twenty seconds to arrive, which is not an
+    // animation, it is a number that lies for twenty seconds. While anything
+    // is still moving this keeps its own rAF alive; when everything has
+    // converged it stops asking and the shell goes back to being event-driven.
+    if (!done) this._rolling = true;
+    return done ? target : next;
+  }
+
   renderStrip(state) {
     // Rebuilt in place: each tile keeps its node so the strip doesn't
     // re-layout (and lose scroll position) every cycle.
@@ -779,7 +851,7 @@ export class Shell {
       const flow = state.flows?.[def.key];
       const net = flow ? flow.in - flow.out : 0;
 
-      ref.val.textContent = fmt(amount);
+      ref.val.textContent = fmt(this.tickToward(def.key, amount));
       ref.delta.textContent = fmtDelta(net);
       ref.delta.className =
         'res-delta mono ' + (net > 0.05 ? 'up' : net < -0.05 ? 'down' : 'flat');
