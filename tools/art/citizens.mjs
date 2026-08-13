@@ -85,7 +85,7 @@ export const PORTRAIT = 32;
  * gives a full stride two distinguishable poses per half-step (contact, swing
  * low, swing high) without the mirrored halves colliding into duplicates.
  */
-export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4 };
+export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4, die: 4 };
 
 /**
  * What the game actually asks the atlas for, and what this module must be able
@@ -816,7 +816,91 @@ const INJURED = [
   { nl: 0, fl: -1, nLift: 1, fLift: 0, bob: 0, arm: 1, lean: 1, far: -4, clutch: true },
 ];
 
-const POSES = { walk: WALK, idle: IDLE, work: WORK, injured: INJURED };
+/**
+ * Two people talking. The whole read is one raised hand and a turned head.
+ *
+ * A conversation cannot be drawn with a body: at twelve pixels the torso is
+ * five columns and it is doing nothing but standing. What it can be drawn with
+ * is the hand, which is the one part of this sprite that can leave the
+ * silhouette — `drop` is negative here, which lifts the last row of the arm
+ * instead of extending it downward the way the work pump does.
+ *
+ * The gesture is off-beat against the lean on purpose. Both peaking together
+ * gave a two-frame nod with two near-duplicates hanging off it, which is the
+ * failure IDLE and WORK were both rebuilt to fix. Hand up on 0 and 1, head
+ * turned on 1 and 2, so each of the four transitions moves something.
+ *
+ * The feet never move. People talking shift their weight; they do not walk on
+ * the spot, and a stride here read as two people arguing while pacing.
+ */
+const TALK = [
+  { nl: 1, fl: -1, bob: 0, arm: 1, drop: -2, lean: 0, far: -3 },
+  { nl: 1, fl: -1, bob: 0, arm: 2, drop: -3, lean: 1, far: -3 },
+  { nl: 1, fl: -1, bob: 1, arm: 1, drop: -1, lean: 1, far: -2, blink: true },
+  // The hand comes down but not all the way. A true rest frame here rendered
+  // pixel-identical to IDLE frame 1 — the cross-action check below caught it —
+  // and a conversation that drops into a standing pose for a quarter of its
+  // cycle reads as somebody who has stopped listening.
+  { nl: 1, fl: -1, bob: 1, arm: 0, drop: -1, lean: 0, far: -2 },
+];
+
+/**
+ * Braced against something coming through the door.
+ *
+ * A wide stance with the weight back, the weapon hand forward and level, and
+ * the head down behind it. The cycle is a jab: gather on 0, drive on 1, hold
+ * on 2, recover on 3 — so the extreme is a single frame and the pose reads as
+ * a strike rather than as somebody waving.
+ *
+ * `tool: true` is what puts the steel in the hand. It is the same flag the
+ * work pose uses for a spanner, which is the right economy: at this size the
+ * difference between a tool and a weapon is what the body around it is doing.
+ *
+ * `arm` is capped at 2, which is not a stylistic choice. The hand starts at
+ * SHOULDER_X + sw + 1 and is two columns wide, the tool adds a third, and the
+ * outer silhouette needs the last column for its keyline — so on a 12-wide
+ * sprite anything past 2 puts solid paint on the border. The self-test
+ * caught it at arm 3 and 4 on every role that carries a weapon or a long
+ * sleeve. The reach in this pose comes from the stance and the lean instead.
+ *
+ * The far leg is planted well back and never lifts. A fighter who picked a
+ * foot up would be dancing, and the one thing this pose has to say is that
+ * they are not giving ground.
+ */
+const FIGHT = [
+  { nl: 2, fl: -3, nLift: 0, fLift: 0, bob: 1, arm: 0, drop: -1, lean: 1, far: -4, tool: true },
+  { nl: 3, fl: -3, nLift: 0, fLift: 0, bob: 0, arm: 2, drop: -3, lean: 2, far: -4, tool: true },
+  { nl: 3, fl: -3, nLift: 0, fLift: 0, bob: 0, arm: 2, drop: -2, lean: 2, far: -3, tool: true },
+  { nl: 2, fl: -3, nLift: 0, fLift: 0, bob: 1, arm: 1, drop: -1, lean: 1, far: -3, tool: true },
+];
+
+/**
+ * Going down, and then down.
+ *
+ * Four frames that do not loop in the fiction even though the frame counter
+ * loops in the code — the renderer plays this once against a death mark that
+ * expires, so frame 3 is where somebody stays. `bob` is doing the work: it
+ * drops the head and shoulders and squashes the torso to match, which is a
+ * knee bend, so buckling is what a rising bob looks like.
+ *
+ * The legs fold rather than stride. `nl` and `fl` collapse toward each other
+ * across the four frames, so the stance narrows as the figure sinks instead
+ * of the feet staying planted under a shrinking body — which read as a squat.
+ *
+ * Frame 3 is `prone`, which hands the drawing to `drawSleeper` at its
+ * non-breathing frame. That is the honest end of this animation: the same
+ * body, on the floor, not breathing. Building a separate corpse pose would
+ * have been a second silhouette for the one moment the player most needs to
+ * recognise the person it happened to.
+ */
+const DIE = [
+  { nl: 2, fl: -2, nLift: 0, fLift: 0, bob: 1, arm: 2, drop: -1, lean: 1, far: 2 },
+  { nl: 1, fl: -1, nLift: 0, fLift: 0, bob: 2, arm: 1, drop: 1, lean: 2, far: 1, clutch: true },
+  { nl: 1, fl: 0, nLift: 0, fLift: 0, bob: 3, arm: 0, drop: 1, lean: 2, far: 0, clutch: true },
+  { prone: true },
+];
+
+const POSES = { walk: WALK, idle: IDLE, work: WORK, injured: INJURED, talk: TALK, fight: FIGHT, die: DIE };
 
 /* ----------------------------------------------------------------- head -- */
 
@@ -1417,7 +1501,7 @@ function strideOf(c, off) {
  * The folded leg is painted in the far side's tones, which is what it is. Four
  * rows of body cannot afford a single line drawn inside them, so none is.
  */
-function drawSleeper(g, c, f) {
+function drawSleeper(g, c, f, { dead = false } = {}) {
   // A child sleeps like a child: shorter along the floor, same size head.
   // drawSleeper used to hard-code adult geometry and never call drawRoleCue,
   // so every role collapsed into two silhouettes the moment a citizen lay
@@ -1471,14 +1555,36 @@ function drawSleeper(g, c, f) {
   // for its outline. These used to run to col 11 itself, which put unkeylined
   // solids flush against the frame and bled them into the atlas gutter.
   const kneeX = bodyR - 1;
-  g.stamp(cells()
-    .rect(kneeX, 12, 3, 3, c.suitBack)
-    .hline(kneeX, 12, 3, c.suitDark)
-    .list, () => false);
-  g.stamp(cells()
-    .rect(kneeX + 1, 13, 2, 1, c.bootBackLit)
-    .rect(kneeX + 1, 14, 2, 1, c.bootBack)
-    .list, () => false);
+  if (dead) {
+    // Straight, not drawn up. This is the only thing separating a body from a
+    // sleeper, and it has to be, because everything else about them is the
+    // same person lying in the same place — the death animation ends on this
+    // renderer precisely so that it is recognisably them.
+    //
+    // A sleeper is curled: a 3x3 fold standing three rows proud of the floor.
+    // Straightening it into two flat rows running out to col 10 changes the
+    // silhouette at the one end of the body that is not torso, which is the
+    // difference between somebody resting and somebody who has stopped.
+    // Col 11 is left for the outline, as the fold's own note requires.
+    const legR = Math.min(kneeX + 2, W - 2);
+    g.stamp(cells()
+      .rect(kneeX - 1, 13, legR - kneeX + 2, 1, c.suitBack)
+      .rect(kneeX - 1, 14, legR - kneeX + 2, 1, c.suitDark)
+      .list, () => false);
+    g.stamp(cells()
+      .px(legR, 13, c.bootBackLit)
+      .px(legR, 14, c.bootBack)
+      .list, () => false);
+  } else {
+    g.stamp(cells()
+      .rect(kneeX, 12, 3, 3, c.suitBack)
+      .hline(kneeX, 12, 3, c.suitDark)
+      .list, () => false);
+    g.stamp(cells()
+      .rect(kneeX + 1, 13, 2, 1, c.bootBackLit)
+      .rect(kneeX + 1, 14, 2, 1, c.bootBack)
+      .list, () => false);
+  }
 
   // ---- the arm laid along the chest --------------------------------------
   //
@@ -1619,8 +1725,14 @@ export function drawCitizen(p, {
     // this person is old. drawCitizen used to ignore it entirely.
     const c = config(role, seed, { age });
     const g = grid(W, H);
+    const pose = act === 'sleep' ? null : POSES[act][f];
+    // `prone` hands the frame to the sleeper: the same body, on the floor.
+    // The death animation ends there rather than in a corpse pose of its own,
+    // because a second silhouette at the one moment the player most needs to
+    // recognise somebody is exactly the wrong economy.
     if (act === 'sleep') drawSleeper(g, c, f);
-    else drawBody(g, c, POSES[act][f], act);
+    else if (pose.prone) drawSleeper(g, c, 0, { dead: true });
+    else drawBody(g, c, pose, act);
     g.keyline(PAL.ink);
     g.blit(p, isFlipped(facing));
   });
@@ -2103,9 +2215,43 @@ async function selfTest() {
   const fails = [];
   const check = (ok, msg) => { if (!ok) fails.push(msg); };
 
-  check(Object.keys(ACTIONS).length === 5, 'ACTIONS should describe five actions');
+  // Every action the renderer can ask for is drawable, and every action drawn
+  // is one somebody asks for. Same correction as the ROLES check below: a
+  // count is a number that must be edited whenever the set grows and says
+  // nothing about whether the set is right.
+  const ASKED_ACTIONS = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight', 'die'];
+  for (const a of ASKED_ACTIONS) {
+    check(!!ACTIONS[a], `src/render/sprites.js can ask for "${a}" and ACTIONS does not list it`);
+    check(a === 'sleep' || !!POSES[a], `"${a}" has no pose table, so every frame of it would be a walk`);
+  }
+  check(Object.keys(ACTIONS).every((a) => ASKED_ACTIONS.includes(a)),
+    `ACTIONS bakes ${Object.keys(ACTIONS).filter((a) => !ASKED_ACTIONS.includes(a)).join(', ')}, which nothing asks for`);
   check(ACTIONS.walk === 6 && ACTIONS.idle === 4 && ACTIONS.work === 4
     && ACTIONS.sleep === 2 && ACTIONS.injured === 4, 'ACTIONS frame counts drifted');
+
+  // No two actions may render the same picture.
+  //
+  // This check exists because the death animation shipped, briefly, with its
+  // last frame pixel-identical to a sleeping citizen — both ended on
+  // `drawSleeper` and nothing here noticed. A body that looks exactly like
+  // somebody having a nap is the single worst thing this animation could do,
+  // and it passed every other check in this file: the palette was legal, the
+  // keyline was clean, the frames within each action were distinct.
+  {
+    const seen = new Map();
+    for (const action of Object.keys(ACTIONS)) {
+      for (let f = 0; f < ACTIONS[action]; f++) {
+        const key = frameOf({ action, frame: f, role: 'base', seed: 'same' }).key();
+        const prior = seen.get(key);
+        // Within one action, a repeated frame is caught elsewhere and is
+        // sometimes legitimate; across two, it means one of them is a lie.
+        if (prior && prior.split('/')[0] !== action) {
+          check(false, `${action}${f} is pixel-identical to ${prior} — two different things look the same`);
+        }
+        if (!prior) seen.set(key, `${action}/${f}`);
+      }
+    }
+  }
   // Every role the renderer can ask for is drawable, rather than a count.
   //
   // This was `ROLES.length === 10`, which is a number that has to be edited
@@ -2205,7 +2351,14 @@ async function selfTest() {
         // a lifted one sits on 12 and 13. So two boots can only ever share a
         // row on 13 or 14, and looking higher would start measuring thighs and
         // the hands that reach past them, which is a different question.
-        if (action !== 'sleep') {
+        // Standing figures only. The guard used to read `action !== 'sleep'`,
+        // which named one action rather than the property it cares about —
+        // and the moment a second action put a body on the floor, the death
+        // pose, it started measuring a lying torso as though it were a pair
+        // of fused boots. A figure with no boot band cannot fail a boot-band
+        // check.
+        const prone = action === 'sleep' || !!POSES[action]?.[f]?.prone;
+        if (!prone) {
           for (let y = H - 3; y <= H - 2; y++) {
             let run = 0;
             let worst = 0;

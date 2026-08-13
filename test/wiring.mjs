@@ -61,7 +61,7 @@ import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
-import { drawCitizens } from '../src/render/citizens.js';
+import { drawCitizens, citizensInView } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
 import { FLOOR_H, SLOT_W } from '../src/render/canvas.js';
@@ -2254,6 +2254,152 @@ console.log('');
     const greyed = known.filter((r) => family[r] === 'steel');
     if (greyed.length) fail(`${greyed.join(', ')} wear the off-shift grey, so they read as nobody working`);
   }
+}
+
+// ---- 34. every animation the atlas bakes is one the game can reach ---------
+//
+// Before this section, three of five were not. Measured over a 200-day
+// campaign the renderer only ever asked for `work` and `walk`: `idle` was
+// unreachable because anybody without a post counted as "moving", and `sleep`
+// was gated on a status nothing in src/ ever wrote. That is 110 frames of
+// baked art the game could not display, and nothing failed — which is exactly
+// the shape of every other bug on this branch.
+{
+  const store = newStore(0x1234);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  game.runDays(5);
+  store.dispatchAll(autoAssign(s));
+  store.dispatchAll(formSquad(s, 'Watch'));
+  {
+    const sqId = s.military.squadIds[0];
+    const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+    for (let i = 0; i < BAL.military.squadMin; i++) {
+      if (adults[i]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[i].id });
+    }
+  }
+
+  const cam = {
+    camY: -20, time: 0, drawn: 0, spriteBudget: 400,
+    viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
+  };
+  const seen = new Set();
+  const sweep = () => {
+    for (let k = 0; k < 30; k++) {
+      cam.time = k * 700;
+      for (const p of citizensInView(s, cam)) seen.add(p.action);
+    }
+  };
+
+  s.clock.shift = 4; sweep();                       // a day shift
+  s.clock.shift = BAL.render.nightShifts[0]; sweep(); // and the small hours
+  s.clock.shift = 4;
+  s.world.pendingRaid = { siloId: 5, strength: 0.6, day: s.clock.day };
+  sweep();                                          // with raiders at the door
+  s.world.pendingRaid = null;
+  // Somebody badly hurt, and somebody freshly dead.
+  const hurt = s.citizens[s.citizenIds[1]];
+  hurt.health = Math.max(1, BAL.render.injuredBelowHealth - 10);
+  store.dispatch({ type: 'CITIZEN_DIE', id: s.citizenIds[3], cause: 'a raid', text: 'a test death' });
+  sweep();
+
+  const baked = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight', 'die'];
+  const unreachable = baked.filter((a) => !seen.has(a));
+  if (unreachable.length) {
+    fail(
+      `the atlas bakes ${unreachable.join(', ')} and no state of the game asks for ${unreachable.length === 1 ? 'it' : 'them'} — ` +
+      `${unreachable.length * 11 * 4} frames of art nobody can see`
+    );
+  } else {
+    ok(`all ${baked.length} animations are reachable in play: ${[...seen].sort().join(', ')}`);
+  }
+}
+
+// ---- 35. a death is something you can watch happen -------------------------
+//
+// Deaths were a log line. By the time anything could draw the person they were
+// off `citizenIds` and their job — the only record of where they had been —
+// had been nulled by the same reducer. CITIZEN_DIE now records the tick and
+// the floor, which is enough for the cross-section to show a body where one
+// fell, and enough for it to take that body away again.
+{
+  const store = newStore(909);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  game.runDays(3);
+
+  const cam = {
+    camY: -20, time: 0, drawn: 0, spriteBudget: 400,
+    viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
+  };
+  const bodies = () => citizensInView(s, cam).filter((p) => p.action === 'die');
+
+  if (bodies().length) fail('a silo where nobody has died was already showing a body');
+
+  const victim = s.citizens[s.citizenIds.find((i) => s.citizens[i].job)];
+  store.dispatch({ type: 'CITIZEN_DIE', id: victim.id, cause: 'a test', text: 'a test death' });
+
+  const justDied = bodies();
+  if (!justDied.length) {
+    fail('somebody died and the cross-section showed nothing — a death is still only a log line');
+  } else if (justDied[0].c.id !== victim.id) {
+    fail('the body drawn was not the person who died');
+  } else {
+    ok(`a death puts a body on the floor where it fell (floor ${Math.floor(justDied[0].y / FLOOR_H) + 1})`);
+  }
+
+  // It holds on the last frame rather than looping. A collapse that wrapped
+  // would have somebody fall over, stand up, and fall over again.
+  const progress = [];
+  for (let k = 0; k < BAL.render.deathAnimTicks; k++) {
+    s.clock.tick = victim.deathTick + k;
+    const b = bodies()[0];
+    if (b) progress.push(b.once);
+  }
+  const rising = progress.every((v, i) => i === 0 || v >= progress[i - 1]);
+  if (!rising) fail(`the death animation ran backwards: ${progress.map((v) => v.toFixed(2)).join(' ')}`);
+  else if (progress[progress.length - 1] !== 1) fail('the death animation never reached its last frame');
+  else ok(`and it plays once and holds: ${progress[0].toFixed(2)} to ${progress[progress.length - 1].toFixed(2)}`);
+
+  // And the body is cleared away on its own.
+  s.clock.tick = victim.deathTick + BAL.render.deathAnimTicks;
+  if (bodies().length) fail('the body was still on the floor after deathAnimTicks — nothing clears it');
+  else ok('and the body is gone when its time is up, with nothing to clean up after it');
+}
+
+// ---- 36. children are drawn as children ------------------------------------
+//
+// The threshold is the sim's own working age rather than a number picked for
+// the renderer, so the figure and the job market cannot disagree about who is
+// a child.
+{
+  const store = newStore(31);
+  const s = store.state;
+  const c = s.citizens[s.citizenIds[0]];
+  c.status = 'idle';
+  c.radiation = 0;
+  c.squadId = null;
+
+  c.age = BAL.citizens.workingAgeMin - 1;
+  const young = citizenRole(c);
+  c.age = BAL.citizens.workingAgeMin + 1;
+  const grown = citizenRole(c);
+
+  if (young !== 'child') fail(`somebody a year under working age drew as "${young}"`);
+  else if (grown === 'child') fail('somebody over working age still drew as a child');
+  else ok(`children are drawn as children below the sim's own working age of ${BAL.citizens.workingAgeMin}`);
+
+  // And a real campaign has them: this is the largest group in the silo, and
+  // if the threshold or the status ordering broke, it would be silent.
+  const store2 = newStore(0x1234);
+  const s2 = store2.state;
+  new Game(store2).runDays(5);
+  store2.dispatchAll(autoAssign(s2));
+  const kids = s2.citizenIds.filter((i) => citizenRole(s2.citizens[i]) === 'child').length;
+  if (!kids) fail('no citizen in a real silo was drawn as a child');
+  else ok(`and a real silo is full of them: ${kids} of ${s2.citizenIds.length}`);
 }
 
 function readSource(rel) {

@@ -17,8 +17,20 @@ function roomSkill(room) {
 import { PALETTE, SLOT_W, FLOOR_H } from './canvas.js';
 import { withAlpha } from './floors.js';
 import * as sprites from './sprites.js';
+import { onDuty } from './sprites.js';
+import { defenders as raidDefenders } from '../sim/raid.js';
 
-export function drawCitizens(ctx, state, cam) {
+/**
+ * Everybody the cross-section would draw, and what each of them is doing.
+ *
+ * Separated from the drawing so the answer can be inspected without a canvas.
+ * This is where every decision lives — which floors, which lanes, who is
+ * fighting, who is talking, who is asleep — and `drawCitizens` below is a loop
+ * over the result. Splitting them is what lets test/wiring.mjs assert that the
+ * game can actually reach the animations the atlas bakes, which is the check
+ * that would have caught three of them being unreachable for a whole phase.
+ */
+export function citizensInView(state, cam) {
   // Everybody on screen, not a three-floor slice of the middle of it.
   //
   // This used to draw `citizenFloorsRendered` (3) floors centred on the
@@ -35,15 +47,15 @@ export function drawCitizens(ctx, state, cam) {
   // The budget is what limits this now, not a window — see `order` below, which
   // spends it nearest-first so a crowded screen loses its most distant faces
   // rather than the ones under the player's thumb.
+  const out = [];
   const range = cam.visibleFloorRange();
   const centreFloor = Math.floor((cam.camY + cam.viewWorldH() / 2) / FLOOR_H) + 1;
   const from = range.from;
   const to = range.to;
-  if (to < from) return;
+  if (to < from) return out;
 
   const t = cam.time * 0.001;
   const reduced = state.settings.reducedMotion;
-  let drawn = 0;
 
   // Bucket the workforce by floor so we walk the roster once, not per floor.
   const byFloor = new Map();
@@ -64,6 +76,15 @@ export function drawCitizens(ctx, state, cam) {
   const order = [...byFloor.keys()].sort(
     (a, b) => Math.abs(a - centreFloor) - Math.abs(b - centreFloor)
   );
+
+  // Who is holding the airlock, and whether it is the middle of the night.
+  //
+  // Both are properties of the silo rather than of a person, which is why
+  // `citizenAction` takes them as context: a citizen record cannot know that
+  // raiders are at the door.
+  const defending = new Set(state.world?.pendingRaid ? raidDefenders(state) : []);
+  const night = BAL.render.nightShifts.includes(state.clock.shift);
+  const beds = bedFloors(state);
 
   for (const floorN of order) {
     const list = byFloor.get(floorN);
@@ -97,11 +118,32 @@ export function drawCitizens(ctx, state, cam) {
       shown.push(...take);
     }
 
+    // ---- what everybody on this floor is doing ---------------------------
+    //
+    // Resolved before anything is drawn, because two of the answers depend on
+    // the neighbours: a conversation needs somebody to have it with, and the
+    // pairing has to agree from both sides or one of them talks to a person
+    // who is walking away.
+    //
+    // Talking is decided on the lane centres rather than the drifted
+    // positions, which breaks what would otherwise be a circle — drift decides
+    // who is close enough to talk, and talkers stand still, which decides
+    // their drift.
+    const home = new Map();
+    for (const item of shown) home.set(item.c.id, laneHome(item.room, item.lane, item.lanes, extent));
+    const chatting = talkers(shown, home);
+
     for (const { c, room, lane, lanes } of shown) {
-      if (drawn >= BAL.render.maxSpritesPerFrame - cam.drawn) return;
-      const x = citizenX(c, room, t, reduced, lane, lanes, extent);
-      // Walking if they're between posts or idle; working if they're at one.
-      const moving = !room || c.status !== 'working';
+      if (out.length >= BAL.render.maxSpritesPerFrame - cam.drawn) return out;
+      const fighting = defending.has(c.id);
+      const talking = chatting.has(c.id);
+      // Standing still: at a post, in a conversation, asleep, or in the
+      // stationary half of an off-duty wander. Anything else is walking.
+      const sleeping = night && !onDuty(c) && beds.has(floorN);
+      const still = onDuty(c) ? !!room : (talking || sleeping || loitering(c, t));
+      const x = still && !fighting
+        ? home.get(c.id)
+        : citizenX(c, room, t, reduced, lane, lanes, extent);
       // The sprite picker needs to know what job somebody holds to choose a
       // farmer over a plain resident, and it has no room table of its own —
       // importing one would drag the data layer into the render path. The
@@ -111,16 +153,136 @@ export function drawCitizens(ctx, state, cam) {
         Object.defineProperty(c, '_jobSkill', { value: null, writable: true, enumerable: false });
       }
       if (room) c._jobSkill = roomSkill(room);
-      const frame = sprites.citizenFrame(c, cam.time, moving && !reduced);
-      // Sprites are 12x16 with the feet on the bottom row: half the width to
-      // the left of the anchor, the full height above the floor line.
-      if (!sprites.drawAt(ctx, frame, Math.round(x) - 6, y - 15, 1)) {
-        drawOne(ctx, c, x, y);
-      }
-      drawn++;
+      const action = sprites.citizenAction(c, {
+        fighting,
+        talking,
+        sleeping,
+        moving: !still && !reduced,
+      });
+      out.push({ c, x, y, action, once: null });
     }
   }
-  cam.drawn += drawn;
+
+  // The dead, for as long as a body stays where it fell.
+  out.push(...fallen(state, from, to));
+  return out;
+}
+
+/**
+ * Draw everybody, from the list above.
+ *
+ * Sprites are 12x16 with the feet on the bottom row: half the width to the
+ * left of the anchor, the full height above the floor line.
+ */
+export function drawCitizens(ctx, state, cam) {
+  const people = citizensInView(state, cam);
+  for (const p of people) {
+    const frame = p.once == null
+      ? sprites.citizenFrame(p.c, cam.time, p.action)
+      : sprites.citizenFrameOnce(p.c, p.action, p.once);
+    if (!sprites.drawAt(ctx, frame, Math.round(p.x) - 6, p.y - 15, 1)) {
+      drawOne(ctx, p.c, p.x, p.y);
+    }
+  }
+  cam.drawn += people.length;
+}
+
+/**
+ * People who have died recently enough to still be on the floor.
+ *
+ * A death was a log line and nothing else — by the time anything could draw
+ * the person they were off `citizenIds` and their job had been nulled. So
+ * CITIZEN_DIE now records the tick and the floor, and this reads them back.
+ *
+ * They are drawn from `state.citizens`, which keeps the record after death;
+ * only the roster is filtered. Nothing here writes to state, and the body
+ * disappears on its own when `deathAnimTicks` runs out rather than needing
+ * anything to clean up after it.
+ */
+function fallen(state, from, to) {
+  const out = [];
+  const now = state.clock.tick;
+  const span = BAL.render.deathAnimTicks;
+  for (const c of Object.values(state.citizens)) {
+    if (c.status !== 'dead' || c.deathTick == null) continue;
+    const age = now - c.deathTick;
+    if (age < 0 || age >= span) continue;
+    const floorN = c.deathFloor ?? idleFloor(state, c);
+    if (floorN < from || floorN > to) continue;
+    const room = c.deathFloor != null ? null : null;
+    out.push({
+      c,
+      x: citizenX(c, room, 0, true, c.id % 4, 4, builtExtent(state, floorN)),
+      y: (floorN - 1) * FLOOR_H + FLOOR_H - 6,
+      action: 'die',
+      // Held on the last frame once the collapse is over, so the body lies
+      // still for the rest of its time on screen instead of looping.
+      once: Math.min(1, age / Math.max(1, span * 0.5)),
+    });
+  }
+  return out;
+}
+
+/** Floors with somewhere to sleep, so the night shift means something. */
+let bedCache = { cycle: -1, floors: new Set() };
+function bedFloors(state) {
+  if (bedCache.cycle !== state.clock.cycle) {
+    const floors = new Set();
+    for (const room of Object.values(state.silo.rooms)) {
+      if (room.type === 'residences') floors.add(room.floor);
+    }
+    bedCache = { cycle: state.clock.cycle, floors };
+  }
+  return bedCache.floors;
+}
+
+/** Where a lane sits before any drift is applied. */
+function laneHome(room, lane, lanes, extent) {
+  return citizenX({ id: 0 }, room, 0, true, lane, lanes, extent);
+}
+
+/**
+ * Off-duty people stop walking sometimes.
+ *
+ * A pure function of id and time, like every other position in this file, so
+ * nobody's gait depends on when the renderer happened to look. The phase is
+ * offset per citizen, which is what stops a corridor of people all stopping on
+ * the same beat.
+ */
+function loitering(c, t) {
+  const period = BAL.render.idleWanderSeconds;
+  const phase = ((c.id * 2246822519) % 1000) / 1000;
+  const at = ((t / period) + phase) % 1;
+  return at < BAL.render.idleStandFraction;
+}
+
+/**
+ * Who is talking to whom.
+ *
+ * Adjacent lanes, close enough to hear, and both standing off duty. Pairs are
+ * taken in order and each person joins at most one, so nobody is drawn
+ * gesturing at somebody who is already deep in another conversation.
+ *
+ * Not every eligible pair strikes up: `talkPairFraction` thins them out on a
+ * hash of the two ids, because a floor where every neighbour was mid-sentence
+ * read as a staged crowd rather than as a corridor.
+ */
+function talkers(shown, home) {
+  const out = new Set();
+  const loose = shown
+    .filter((it) => !it.room)
+    .sort((a, b) => home.get(a.c.id) - home.get(b.c.id));
+  for (let i = 0; i + 1 < loose.length; i++) {
+    const a = loose[i];
+    const b = loose[i + 1];
+    if (out.has(a.c.id) || out.has(b.c.id)) continue;
+    if (Math.abs(home.get(a.c.id) - home.get(b.c.id)) > BAL.render.talkWithinPx) continue;
+    const pick = ((a.c.id * 40503 + b.c.id * 12289) % 1000) / 1000;
+    if (pick > BAL.render.talkPairFraction) continue;
+    out.add(a.c.id);
+    out.add(b.c.id);
+  }
+  return out;
 }
 
 /**

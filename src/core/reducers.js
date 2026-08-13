@@ -339,6 +339,24 @@ const citizenReducers = {
     c.deathDay = a.day ?? state.clock.day;
     c.history.push({ day: c.deathDay, text: `Died: ${a.cause}.` });
 
+    // When and where, for the renderer.
+    //
+    // A death was a log line and nothing else: the cross-section never showed
+    // it, because by the time anything could draw the person they were off the
+    // roster and their job — the only record of where they had been — had been
+    // nulled two lines below this. `deathDay` alone is too coarse to animate
+    // against; a day is twelve real minutes, so a body would lie there for the
+    // rest of the shift.
+    //
+    // Both fields sit on the citizen object, which CITIZEN_DIE deliberately
+    // leaves in `state.citizens` — only `citizenIds` is filtered. So no schema
+    // change is needed and no migration with it: a save written before this
+    // has dead citizens with no `deathTick`, and the renderer reads that as
+    // "long expired", which is exactly right for somebody who died in a
+    // previous session.
+    c.deathTick = state.clock.tick;
+    c.deathFloor = c.job ? state.silo.rooms[c.job.roomId]?.floor ?? null : null;
+
     // Free the job slot.
     if (c.job) {
       const room = state.silo.rooms[c.job.roomId];

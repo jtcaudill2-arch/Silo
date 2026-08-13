@@ -1688,6 +1688,31 @@ export const BAL = {
     slotWidth: 64,
     maxSpritesPerFrame: 400,
     citizenFloorsRendered: 3,
+    // ---- what people are doing when they are not at a post ----------------
+    //
+    // Before these, every off-duty citizen in the silo was drawn walking, for
+    // ever, because the only question the renderer asked was "do they have a
+    // post". Measured over a 200-day campaign the game used two of its five
+    // animations; idle and sleep were unreachable and 110 baked frames were
+    // never displayed.
+    //
+    // An off-duty citizen alternates between wandering and standing still on a
+    // cycle seeded from their id, so a corridor has people moving through it
+    // and people loitering in it rather than a procession.
+    idleWanderSeconds: 11,
+    idleStandFraction: 0.45,
+    // Two people standing near each other talk. The pairing is by adjacent
+    // lane and costs nothing to compute, but pairing *every* neighbour made a
+    // floor look like a staged crowd scene, so only some pairs strike up.
+    talkWithinPx: 26,
+    talkPairFraction: 0.55,
+    // Night. Off-duty people on a floor with beds sleep through these shifts,
+    // which is what finally makes the sleep frames reachable.
+    nightShifts: [0, 1, 7],
+    // How long a body stays on the cross-section after somebody dies. Deaths
+    // were a log line and nothing else; this is the only place the player sees
+    // one happen. Twelve ticks is twelve seconds at TICK_MS.
+    deathAnimTicks: 12,
     depthGaugeBarHeight: 3,
     cameraLerp: 0.18,
     // ---- flick to scroll ----

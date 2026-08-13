@@ -84,33 +84,77 @@ export function drawAt(ctx, name, dx, dy, scale = 1) {
  * (id, time, state). That keeps it out of the save file and free during
  * catch-up, and it means a citizen's gait is stable across sessions.
  */
-export function citizenFrame(citizen, timeMs, moving) {
+export function citizenFrame(citizen, timeMs, action) {
   const role = citizenRole(citizen);
-  const action = citizenAction(citizen, moving);
-  const n = FRAME_COUNTS[action] || 1;
+  const act = FRAME_COUNTS[action] ? action : 'idle';
+  const n = FRAME_COUNTS[act];
   // Phase by id so two people on the same floor are never in lockstep.
-  const f = Math.floor(timeMs / FRAME_MS[action] + citizen.id * 3) % n;
-  return `citizen_${role}_${action}${f}`;
+  const f = Math.floor(timeMs / FRAME_MS[act] + citizen.id * 3) % n;
+  return `citizen_${role}_${act}${f}`;
+}
+
+/**
+ * A frame of a one-shot animation, held on its last frame.
+ *
+ * Death is the only animation in the game that is not a loop. `citizenFrame`
+ * phases by id and wraps, which is right for a walk and wrong for a collapse —
+ * wrapped, somebody would fall over, stand up and fall over again for as long
+ * as the body was on screen.
+ */
+export function citizenFrameOnce(citizen, action, progress) {
+  const role = citizenRole(citizen);
+  const act = FRAME_COUNTS[action] ? action : 'idle';
+  const n = FRAME_COUNTS[act];
+  const f = Math.min(n - 1, Math.max(0, Math.floor(progress * n)));
+  return `citizen_${role}_${act}${f}`;
 }
 
 /** Frames per action, matching what tools/art/citizens.mjs bakes. */
-const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4 };
-/** How long each frame holds. Sleep breathes slowly; a walk cycle does not. */
-const FRAME_MS = { walk: 130, idle: 520, work: 300, sleep: 1400, injured: 260 };
+const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4, die: 4 };
+/**
+ * How long each frame holds. Sleep breathes slowly; a walk cycle does not.
+ *
+ * A fight is the fastest thing on the screen because it is the only animation
+ * that is meant to look urgent, and a conversation is the slowest of the
+ * standing set because people gesture at about half the rate they walk.
+ */
+const FRAME_MS = {
+  walk: 130, idle: 520, work: 300, sleep: 1400, injured: 260,
+  talk: 380, fight: 110, die: 420,
+};
 
 /**
  * What somebody is doing, in the order that a glance should read it.
  *
- * Injury outranks everything: a person limping is the most important thing
- * about them on screen. Sleep outranks work because a resting shift is a
- * state, not an absence of one — before this the atlas baked sleep frames
- * that nothing ever asked for.
+ * The caller supplies the context because most of it is not on the citizen.
+ * Whether somebody is fighting depends on a raid being at the door, whether
+ * they are talking depends on who is standing next to them, and whether they
+ * are asleep depends on the shift and the floor — none of which a citizen
+ * record knows about itself.
+ *
+ * THREE OF THE FIVE ANIMATIONS THIS FILE COULD NAME WERE NEVER ASKED FOR.
+ * Measured over a 200-day campaign, the only actions that ever came out of
+ * here were `work` and `walk`. `idle` was unreachable by construction: the old
+ * `moving` argument was `!room || status !== 'working'`, so anybody without a
+ * post counted as moving and every off-duty citizen in the silo was drawn
+ * walking, for ever. `sleep` was gated on `status === 'resting'`, which
+ * nothing in src/ ever sets, or `restShifts > 0`, which measured zero across
+ * every citizen at every sample. That is 110 frames of baked art — idle,
+ * sleep and injured across eleven roles — that the game could not display.
+ *
+ * So the contract changed: the renderer decides what somebody is doing and
+ * this function only ranks it. `idle` is now what a stationary person gets,
+ * which is the answer it should always have given.
  */
-export function citizenAction(c, moving) {
+export function citizenAction(c, ctx = {}) {
+  // A fight outranks a limp. It is the only thing that happens to the whole
+  // silo at once, and a wounded defender is still a defender.
+  if (ctx.fighting) return 'fight';
   if (c.health < BAL.render.injuredBelowHealth) return 'injured';
-  if (c.status === 'resting' || c.restShifts > 0) return 'sleep';
-  if (moving) return 'walk';
-  if (c.status === 'working') return 'work';
+  if (ctx.sleeping) return 'sleep';
+  if (onDuty(c) && !ctx.moving) return 'work';
+  if (ctx.talking) return 'talk';
+  if (ctx.moving) return 'walk';
   return 'idle';
 }
 
@@ -128,7 +172,7 @@ export function citizenAction(c, moving) {
  * statuses as somebody being at work, so this is the game's existing
  * definition rather than a new one.
  */
-function onDuty(c) {
+export function onDuty(c) {
   return c.status === 'working' || c.status === 'training';
 }
 
