@@ -53,7 +53,12 @@ export function showReturnReport(report, { onContinue } = {}) {
     root.appendChild(wrap);
     // Land at the newest entry, the way you'd read a logbook you'd missed.
     requestAnimationFrame(() => {
-      body.scrollTop = body.scrollHeight;
+      // Top, not bottom. This used to land at the newest entry "the way you'd
+      // read a logbook you'd missed", which was right when the report was
+      // purely a record and is wrong now that it opens with what finished and
+      // what is waiting: those are the two things a returning player is here
+      // for, and they were being scrolled past on arrival.
+      body.scrollTop = 0;
       continueBtn.focus();
     });
 
@@ -78,13 +83,37 @@ function buildReport(r, body) {
   body.appendChild(stats);
 
   if (r.capped) {
+    // The headline already says the silo held for twelve hours, so this says
+    // the part the headline does not: that the rest of the absence was not
+    // simulated *against* them. Both lines were printed verbatim before, one
+    // under the other.
     body.appendChild(
-      el(
-        'div.report-note',
-        'Your silo held for twelve hours before the log runs out. Nothing beyond that ' +
-          'was recorded, and nothing beyond that counted against you.'
-      )
+      el('div.report-note', 'Nothing past that was simulated, and nothing past that counted against you.')
     );
+  }
+
+  // ---- what finished, and what is waiting ---------------------------------
+  //
+  // These lead, and that ordering is the whole change. The report used to open
+  // on the casualty list, so two days away read as a funeral notice even when
+  // the silo had had a good week — and the things a player actually wants on
+  // coming back (a research node done, a floor opened, a decision that has
+  // been sitting there the whole time) were either buried under the deaths or,
+  // in the case of `unlock`, dropped by the report entirely.
+  if (r.finished?.length) {
+    body.appendChild(el('div.report-section.good', 'Finished while you were out'));
+    for (const f of r.finished) {
+      body.appendChild(el('div.report-line', el('span.report-day.mono', `D${f.day % 12}`), el('span', f.text)));
+    }
+  }
+
+  if (r.waiting?.length) {
+    body.appendChild(el('div.report-section', 'Waiting on you'));
+    for (const w of r.waiting) {
+      body.appendChild(
+        el('div.report-line.waiting', el('span.report-where.mono', w.where), el('span', w.text))
+      );
+    }
   }
 
   // ---- stores ------------------------------------------------------------
@@ -165,7 +194,8 @@ function buildReport(r, body) {
 
   if (
     !r.deaths.length && !r.births.length && !r.expeditions.length &&
-    !r.radio.length && !r.alerts.length && !keys.length
+    !r.radio.length && !r.alerts.length && !keys.length &&
+    !r.finished?.length && !r.waiting?.length
   ) {
     body.appendChild(el('div.report-note', 'The shift log is empty. Nothing happened worth writing down.'));
   }

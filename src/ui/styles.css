@@ -1604,3 +1604,14 @@ html.large-text .policy-desc { font-size: 13px; }
   border-top: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
 }
+
+/* A pending decision reads as a place to go, not a thing that happened. */
+.report-line.waiting { align-items: baseline; }
+.report-where {
+  display: inline-block;
+  min-width: 62px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sodium);
+}

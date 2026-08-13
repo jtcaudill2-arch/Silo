@@ -69,6 +69,7 @@ import { commendationsFor, doctrineMod, whyNot, spent as doctrineSpent } from '.
 import { ammoFactor } from '../src/sim/combat.js';
 import { squadCap } from '../src/sim/military.js';
 import { caretakerDay } from '../src/sim/caretaker.js';
+import { runCatchup } from '../src/core/catchup.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -4528,6 +4529,111 @@ console.log('');
       if (strayed.length) fail(`the caretaker crewed ${strayed.join(', ')}, which is not life support`);
       else ok(`and the caretaker only crews life support, and only with people who were idle`);
     }
+  }
+}
+
+// ---- 56. coming back is not a funeral notice --------------------------------
+//
+// The return report bucketed the log into deaths, births, expeditions, radio
+// and alerts. `unlock` and `good` matched none of those, so a research node
+// finishing, a floor opening or a system arriving while you were away was
+// dropped on the floor and never shown — and the report opened on the
+// casualty list and scrolled itself to the bottom on arrival. Two days away
+// read as a funeral notice even in a week where the silo did well.
+//
+// It also only ever recorded what happened. Nothing told a returning player
+// what was *waiting*, which is the half that gives the first thirty seconds
+// back somewhere to go.
+{
+  const store = newStore(310);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 30; d++) {
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  // An absence long enough to be reported, and a silo with things pending.
+  //
+  // Thirty days in is deliberate: it is early enough that panels are still
+  // opening, so the absence itself unlocks something and `finished` has to be
+  // non-empty. A late fixture cannot tell "the diff works" from "nothing
+  // happened to diff".
+  s.research.active = null;
+  s.doctrine = { points: 40, earned: 40, taken: [], frontier: 0 };
+  s.meta.lastSaveTs = 1;
+  const report = runCatchup(store, game, { now: 1 + BAL.catchup.capMs * 2 });
+
+  const problems = [];
+  if (!report) {
+    problems.push('a two-day absence produced no report at all');
+  } else {
+    if (!Array.isArray(report.finished)) problems.push('the report has no `finished` list');
+    else if (!report.finished.length) {
+      problems.push('sixty days passed and nothing at all was reported as finished — a panel opening ' +
+        'during an absence is the single most "come and look" thing in the game, and it was arriving ' +
+        'as a toast on top of the report instead of in it');
+    }
+    if (!Array.isArray(report.waiting)) problems.push('the report has no `waiting` list');
+    // The two pending things planted above must both be named.
+    const where = (report.waiting || []).map((w) => w.where);
+    if (!where.includes('Research')) problems.push('idle labs were not reported as waiting');
+    if (!where.includes('Doctrine')) problems.push('40 unspent commendations were not reported as waiting');
+    // Every entry says where to go and what about.
+    for (const w of report.waiting || []) {
+      if (!w.where || !w.text) problems.push(`a waiting entry is missing where/text: ${JSON.stringify(w)}`);
+    }
+  }
+
+  // Every log kind the game emits has to land in some bucket.
+  //
+  // The bug was not a wrong number, it was a kind that matched no branch — so
+  // this asserts the property that was violated, rather than relying on the
+  // fixture happening to produce an unlock in its sixty days. It did not, and
+  // an empty `finished` array passed the checks above quite happily.
+  const cat = readSource('../src/core/catchup.js');
+  // The BUCKET table, read as data. Keys are bare identifiers there, which is
+  // the point — a table can be checked for completeness where a chain of
+  // `else if`s could only be read.
+  const table = cat.slice(cat.indexOf('const BUCKET = {'), cat.indexOf('const bins ='));
+  const routed = new Set([...table.matchAll(/(\w+):\s*'(?:deaths|births|expeditions|radio|alerts|finished)'/g)]
+    .map((m) => m[1]));
+  // Every module the day loop can log from, not a hand-picked three — the
+  // first version of this scanned build/research/unlocks, none of which emit
+  // `unlock` or `good`, so deleting the bucket that was the whole point of
+  // this section passed it.
+  const SOURCES = ['build', 'research', 'unlocks', 'dig', 'economy', 'population',
+    'military', 'expedition', 'raid', 'conquest', 'world', 'order', 'diplomacy', 'events'];
+  const emitted = new Set(
+    SOURCES.flatMap((m) => [...readSource(`../src/sim/${m}.js`).matchAll(/kind: '([a-z_]+)'/g)].map((x) => x[1]))
+      .concat([...readSource('../src/core/reducers.js').matchAll(/kind: '([a-z_]+)'/g)].map((x) => x[1]))
+  );
+  // `plain` is the catch-all the log itself uses for ordinary chatter and is
+  // deliberately not surfaced in the report; everything else must land.
+  const dropped = [...emitted].filter((k) => !routed.has(k) && k !== 'plain');
+  if (dropped.length) {
+    problems.push(`the report routes no bucket for log kind${dropped.length > 1 ? 's' : ''} ` +
+      `${dropped.join(', ')} — anything logged that way while the player is away is never shown`);
+  }
+
+  // And the renderer leads with them rather than with the dead.
+  const ui = readSource('../src/ui/returnReport.js');
+  const iFinished = ui.indexOf('Finished while you were out');
+  const iWaiting = ui.indexOf('Waiting on you');
+  const iDeaths = ui.indexOf("r.deaths.length === 1 ? 'One death'");
+  if (iFinished < 0 || iWaiting < 0) problems.push('the report does not render finished/waiting at all');
+  else if (iDeaths >= 0 && (iFinished > iDeaths || iWaiting > iDeaths)) {
+    problems.push('the report still renders the casualty list above what finished and what is waiting');
+  }
+  if (/body\.scrollTop = body\.scrollHeight/.test(ui)) {
+    problems.push('the report still opens scrolled to the bottom, past both new sections');
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else {
+    ok(`coming back leads with what finished and what is waiting (${report.waiting.length} decisions ` +
+      `pending, ${report.finished.length} things done)`);
   }
 }
 

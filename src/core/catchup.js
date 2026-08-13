@@ -21,6 +21,7 @@
 import { BAL, TIME } from '../config/balance.js';
 import { RES_KEYS } from '../sim/economy.js';
 import { fullName } from '../sim/population.js';
+import { unlockedIds, newlyUnlocked } from '../sim/unlocks.js';
 
 /** Absences shorter than this don't warrant a report at all. */
 const MIN_REPORTABLE_MS = 45_000;
@@ -84,6 +85,61 @@ export function runCatchup(store, game, opts = {}) {
   return report;
 }
 
+/**
+ * What is sitting on the player's desk when they get back.
+ *
+ * The report was a record of what happened and nothing else, which makes
+ * coming back a thing you read rather than a thing you act on. This is the
+ * other half: the decisions that were waiting the whole time you were away,
+ * named, so the first thirty seconds back have somewhere to go.
+ *
+ * Everything here is derived from state rather than from the log, because a
+ * pending decision is a fact about now, not an event that happened. Each entry
+ * is one sentence and names the panel that resolves it — a list of vague
+ * nudges is worse than no list.
+ *
+ * Deliberately conservative: only things that are genuinely actionable and
+ * genuinely idle. Nagging somebody about a research slot that is already busy
+ * is how a player learns to skip this section.
+ */
+function pendingDecisions(state) {
+  const out = [];
+  const push = (where, text) => out.push({ where, text });
+
+  if (state.pendingDecon) {
+    const n = state.pendingDecon.members?.length || 0;
+    push('Surface', `${n} ${n === 1 ? 'person is' : 'people are'} at the airlock waiting to be hosed down.`);
+  }
+
+  if (!state.research?.active) {
+    push('Research', 'The labs are idle. Nothing is being researched.');
+  }
+
+  const idleSquads = (state.military?.squadIds || []).filter((id) => {
+    const sq = state.military.squads[id];
+    return sq && !sq.deployed && (sq.members?.length || 0) > 0;
+  }).length;
+  if (idleSquads) {
+    push('Squads', `${idleSquads} ${idleSquads === 1 ? 'squad is' : 'squads are'} crewed and standing in the silo.`);
+  }
+
+  const pts = state.doctrine?.points || 0;
+  if (pts >= BAL.combat.commendCost) {
+    push('Doctrine', `${pts} commendation${pts === 1 ? '' : 's'} unspent.`);
+  }
+
+  if (state.world?.pendingRaid) {
+    push('World', 'Somebody is coming. There is a raid at the door.');
+  }
+
+  const unassigned = Object.values(state.military?.gear || {}).filter((g) => !g.assignedTo).length;
+  if (unassigned >= 3) {
+    push('Armory', `${unassigned} pieces of kit are on the rack and nobody is carrying them.`);
+  }
+
+  return out;
+}
+
 // ------------------------------------------------------------------ tiers ---
 
 function replayFine(store, game, ms) {
@@ -130,6 +186,13 @@ function snapshot(state) {
     births: state.stats.births,
     avgMorale: average(state.citizenIds.map((id) => state.citizens[id]?.morale ?? 0)),
     avgHealth: average(state.citizenIds.map((id) => state.citizens[id]?.health ?? 0)),
+    // What the silo could reach. A panel opening is the single most "come and
+    // look at this" thing that happens in the game, and it was invisible in
+    // the report: unlocks are announced by the shell, which is not running
+    // during catch-up, so they arrived as toasts *over* the report a moment
+    // after it rendered — the one thing worth coming back for, delivered on
+    // top of the thing telling you what you came back to.
+    unlocks: unlockedIds(state),
   };
 }
 
@@ -139,9 +202,37 @@ function buildReport({ state, before, after, entries, elapsedMs, simulatedMs, mo
   const expeditions = [];
   const radio = [];
   const alerts = [];
+  const finished = [];
+
+  // Where each log kind lands.
+  //
+  // This was a chain of `else if`s covering five kinds, and everything else
+  // the game logs fell through it into nothing. Sixteen kinds were being
+  // dropped: `unlock` and `good` (a research node done, a floor opened),
+  // `warn` (a floor straining, a store running short), and thirteen more
+  // including `war_declared`, `collapse`, `refugees`, `extorted` and
+  // `call_to_arms`. A war could be declared on you while you were away and the
+  // report would not mention it.
+  //
+  // A table instead of a chain, because the failure mode was structural — a
+  // kind that matched no branch — and a table is something a test can check
+  // for completeness. wiring.mjs §56 scans every module that logs and fails if
+  // any kind it emits has no home here.
+  const BUCKET = {
+    death: 'deaths', birth: 'births', expedition: 'expeditions',
+    radio: 'radio', diplomacy: 'radio', chatter: 'radio',
+    gift: 'radio', honored: 'radio', trade_agreement: 'radio', refugees: 'radio',
+    unlock: 'finished', good: 'finished',
+    alert: 'alerts', rad: 'alerts', warn: 'alerts', combat: 'alerts', raid: 'alerts',
+    collapse: 'alerts', broken: 'alerts', war: 'alerts', war_declared: 'alerts',
+    threatened: 'alerts', extorted: 'alerts',
+    call_to_arms: 'alerts', call_to_arms_pending: 'alerts',
+  };
+  const bins = { deaths: null, births, expeditions, radio, alerts, finished };
 
   for (const e of entries) {
-    if (e.kind === 'death') {
+    const bin = BUCKET[e.kind];
+    if (bin === 'deaths') {
       const c = e.data?.citizenId != null ? state.citizens[e.data.citizenId] : null;
       deaths.push({
         day: e.day,
@@ -150,10 +241,17 @@ function buildReport({ state, before, after, entries, elapsedMs, simulatedMs, mo
         age: c ? Math.floor(c.age) : null,
         cause: e.data?.cause || 'unknown',
       });
-    } else if (e.kind === 'birth') births.push({ day: e.day, text: e.text });
-    else if (e.kind === 'expedition') expeditions.push({ day: e.day, text: e.text });
-    else if (e.kind === 'radio' || e.kind === 'diplomacy') radio.push({ day: e.day, text: e.text });
-    else if (e.kind === 'alert' || e.kind === 'rad') alerts.push({ day: e.day, text: e.text, kind: e.kind });
+    } else if (bin === 'alerts') {
+      alerts.push({ day: e.day, text: e.text, kind: e.kind });
+    } else if (bin && bins[bin]) {
+      bins[bin].push({ day: e.day, text: e.text });
+    }
+  }
+
+  // Anything that opened while they were away, in the report rather than in a
+  // toast behind it.
+  for (const u of newlyUnlocked(before.unlocks, state)) {
+    finished.push({ day: after.day, text: `${u.label} is open — a new panel on the bar at the bottom.` });
   }
 
   const resourceDelta = {};
@@ -189,6 +287,8 @@ function buildReport({ state, before, after, entries, elapsedMs, simulatedMs, mo
     expeditions,
     radio,
     alerts,
+    finished,
+    waiting: pendingDecisions(state),
     causeTally,
     entries: entries.map((e) => ({ day: e.day, kind: e.kind, text: e.text })),
     headline: headlineFor({ before, after, deaths, births, mode, state }),
