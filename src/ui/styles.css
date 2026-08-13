@@ -29,6 +29,18 @@
   --bone-faint: rgba(217, 210, 196, 0.32);
   --hairline: rgba(217, 210, 196, 0.12);
 
+  /* ---- chrome tones, straight off tools/art/lib.mjs PAL ----
+     The UI draws from the same palette the sprites do, so a sodium button is
+     the same amber as a lit window in the cross-section. These are the entries
+     the art has and the stylesheet did not: the steel range the panel frames
+     and buttons are built from, and `ink`, which is the universal keyline in
+     every sprite in the game and is now also the line around every panel.
+     wiring.mjs §58 asserts this block still matches PAL exactly. */
+  --ink: #121416;
+  --steel-dark: #4a5154;
+  --steel: #6e7679;
+  --steel-lit: #8a9295;
+
   /* ---- type ---- */
   --font-display: 'Saira Condensed', 'Oswald', 'Roboto Condensed',
                   ui-sans-serif, system-ui, 'Segoe UI', sans-serif;

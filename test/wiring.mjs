@@ -73,6 +73,7 @@ import { runCatchup } from '../src/core/catchup.js';
 import { CRISIS_LIST } from '../src/data/events.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
+import { PAL } from '../tools/art/lib.mjs';
 import { citizenRole } from '../src/render/sprites.js';
 import { FLOOR_H, SLOT_W } from '../src/render/canvas.js';
 import { BAL, TIME } from '../src/config/balance.js';
@@ -4696,6 +4697,58 @@ console.log('');
     ok(`the crises keep coming: ${CRISIS_LIST.length} of them from day ${Math.round(days[0])} to ` +
       `${Math.round(last)}, no empty hundred-day window, ${seen.size} fired in one campaign`);
   }
+}
+
+// ---- 58. the interface and the world use one palette ------------------------
+//
+// The sprites are generated against a strict palette in `tools/art/lib.mjs`
+// and every art self-test checks each pixel against it. The stylesheet had its
+// own copy of the same colours, hand-maintained, with nothing anywhere
+// checking that the two still agreed — so a sodium button being the same amber
+// as a lit window in the silo was true by care rather than by construction,
+// and would have stopped being true the first time either side was edited.
+//
+// Two claims: every colour in the stylesheet is a palette colour, and the
+// tokens that name palette entries carry that entry's exact value.
+{
+  const css = readSource('../src/ui/styles.css');
+  const hexOf = (c) => '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('');
+  const allowed = new Set(Object.values(PAL).map(hexOf));
+  const problems = [];
+
+  // (a) No off-palette colour literals anywhere in the file.
+  for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
+    const h = m[0].toLowerCase();
+    const full = h.length === 4 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h.slice(0, 7);
+    if (!allowed.has(full)) problems.push(`${m[0]} is not in the art palette`);
+  }
+  // rgb()/rgba() triples too, except pure black — scrims and drop shadows are
+  // an absence of light rather than a colour, and the art has no entry for
+  // "transparent dark".
+  for (const m of css.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
+    const rgb = [+m[1], +m[2], +m[3]];
+    if (rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0) continue;
+    if (!allowed.has(hexOf(rgb))) problems.push(`${m[0]}) is not in the art palette`);
+  }
+
+  // (b) The named tokens still carry the palette's own values.
+  const TOKENS = {
+    '--concrete-deeper': 'deeper', '--concrete-deep': 'deep', '--concrete': 'concrete',
+    '--concrete-lit': 'lit', '--sodium': 'sodium', '--verdigris': 'verdigris',
+    '--rust': 'rust', '--toxin': 'toxin', '--bone': 'bone',
+    '--ink': 'ink', '--steel-dark': 'steelDark', '--steel': 'steel', '--steel-lit': 'steelLit',
+  };
+  for (const [token, key] of Object.entries(TOKENS)) {
+    const m = css.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`));
+    if (!m) { problems.push(`${token} is not defined in the stylesheet`); continue; }
+    const want = hexOf(PAL[key]);
+    if (m[1].toLowerCase() !== want) {
+      problems.push(`${token} is ${m[1]} but PAL.${key} is ${want} — the UI and the art have drifted`);
+    }
+  }
+
+  if (problems.length) fail(problems.slice(0, 6).join('; ') + (problems.length > 6 ? ` (+${problems.length - 6} more)` : ''));
+  else ok(`the interface draws from the art's own palette: ${Object.keys(TOKENS).length} tokens matched to PAL, no off-palette colour in the stylesheet`);
 }
 
 function readSource(rel) {
