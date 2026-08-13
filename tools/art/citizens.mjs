@@ -85,7 +85,7 @@ export const PORTRAIT = 32;
  * gives a full stride two distinguishable poses per half-step (contact, swing
  * low, swing high) without the mirrored halves colliding into duplicates.
  */
-export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4, die: 4 };
+export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4 };
 
 /**
  * What the game actually asks the atlas for, and what this module must be able
@@ -874,33 +874,7 @@ const FIGHT = [
   { nl: 2, fl: -3, nLift: 0, fLift: 0, bob: 1, arm: 1, drop: -1, lean: 1, far: -3, tool: true },
 ];
 
-/**
- * Going down, and then down.
- *
- * Four frames that do not loop in the fiction even though the frame counter
- * loops in the code — the renderer plays this once against a death mark that
- * expires, so frame 3 is where somebody stays. `bob` is doing the work: it
- * drops the head and shoulders and squashes the torso to match, which is a
- * knee bend, so buckling is what a rising bob looks like.
- *
- * The legs fold rather than stride. `nl` and `fl` collapse toward each other
- * across the four frames, so the stance narrows as the figure sinks instead
- * of the feet staying planted under a shrinking body — which read as a squat.
- *
- * Frame 3 is `prone`, which hands the drawing to `drawSleeper` at its
- * non-breathing frame. That is the honest end of this animation: the same
- * body, on the floor, not breathing. Building a separate corpse pose would
- * have been a second silhouette for the one moment the player most needs to
- * recognise the person it happened to.
- */
-const DIE = [
-  { nl: 2, fl: -2, nLift: 0, fLift: 0, bob: 1, arm: 2, drop: -1, lean: 1, far: 2 },
-  { nl: 1, fl: -1, nLift: 0, fLift: 0, bob: 2, arm: 1, drop: 1, lean: 2, far: 1, clutch: true },
-  { nl: 1, fl: 0, nLift: 0, fLift: 0, bob: 3, arm: 0, drop: 1, lean: 2, far: 0, clutch: true },
-  { prone: true },
-];
-
-const POSES = { walk: WALK, idle: IDLE, work: WORK, injured: INJURED, talk: TALK, fight: FIGHT, die: DIE };
+const POSES = { walk: WALK, idle: IDLE, work: WORK, injured: INJURED, talk: TALK, fight: FIGHT };
 
 /* ----------------------------------------------------------------- head -- */
 
@@ -1225,7 +1199,20 @@ function drawLeg(g, c, { off = 0, lift = 0, near = true }) {
     cl.rect(fx, top + 1, lw, shin, body);
     cl.vline(fx + lw - 1, top + 1, shin, seam);
   }
-  cl.rect(fx, bootY, lw + 1, 1, bootLit);
+  // An ankle and a sole, not a block.
+  //
+  // Both rows used to be `lw + 1` wide, so each boot was a 3x2 slab and the
+  // two of them took six of the sprite's twelve columns in near-black. On a
+  // figure whose leg is only four rows tall that made the foot half the leg,
+  // and the global keyline pass then outlined the slab, which added a column
+  // of ink on each side of it. The read was a person standing in two bricks.
+  //
+  // Narrowing the upper row to the width of the leg leaves the toe on the
+  // sole where a toe belongs, and turns the silhouette from a rectangle into
+  // an L. Same two rows, so the far boot keeps the lit row it needs to not be
+  // a smudge, and the stride is unaffected — the width that reads as a foot
+  // in profile is the sole, and that has not changed.
+  cl.rect(fx, bootY, lw, 1, bootLit);
   cl.rect(fx, bootY + 1, lw + 1, 1, boot);
   // Never keyline downward. Nothing is ever under a leg except the floor,
   // which the global pass outlines, or the OTHER leg — and on the frame where
@@ -1501,7 +1488,7 @@ function strideOf(c, off) {
  * The folded leg is painted in the far side's tones, which is what it is. Four
  * rows of body cannot afford a single line drawn inside them, so none is.
  */
-function drawSleeper(g, c, f, { dead = false } = {}) {
+function drawSleeper(g, c, f) {
   // A child sleeps like a child: shorter along the floor, same size head.
   // drawSleeper used to hard-code adult geometry and never call drawRoleCue,
   // so every role collapsed into two silhouettes the moment a citizen lay
@@ -1555,27 +1542,6 @@ function drawSleeper(g, c, f, { dead = false } = {}) {
   // for its outline. These used to run to col 11 itself, which put unkeylined
   // solids flush against the frame and bled them into the atlas gutter.
   const kneeX = bodyR - 1;
-  if (dead) {
-    // Straight, not drawn up. This is the only thing separating a body from a
-    // sleeper, and it has to be, because everything else about them is the
-    // same person lying in the same place — the death animation ends on this
-    // renderer precisely so that it is recognisably them.
-    //
-    // A sleeper is curled: a 3x3 fold standing three rows proud of the floor.
-    // Straightening it into two flat rows running out to col 10 changes the
-    // silhouette at the one end of the body that is not torso, which is the
-    // difference between somebody resting and somebody who has stopped.
-    // Col 11 is left for the outline, as the fold's own note requires.
-    const legR = Math.min(kneeX + 2, W - 2);
-    g.stamp(cells()
-      .rect(kneeX - 1, 13, legR - kneeX + 2, 1, c.suitBack)
-      .rect(kneeX - 1, 14, legR - kneeX + 2, 1, c.suitDark)
-      .list, () => false);
-    g.stamp(cells()
-      .px(legR, 13, c.bootBackLit)
-      .px(legR, 14, c.bootBack)
-      .list, () => false);
-  } else {
     g.stamp(cells()
       .rect(kneeX, 12, 3, 3, c.suitBack)
       .hline(kneeX, 12, 3, c.suitDark)
@@ -1584,7 +1550,7 @@ function drawSleeper(g, c, f, { dead = false } = {}) {
       .rect(kneeX + 1, 13, 2, 1, c.bootBackLit)
       .rect(kneeX + 1, 14, 2, 1, c.bootBack)
       .list, () => false);
-  }
+
 
   // ---- the arm laid along the chest --------------------------------------
   //
@@ -1725,14 +1691,8 @@ export function drawCitizen(p, {
     // this person is old. drawCitizen used to ignore it entirely.
     const c = config(role, seed, { age });
     const g = grid(W, H);
-    const pose = act === 'sleep' ? null : POSES[act][f];
-    // `prone` hands the frame to the sleeper: the same body, on the floor.
-    // The death animation ends there rather than in a corpse pose of its own,
-    // because a second silhouette at the one moment the player most needs to
-    // recognise somebody is exactly the wrong economy.
     if (act === 'sleep') drawSleeper(g, c, f);
-    else if (pose.prone) drawSleeper(g, c, 0, { dead: true });
-    else drawBody(g, c, pose, act);
+    else drawBody(g, c, POSES[act][f], act);
     g.keyline(PAL.ink);
     g.blit(p, isFlipped(facing));
   });
@@ -2219,7 +2179,7 @@ async function selfTest() {
   // is one somebody asks for. Same correction as the ROLES check below: a
   // count is a number that must be edited whenever the set grows and says
   // nothing about whether the set is right.
-  const ASKED_ACTIONS = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight', 'die'];
+  const ASKED_ACTIONS = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight'];
   for (const a of ASKED_ACTIONS) {
     check(!!ACTIONS[a], `src/render/sprites.js can ask for "${a}" and ACTIONS does not list it`);
     check(a === 'sleep' || !!POSES[a], `"${a}" has no pose table, so every frame of it would be a walk`);
@@ -2351,14 +2311,9 @@ async function selfTest() {
         // a lifted one sits on 12 and 13. So two boots can only ever share a
         // row on 13 or 14, and looking higher would start measuring thighs and
         // the hands that reach past them, which is a different question.
-        // Standing figures only. The guard used to read `action !== 'sleep'`,
-        // which named one action rather than the property it cares about —
-        // and the moment a second action put a body on the floor, the death
-        // pose, it started measuring a lying torso as though it were a pair
-        // of fused boots. A figure with no boot band cannot fail a boot-band
-        // check.
-        const prone = action === 'sleep' || !!POSES[action]?.[f]?.prone;
-        if (!prone) {
+        // Standing figures only: a figure with no boot band cannot fail a
+        // boot-band check.
+        if (action !== 'sleep') {
           for (let y = H - 3; y <= H - 2; y++) {
             let run = 0;
             let worst = 0;

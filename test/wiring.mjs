@@ -61,7 +61,7 @@ import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
-import { drawCitizens, citizensInView } from '../src/render/citizens.js';
+import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
 import { FLOOR_H, SLOT_W } from '../src/render/canvas.js';
@@ -2304,7 +2304,7 @@ console.log('');
   store.dispatch({ type: 'CITIZEN_DIE', id: s.citizenIds[3], cause: 'a raid', text: 'a test death' });
   sweep();
 
-  const baked = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight', 'die'];
+  const baked = ['walk', 'idle', 'work', 'sleep', 'injured', 'talk', 'fight'];
   const unreachable = baked.filter((a) => !seen.has(a));
   if (unreachable.length) {
     fail(
@@ -2316,13 +2316,17 @@ console.log('');
   }
 }
 
-// ---- 35. a death is something you can watch happen -------------------------
+// ---- 35. a death leaves a mark, and the mark waits to be acknowledged ------
 //
 // Deaths were a log line. By the time anything could draw the person they were
 // off `citizenIds` and their job — the only record of where they had been —
-// had been nulled by the same reducer. CITIZEN_DIE now records the tick and
-// the floor, which is enough for the cross-section to show a body where one
-// fell, and enough for it to take that body away again.
+// had been nulled by the same reducer, four lines down. CITIZEN_DIE now
+// records the tick and the floor before it clears the post.
+//
+// A collapse animation was built first and taken out again: it played for a
+// few seconds and then the moment was gone whether or not anybody was looking
+// at that floor. A skull waits. It is the only thing in the game that asks the
+// player to acknowledge it, and until they do it stays where it happened.
 {
   const store = newStore(909);
   const s = store.state;
@@ -2330,43 +2334,51 @@ console.log('');
   store.dispatchAll(autoAssign(s));
   game.runDays(3);
 
-  const cam = {
-    camY: -20, time: 0, drawn: 0, spriteBudget: 400,
-    viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
-  };
-  const bodies = () => citizensInView(s, cam).filter((p) => p.action === 'die');
-
-  if (bodies().length) fail('a silo where nobody has died was already showing a body');
+  if (deathMarks(s).length) fail('a silo where nobody has died was already marked');
 
   const victim = s.citizens[s.citizenIds.find((i) => s.citizens[i].job)];
+  const wasFloor = s.silo.rooms[victim.job.roomId].floor;
   store.dispatch({ type: 'CITIZEN_DIE', id: victim.id, cause: 'a test', text: 'a test death' });
 
-  const justDied = bodies();
-  if (!justDied.length) {
+  const marks = deathMarks(s);
+  if (!marks.length) {
     fail('somebody died and the cross-section showed nothing — a death is still only a log line');
-  } else if (justDied[0].c.id !== victim.id) {
-    fail('the body drawn was not the person who died');
+  } else if (marks[0].c.id !== victim.id) {
+    fail('the mark drawn was not the person who died');
+  } else if (marks[0].floor !== wasFloor) {
+    fail(`the mark is on floor ${marks[0].floor}; they died on ${wasFloor}`);
   } else {
-    ok(`a death puts a body on the floor where it fell (floor ${Math.floor(justDied[0].y / FLOOR_H) + 1})`);
+    ok(`a death leaves a mark where it happened (floor ${wasFloor})`);
   }
 
-  // It holds on the last frame rather than looping. A collapse that wrapped
-  // would have somebody fall over, stand up, and fall over again.
-  const progress = [];
-  for (let k = 0; k < BAL.render.deathAnimTicks; k++) {
-    s.clock.tick = victim.deathTick + k;
-    const b = bodies()[0];
-    if (b) progress.push(b.once);
-  }
-  const rising = progress.every((v, i) => i === 0 || v >= progress[i - 1]);
-  if (!rising) fail(`the death animation ran backwards: ${progress.map((v) => v.toFixed(2)).join(' ')}`);
-  else if (progress[progress.length - 1] !== 1) fail('the death animation never reached its last frame');
-  else ok(`and it plays once and holds: ${progress[0].toFixed(2)} to ${progress[progress.length - 1].toFixed(2)}`);
+  // It does not time out. This is the whole difference from the animation it
+  // replaced: a player who was looking at another floor still sees it.
+  s.clock.tick += 10000;
+  if (!deathMarks(s).length) fail('the mark expired on its own — a death the player never saw went unmarked');
+  else ok('and it does not expire while the player has not seen it');
 
-  // And the body is cleared away on its own.
-  s.clock.tick = victim.deathTick + BAL.render.deathAnimTicks;
-  if (bodies().length) fail('the body was still on the floor after deathAnimTicks — nothing clears it');
-  else ok('and the body is gone when its time is up, with nothing to clean up after it');
+  // A tap clears it, and clears the right one.
+  const other = s.citizens[s.citizenIds.find((i) => s.citizens[i].job)];
+  store.dispatch({ type: 'CITIZEN_DIE', id: other.id, cause: 'a second test', text: 'another' });
+  if (deathMarks(s).length !== 2) fail(`two deaths left ${deathMarks(s).length} marks`);
+
+  const target = deathMarks(s)[0];
+  const hit = deathMarkAt(s, target.x, target.y - 8);
+  if (!hit) {
+    fail('tapping a mark dead centre found nothing — it cannot be dismissed');
+  } else {
+    store.dispatch({ type: 'DEATH_ACKNOWLEDGE', id: hit.c.id });
+    const left = deathMarks(s);
+    if (left.some((m) => m.c.id === hit.c.id)) fail('the acknowledged mark is still on the cross-section');
+    else if (left.length !== 1) fail(`acknowledging one mark left ${left.length}, not 1 — it cleared the wrong ones`);
+    else ok('a tap clears the mark it landed on, and only that one');
+  }
+
+  // And a tap nowhere near one does nothing, or every tap on the silo would
+  // silently dismiss a death somewhere off screen.
+  const far = deathMarkAt(s, target.x + 400, target.y + 400);
+  if (far) fail('a tap 400 units away still hit a death mark');
+  else ok('and a tap away from a mark leaves it alone');
 }
 
 // ---- 36. children are drawn as children ------------------------------------

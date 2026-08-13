@@ -899,6 +899,20 @@ const expeditionReducers = {
     state.pendingDecon = null;
   },
 
+  /**
+   * The player has seen where somebody died, so the mark comes off the
+   * cross-section.
+   *
+   * Recorded on the citizen rather than in a list of dismissed ids, because
+   * the citizen record is already the thing that outlives them and already
+   * carries `deathTick` and `deathFloor`. Nothing has to prune it and nothing
+   * can leak.
+   */
+  DEATH_ACKNOWLEDGE(state, a) {
+    const c = state.citizens[a.id];
+    if (c && c.status === 'dead') c.deathSeen = true;
+  },
+
   MAP_REVEAL(state, a) {
     state.map.discovered = [...new Set([...(state.map.discovered || []), a.band])];
   },

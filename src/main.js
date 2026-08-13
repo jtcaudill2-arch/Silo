@@ -25,6 +25,8 @@ import { startTutorial } from './ui/tutorial.js';
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
 import { loadAtlas } from './render/sprites.js';
+import { deathMarkAt } from './render/citizens.js';
+import { fullName } from './sim/population.js';
 import { loadArtwork, primeRoomSkills } from './ui/artwork.js';
 import * as audio from './audio/audio.js';
 
@@ -159,6 +161,15 @@ async function main() {
   shell.renderChrome();
 
   renderer.onTap = (hit) => {
+    // A death mark first. It is drawn over everything and it is the only thing
+    // on the cross-section that asks to be acknowledged, so it takes the tap
+    // ahead of the room it happens to be standing in.
+    const mark = deathMarkAt(store.state, hit.worldX, hit.worldY);
+    if (mark) {
+      store.dispatch({ type: 'DEATH_ACKNOWLEDGE', id: mark.c.id });
+      toast(`${fullName(mark.c)} — ${mark.c.causeOfDeath}.`);
+      return;
+    }
     if (hit.roomId) openRoom(store, hit.roomId, shell);
     else store.dispatch({ type: 'UI_SET', ui: { cameraFloor: hit.floor } });
   };

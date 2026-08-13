@@ -2163,7 +2163,56 @@ function pOrecart(p) {
   return f.blit(p), p;
 }
 
+/**
+ * A skull and crossbones, for where somebody died.
+ *
+ * The one marker in the game that is not a machine, and it has to read at 1:1
+ * against a busy room interior — so it is built for silhouette rather than
+ * detail: a wide cranium, a narrow jaw, two deep sockets, and the bones
+ * crossing behind at a diagonal that nothing else on screen uses. Bone against
+ * the greys is the highest-contrast pairing this palette has, which is the
+ * point; a death marker that has to be looked for is not a marker.
+ *
+ * Sockets and nasal cavity are ink rather than a dark tone. At this size a
+ * shaded socket fills in against the skull's own shadow and the face reads as
+ * a blank oval, which is a stone, not a skull.
+ */
+function pSkull(p) {
+  const f = form(16, 16);
+
+  // Crossbones first, so the skull sits over them.
+  for (let i = 0; i < 9; i++) {
+    f.px(4 + i, 5 + i, BONE_LO);
+    f.px(4 + i, 13 - i, BONE_LO);
+  }
+  // Knuckle ends, which is what makes them bones and not sticks.
+  for (const [bx, by] of [[3, 4], [3, 12], [12, 13], [12, 5]]) {
+    f.rect(bx, by, 2, 2, BONE_LO);
+  }
+
+  // Cranium: six wide at the brow, tapering to a four-wide jaw.
+  f.rect(5, 4, 6, 5, BONE);
+  f.hline(6, 3, 4, BONE);
+  f.rect(6, 9, 4, 2, BONE);
+  // The lit crown, top-left, matching every other sprite in this file.
+  f.hline(6, 3, 3, tone('bone', 0.24));
+  f.px(5, 4, tone('bone', 0.24));
+
+  f.keyline();
+
+  // The face, after the keyline so the sockets stay open.
+  f.rect(6, 5, 2, 2, INK);
+  f.rect(9, 5, 2, 2, INK);
+  f.px(8, 7, INK);
+  // Teeth: two gaps in the jaw, which is all there is room for.
+  f.px(7, 10, INK);
+  f.px(9, 10, INK);
+
+  return f.blit(p), p;
+}
+
 export const PROPS = {
+  skull: pSkull,
   crate: pCrate,
   barrel: pBarrel,
   locker: pLocker,

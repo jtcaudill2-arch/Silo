@@ -1709,10 +1709,10 @@ export const BAL = {
     // Night. Off-duty people on a floor with beds sleep through these shifts,
     // which is what finally makes the sleep frames reachable.
     nightShifts: [0, 1, 7],
-    // How long a body stays on the cross-section after somebody dies. Deaths
-    // were a log line and nothing else; this is the only place the player sees
-    // one happen. Twelve ticks is twelve seconds at TICK_MS.
-    deathAnimTicks: 12,
+    // How close a tap has to land to clear a death mark, in world units. A
+    // skull is 16 world units and test/mobile.mjs holds every control to 30
+    // screen px, so the box is deliberately larger than the sprite.
+    deathMarkTapRadius: 14,
     depthGaugeBarHeight: 3,
     cameraLerp: 0.18,
     // ---- flick to scroll ----

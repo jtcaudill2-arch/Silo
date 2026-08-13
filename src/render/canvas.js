@@ -270,7 +270,10 @@ export class SiloRenderer {
     if (floorN < 1 || floorN > BAL.silo.totalFloors) return null;
     const slot = Math.floor(worldX / SLOT_W);
     const floor = this.state.silo.floors[floorN - 1];
-    return { floor: floorN, slot, roomId: floor ? floor.slots[slot] : null };
+    // World coords come back too: a room is not the only thing on the
+    // cross-section that can be tapped, and callers that hit-test something
+    // finer than a bay need the position rather than the grid cell.
+    return { floor: floorN, slot, roomId: floor ? floor.slots[slot] : null, worldX, worldY };
   }
 
   // ----------------------------------------------------------- pointer ---

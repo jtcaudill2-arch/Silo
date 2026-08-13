@@ -159,13 +159,62 @@ export function citizensInView(state, cam) {
         sleeping,
         moving: !still && !reduced,
       });
-      out.push({ c, x, y, action, once: null });
+      out.push({ c, x, y, action });
     }
   }
 
-  // The dead, for as long as a body stays where it fell.
-  out.push(...fallen(state, from, to));
   return out;
+}
+
+/**
+ * A skull where each unclaimed death happened.
+ *
+ * Not an animation. A collapse plays for a few seconds and then the moment is
+ * gone whether or not anybody was looking at that floor — and a death in this
+ * game is a named person with a cause written into the log, which deserves a
+ * mark that waits. These stay until the player taps one, which is also the
+ * only acknowledgement the game asks for anywhere.
+ *
+ * Read from `state.citizens`, which keeps the record after death — only the
+ * roster is filtered — so nothing here writes to state and nothing has to
+ * clean up after it.
+ */
+export function deathMarks(state, from = 1, to = BAL.silo.totalFloors) {
+  const out = [];
+  for (const c of Object.values(state.citizens)) {
+    if (c.status !== 'dead' || c.deathTick == null || c.deathSeen) continue;
+    const floorN = c.deathFloor ?? idleFloor(state, c);
+    if (floorN < from || floorN > to) continue;
+    out.push({
+      c,
+      x: citizenX(c, null, 0, true, c.id % 4, 4, builtExtent(state, floorN)),
+      y: (floorN - 1) * FLOOR_H + FLOOR_H - 6,
+      floor: floorN,
+    });
+  }
+  return out;
+}
+
+/**
+ * The mark under a tap, or null. Screen-space is the caller's problem; this
+ * takes world units, which is what `hitTest` already computes.
+ *
+ * The box is deliberately wider than the sprite. A 16px marker on a phone is
+ * under four millimetres, and test/mobile.mjs holds every control to 30px for
+ * exactly that reason.
+ */
+export function deathMarkAt(state, worldX, worldY) {
+  const R = BAL.render.deathMarkTapRadius;
+  let best = null;
+  let bestD = Infinity;
+  for (const m of deathMarks(state)) {
+    const dx = Math.abs(worldX - m.x);
+    const dy = Math.abs(worldY - (m.y - 8));
+    if (dx > R || dy > R) continue;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
 }
 
 /**
@@ -177,50 +226,31 @@ export function citizensInView(state, cam) {
 export function drawCitizens(ctx, state, cam) {
   const people = citizensInView(state, cam);
   for (const p of people) {
-    const frame = p.once == null
-      ? sprites.citizenFrame(p.c, cam.time, p.action)
-      : sprites.citizenFrameOnce(p.c, p.action, p.once);
+    const frame = sprites.citizenFrame(p.c, cam.time, p.action);
     if (!sprites.drawAt(ctx, frame, Math.round(p.x) - 6, p.y - 15, 1)) {
       drawOne(ctx, p.c, p.x, p.y);
     }
   }
-  cam.drawn += people.length;
+
+  // The dead, over everybody, because a mark that a living person can stand in
+  // front of is a mark the player cannot tap.
+  const range = cam.visibleFloorRange();
+  const marks = deathMarks(state, range.from, range.to);
+  for (const m of marks) {
+    if (!sprites.drawAt(ctx, 'prop_skull', Math.round(m.x) - 8, m.y - 16, 1)) {
+      drawSkullFallback(ctx, m.x, m.y);
+    }
+  }
+  cam.drawn += people.length + marks.length;
 }
 
-/**
- * People who have died recently enough to still be on the floor.
- *
- * A death was a log line and nothing else — by the time anything could draw
- * the person they were off `citizenIds` and their job had been nulled. So
- * CITIZEN_DIE now records the tick and the floor, and this reads them back.
- *
- * They are drawn from `state.citizens`, which keeps the record after death;
- * only the roster is filtered. Nothing here writes to state, and the body
- * disappears on its own when `deathAnimTicks` runs out rather than needing
- * anything to clean up after it.
- */
-function fallen(state, from, to) {
-  const out = [];
-  const now = state.clock.tick;
-  const span = BAL.render.deathAnimTicks;
-  for (const c of Object.values(state.citizens)) {
-    if (c.status !== 'dead' || c.deathTick == null) continue;
-    const age = now - c.deathTick;
-    if (age < 0 || age >= span) continue;
-    const floorN = c.deathFloor ?? idleFloor(state, c);
-    if (floorN < from || floorN > to) continue;
-    const room = c.deathFloor != null ? null : null;
-    out.push({
-      c,
-      x: citizenX(c, room, 0, true, c.id % 4, 4, builtExtent(state, floorN)),
-      y: (floorN - 1) * FLOOR_H + FLOOR_H - 6,
-      action: 'die',
-      // Held on the last frame once the collapse is over, so the body lies
-      // still for the rest of its time on screen instead of looping.
-      once: Math.min(1, age / Math.max(1, span * 0.5)),
-    });
-  }
-  return out;
+/** If the atlas never loaded, a death is still not allowed to be invisible. */
+function drawSkullFallback(ctx, x, y) {
+  ctx.fillStyle = PALETTE.bone;
+  ctx.fillRect(Math.round(x) - 3, y - 12, 6, 5);
+  ctx.fillStyle = PALETTE.deep;
+  ctx.fillRect(Math.round(x) - 2, y - 11, 2, 2);
+  ctx.fillRect(Math.round(x), y - 11, 2, 2);
 }
 
 /** Floors with somewhere to sleep, so the night shift means something. */
