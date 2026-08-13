@@ -530,6 +530,28 @@ const citizenReducers = {
     pushLog(state, { kind: 'unlock', text: `Doctrine adopted: ${node.name}. ${node.desc}` });
   },
 
+  /**
+   * Commend a soldier: spend commendations to make one person better at the
+   * job they keep coming home from.
+   *
+   * Guarded the same way `DOCTRINE_TAKE` is, and for the same reason — the
+   * panel greys out what cannot be afforded, and a reducer that takes the UI's
+   * word for it is one double-tap from a silo with negative commendations.
+   */
+  DOCTRINE_COMMEND(state, a) {
+    const c = state.citizens[a.id];
+    if (!state.doctrine || !c || c.status === 'dead') return;
+    if (c.squadId == null) return;
+    const cost = BAL.combat.commendCost;
+    if (state.doctrine.points < cost) return;
+    const cur = c.skills.combat || 0;
+    if (cur >= BAL.citizens.skillMax) return;
+    state.doctrine.points -= cost;
+    c.skills = { ...c.skills, combat: Math.min(BAL.citizens.skillMax, cur + BAL.combat.commendSkill) };
+    c.history.push({ day: state.clock.day, text: 'Commended for the run.' });
+    pushLog(state, { kind: 'plain', text: `${fullName(c)} was commended. Combat ${Math.round(c.skills.combat)}.` });
+  },
+
   CITIZEN_TRAIT(state, a) {
     const c = state.citizens[a.id];
     if (!c) return;

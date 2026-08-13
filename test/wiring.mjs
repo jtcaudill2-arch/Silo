@@ -4109,6 +4109,123 @@ console.log('');
   }
 }
 
+// ---- 51. the player can issue gear ------------------------------------------
+//
+// `equipBest` was the only thing in the entire game that dispatched
+// `GEAR_ASSIGN`. Every loadout in every campaign was therefore decided by one
+// sort order, with no way to override it, and the only trace of the result
+// anywhere on screen was three tier digits on a squad card — "343". Eighteen
+// items, eight designed stats, six of them looted off ground the player had to
+// fight across, and the answer to "who is carrying the Rail-Carbine" was
+// nobody knows and you may not choose.
+//
+// A source check, because the failure was structural rather than arithmetic:
+// nothing about the reducer was wrong, there was simply no second caller.
+{
+  const panel = readSource('../src/ui/panels/military.js');
+  const sim = readSource('../src/sim/military.js');
+  const problems = [];
+  if (!panel.includes('GEAR_ASSIGN')) {
+    problems.push('no UI dispatches GEAR_ASSIGN, so the only loadout in the game is the one equipBest picked');
+  }
+  if (!panel.includes('openLoadout')) problems.push('there is no loadout screen');
+  // And the rack list must show the numbers, or it is the Armory problem again
+  // one screen along: a list of names with no way to tell them apart.
+  if (!panel.includes('statChips')) problems.push('the picker does not show the stats it is choosing between');
+  if (!/equipBest/.test(sim)) problems.push('equipBest went away entirely');
+
+  if (problems.length) {
+    fail(problems.join('; '));
+  } else {
+    ok('the player can open a soldier, see every piece in the rack with its numbers, and issue one');
+  }
+
+  // Behaviourally: issuing a specific piece takes it off whoever had it and
+  // sticks, rather than being undone by the next auto-equip pass.
+  const store = newStore(64);
+  const s = store.state;
+  new Game(store).runDays(2);
+  store.dispatchAll(autoAssign(s));
+  const [a, b] = s.citizenIds.slice(0, 2).map((id) => s.citizens[id]);
+  for (const c of [a, b]) c.gear = { weapon: null, armor: null, suit: null };
+  s.military.gear.rare = { id: 'rare', item: 'rail_carbine', kind: 'weapon', durability: 100, integrity: 100, assignedTo: null, loot: true };
+
+  store.dispatch({ type: 'GEAR_ASSIGN', gearId: 'rare', citizenId: a.id, slot: 'weapon' });
+  if (a.gear.weapon !== 'rare') {
+    fail('issuing a weapon to a soldier did not give it to them');
+  } else {
+    // Now hand the same piece to somebody else, which is the whole point of a
+    // rack: one Rail-Carbine, eight soldiers, and the player decides.
+    store.dispatch({ type: 'GEAR_ASSIGN', gearId: 'rare', citizenId: b.id, slot: 'weapon' });
+    if (b.gear.weapon !== 'rare') fail('re-issuing a weapon did not move it');
+    else if (a.gear.weapon === 'rare') fail('the same Rail-Carbine is now carried by two people');
+    else ok('and re-issuing a piece moves it, rather than cloning it');
+  }
+}
+
+// ---- 52. the currency never stops meaning something -------------------------
+//
+// The tree has seven slots at a fixed total of 142, so a silo that plays well
+// runs out of anything to buy with a third of the campaign left — measured,
+// the best seeds earn 285 and can spend 142, and the Scar, which pays four a
+// run, opens *after* most seeds have already filled the tree. The game's
+// richest ground was paying in a currency that had stopped meaning anything,
+// for exactly the behaviour the system exists to teach.
+//
+// Commending is the sink, and it answers a second thing: nothing else in the
+// game makes anyone better at fighting, so a militia's mean combat skill falls
+// across a campaign as recruits replace veterans.
+{
+  const store = newStore(88);
+  const s = store.state;
+  new Game(store).runDays(2);
+  store.dispatchAll(autoAssign(s));
+  const roster = s.citizenIds.slice(0, 4);
+  s.military.squads[1] = { id: 1, name: 'A', members: roster, leaderId: roster[0], deployed: false, assignment: 'garrison' };
+  s.military.squadIds = [1];
+  for (const id of roster) { s.citizens[id].squadId = 1; s.citizens[id].status = 'training'; }
+  const soldier = s.citizens[roster[0]];
+  soldier.skills.combat = 20;
+  const civilian = s.citizens[s.citizenIds.find((id) => !roster.includes(id))];
+  civilian.skills.combat = 20;
+
+  s.doctrine = { points: 100, earned: 100, taken: [], frontier: 0 };
+  const cost = BAL.combat.commendCost;
+
+  store.dispatch({ type: 'DOCTRINE_COMMEND', id: soldier.id });
+  const gained = soldier.skills.combat - 20;
+  const paid = 100 - s.doctrine.points;
+
+  const problems = [];
+  if (gained !== BAL.combat.commendSkill) problems.push(`commending gave ${gained} combat, not ${BAL.combat.commendSkill}`);
+  if (paid !== cost) problems.push(`commending charged ${paid}, not ${cost}`);
+
+  // Only soldiers. Commending is for the runs somebody came back from.
+  store.dispatch({ type: 'DOCTRINE_COMMEND', id: civilian.id });
+  if (civilian.skills.combat !== 20) problems.push('a citizen who is not in a squad was commended');
+
+  // It cannot be bought without the points, and cannot run the ledger negative.
+  s.doctrine.points = cost - 1;
+  const before = soldier.skills.combat;
+  store.dispatch({ type: 'DOCTRINE_COMMEND', id: soldier.id });
+  if (soldier.skills.combat !== before) problems.push('a soldier was commended without the points for it');
+  if (s.doctrine.points < 0) problems.push('commendations went negative');
+
+  // And it stops at the skill ceiling rather than running past it.
+  s.doctrine.points = 1000;
+  for (let i = 0; i < 200; i++) store.dispatch({ type: 'DOCTRINE_COMMEND', id: soldier.id });
+  if (soldier.skills.combat > BAL.citizens.skillMax) {
+    problems.push(`commending ran a soldier to ${soldier.skills.combat}, past the ${BAL.citizens.skillMax} ceiling`);
+  }
+  if (s.doctrine.points <= 0) problems.push('commending kept charging after the ceiling');
+
+  if (problems.length) fail(problems.join('; '));
+  else {
+    ok(`commendations always have somewhere to go: ${cost} buys +${BAL.combat.commendSkill} combat on a ` +
+      `soldier, stops at ${BAL.citizens.skillMax}, and refuses a civilian or an empty ledger`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }

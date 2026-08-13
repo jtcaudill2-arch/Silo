@@ -130,7 +130,7 @@ function renderSquads(state, body, shell) {
             p.className = 'portrait-sm';
             return el(
               'button.squad-member',
-              { type: 'button', onclick: () => openCitizen(shell.store, c.id, {}) },
+              { type: 'button', onclick: () => openLoadout(shell, c.id) },
               p,
               el('span.squad-member-name', c.firstName),
               el('span.squad-member-gear.mono', gearGlyphs(state, c))
@@ -518,5 +518,171 @@ function confirmDoctrine(node, shell) {
         },
       }),
     ],
+  });
+}
+
+// ------------------------------------------------------------- loadout ---
+
+const SLOTS = [
+  { key: 'weapon', label: 'Weapon' },
+  { key: 'armor', label: 'Armour' },
+  { key: 'suit', label: 'Env-suit' },
+];
+
+/**
+ * What one soldier is carrying, and the means to change it.
+ *
+ * Until this existed the player could not issue a single item. `equipBest` was
+ * the only thing in the game that dispatched `GEAR_ASSIGN`, so every loadout
+ * in every campaign was decided by one sort order, and the only trace of it
+ * anywhere on screen was three tier digits on a squad card — "343". Eighteen
+ * items with eight designed stats between them, six of them looted from
+ * ground the player fought across to reach, and the answer to "who is carrying
+ * the Rail-Carbine" was: nobody knows, and you may not choose.
+ *
+ * Tapping a member used to open the citizen card, which is the right screen
+ * for who somebody *is* and the wrong one for what they are holding.
+ */
+function openLoadout(shell, citizenId) {
+  const state = shell.store.state;
+  const c = state.citizens[citizenId];
+  if (!c) return;
+
+  const body = el('div');
+  body.appendChild(
+    el('div.note', `${fullName(c)} — combat ${Math.round(c.skills.combat || 0)}, ` +
+      `health ${Math.round(c.health)}. Anything issued here comes off whoever had it.`)
+  );
+
+  // Commending, on the screen where you are already looking at the soldier.
+  const pts = state.doctrine?.points || 0;
+  const cost = BAL.combat.commendCost;
+  const maxed = (c.skills.combat || 0) >= BAL.citizens.skillMax;
+  body.appendChild(
+    el(
+      maxed || pts < cost ? 'div.gear-row.locked' : 'button.gear-row',
+      maxed || pts < cost ? {} : {
+        type: 'button',
+        onclick: () => {
+          shell.store.dispatch({ type: 'DOCTRINE_COMMEND', id: citizenId });
+          h.close();
+          shell.renderPanel(true);
+          openLoadout(shell, citizenId);
+        },
+      },
+      el(
+        'div.gear-main',
+        el('div.gear-name', 'Commend ', chip(`${cost}`)),
+        el('div.gear-desc', `A citation for the runs they have come back from. ` +
+          `+${BAL.combat.commendSkill} combat, permanently.`),
+        maxed
+          ? el('div.gear-why', 'There is nothing left to teach them.')
+          : pts < cost ? el('div.gear-why', `You have ${pts} commendation${pts === 1 ? '' : 's'}.`) : null
+      ),
+      !maxed && pts >= cost ? el('div.row-chevron', '+') : null
+    )
+  );
+
+  for (const slot of SLOTS) {
+    const heldId = c.gear?.[slot.key];
+    const held = heldId ? state.military.gear[heldId] : null;
+    const item = held ? getItem(held.item) : null;
+    body.appendChild(sectionLabel(slot.label));
+    body.appendChild(
+      el(
+        'button.gear-row',
+        { type: 'button', onclick: () => { h.close(); pickGear(shell, citizenId, slot); } },
+        item ? gearIcon(item) : null,
+        el(
+          'div.gear-main',
+          el('div.gear-name', item ? item.name : 'Nothing', item ? chip(`T${item.tier}`) : null),
+          item
+            ? el('div.gear-meta', ...statChips(item),
+                chip(`${Math.round(slot.key === 'suit' ? held.integrity : held.durability)}%`,
+                  (slot.key === 'suit' ? held.integrity : held.durability) < 50 ? 'warn' : ''))
+            : el('div.gear-desc', 'Empty. A citizen with no suit cannot leave the airlock.')
+        ),
+        el('div.row-chevron', '›')
+      )
+    );
+  }
+
+  const h = modal({
+    title: 'Loadout',
+    body,
+    actions: [
+      // The citizen card is still the right screen for who somebody *is* —
+      // history, traits, family. It was what tapping a squad member used to
+      // open, which is why the loadout had nowhere to live. Both are reachable
+      // now, one tap apart, and neither is pretending to be the other.
+      button('Who they are', { onclick: () => { h.close(); openCitizen(shell.store, citizenId, {}); } }),
+      button('Best available', {
+        onclick: () => {
+          shell.store.dispatchAll(equipBest(shell.store.state, citizenId));
+          h.close();
+          shell.renderPanel(true);
+          openLoadout(shell, citizenId);
+        },
+      }),
+      button('Done', { class: 'primary', onclick: () => h.close() }),
+    ],
+  });
+}
+
+/** The rack, for one slot: what is spare, plus what this person already holds. */
+function pickGear(shell, citizenId, slot) {
+  const state = shell.store.state;
+  const c = state.citizens[citizenId];
+  const heldId = c.gear?.[slot.key];
+  const pool = unassignedGear(state, slot.key).slice();
+  if (heldId && state.military.gear[heldId]) pool.unshift(state.military.gear[heldId]);
+
+  const body = el('div');
+  if (!pool.length) {
+    body.appendChild(emptyState(`Nothing in the rack. Build one in the Armory, or bring one back.`));
+  }
+  // Best first, by the same ranking the auto-equipper uses, so the list and
+  // the "Best available" button can never disagree about what best means.
+  const score = (g) => {
+    const st = getItem(g.item)?.stats || {};
+    const wear = 0.6 + 0.4 * ((g.durability ?? 100) / BAL.gear.durabilityMax);
+    if (slot.key === 'weapon') return (st.power ?? 0) * wear;
+    if (slot.key === 'armor') return (st.dr ?? 0) + (st.soak ?? 0) * 0.5;
+    return (st.band ?? 0) * 10 - (st.wear ?? 1);
+  };
+  for (const g of pool.sort((a, b) => score(b) - score(a))) {
+    const item = getItem(g.item);
+    if (!item) continue;
+    const cond = Math.round(slot.key === 'suit' ? g.integrity : g.durability);
+    body.appendChild(
+      el(
+        'button.gear-row' + (g.id === heldId ? '.gear-found' : ''),
+        {
+          type: 'button',
+          onclick: () => {
+            if (g.id !== heldId) {
+              shell.store.dispatch({ type: 'GEAR_ASSIGN', gearId: g.id, citizenId, slot: slot.key });
+            }
+            h.close();
+            shell.renderPanel(true);
+            openLoadout(shell, citizenId);
+          },
+        },
+        gearIcon(item),
+        el(
+          'div.gear-main',
+          el('div.gear-name', item.name, chip(`T${item.tier}`),
+            g.id === heldId ? chip('carrying', 'good') : null,
+            item.loot ? chip('found', 'warn') : null),
+          el('div.gear-meta', ...statChips(item), chip(`${cond}%`, cond < 50 ? 'warn' : ''))
+        )
+      )
+    );
+  }
+
+  const h = modal({
+    title: slot.label,
+    body,
+    actions: [button('Back', { onclick: () => { h.close(); openLoadout(shell, citizenId); } })],
   });
 }

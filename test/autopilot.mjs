@@ -29,7 +29,7 @@ import {
 import { canLaunch, launch, launchConquest, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun } from '../src/sim/conquest.js';
 import { PLAYER_SILO_ID } from '../src/data/silos.js';
-import { canTake } from '../src/sim/doctrine.js';
+import { canTake, has as doctrineHas } from '../src/sim/doctrine.js';
 import { NODE_LIST as DOCTRINE_NODES } from '../src/data/doctrine.js';
 
 /**
@@ -130,7 +130,28 @@ export function autopilot(state) {
     const buyable = DOCTRINE_NODES
       .filter((n) => canTake(state, n.id))
       .sort((a, b) => a.cost - b.cost)[0];
-    if (buyable) actions.push({ type: 'DOCTRINE_TAKE', id: buyable.id });
+    if (buyable) {
+      actions.push({ type: 'DOCTRINE_TAKE', id: buyable.id });
+    } else if (
+      state.doctrine.points >= BAL.combat.commendCost &&
+      // Only once the tree is genuinely exhausted — no node left that is
+      // neither taken nor closed by its pair. Spending on the first thing
+      // affordable starved it: at 8 a commendation against a 12-point node,
+      // the reference player never accumulated enough for a second rank and
+      // finished campaigns with one node adopted instead of six.
+      !DOCTRINE_NODES.some((n) => !doctrineHas(state, n.id) && !(n.excludes && doctrineHas(state, n.excludes)))
+    ) {
+      // Nothing left in the tree: commend the weakest soldier who can still
+      // learn. Without this the reference player hoards its surplus and the
+      // sink goes untested in every campaign, which is the same mistake as
+      // never spending on the tree at all.
+      const worst = state.citizenIds
+        .map((id) => state.citizens[id])
+        .filter((x) => x && x.squadId != null && x.status !== 'dead' &&
+          (x.skills.combat || 0) < BAL.citizens.skillMax)
+        .sort((a, b) => (a.skills.combat || 0) - (b.skills.combat || 0))[0];
+      if (worst) actions.push({ type: 'DOCTRINE_COMMEND', id: worst.id });
+    }
   }
 
   // ---- 1. research: always be researching something -------------------

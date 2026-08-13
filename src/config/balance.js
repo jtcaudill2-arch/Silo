@@ -1205,6 +1205,22 @@ export const BAL = {
     // is "a squad at its smallest" — a player who takes Spearhead is choosing
     // to run under-strength on purpose, and paying for it in headcount at the
     // door.
+    // Commending a soldier: what it costs and what it gives.
+    //
+    // The tree has seven slots and a fixed total price of 142, so a silo that
+    // plays well runs out of things to buy with about a third of the campaign
+    // left — measured, the best seeds earn 285 and can spend 142, and the
+    // Scar, the ground that pays four a run, opens *after* most seeds have
+    // already filled the tree. The richest ground in the game was paying in a
+    // currency that had stopped meaning anything.
+    //
+    // This is the sink, and it is the thematically exact one: a commendation
+    // is a thing you give a soldier. It also answers a real gap — nothing else
+    // in the game makes anyone better at fighting, and a militia's mean combat
+    // skill *falls* across a campaign because recruits arrive worse than the
+    // veterans they replace. Turnover never stops, so neither does the sink.
+    commendCost: 8,
+    commendSkill: 3,
     spearheadMaxParty: 4,
     ammoFactorFull: 1.0,
     ammoFactorEmpty: 0.45,
