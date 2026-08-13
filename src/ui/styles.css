@@ -430,6 +430,35 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .canvas-hint.show { opacity: 1; }
 
+/* The headcount, pinned to the thing it counts.
+ *
+ * Bottom-left because the hint owns bottom-centre and the alert rail owns
+ * top-right, and because the resource strip is full: test/mobile.mjs pins the
+ * first morning's four counters at 238 of 238px, so a fifth tile there would
+ * push the strip into a scroll on a 390px phone.
+ *
+ * The two swatches are the whole point. The numbers say how many are working;
+ * the swatches say which figures on the screen those are, which is what makes
+ * the cross-section readable instead of decorative. */
+.crew-readout {
+  position: absolute; left: 8px; bottom: 8px; z-index: 4;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em;
+  color: var(--bone-faint); background: color-mix(in srgb, var(--concrete-deeper) 88%, transparent);
+  border: 1px solid var(--hairline); border-radius: var(--radius);
+  /* 30px minimum because it is a real tap target — it opens the People panel
+   * — and test/mobile.mjs holds every visible control to that. It failed at
+   * 190x25 first time round. */
+  padding: 6px 10px; min-height: 30px; box-sizing: border-box; cursor: pointer;
+}
+.crew-readout:active { background: var(--concrete-deep); }
+.crew-readout .crew-part { display: flex; align-items: center; gap: 4px; }
+.crew-readout .crew-dot {
+  width: 7px; height: 7px; border-radius: 1px; flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, .55);
+}
+.crew-readout .crew-n { color: var(--bone); }
+
 .alert-rail {
   position: absolute; right: 8px; top: 8px; z-index: 5;
   display: flex; flex-direction: column; gap: 5px; align-items: flex-end;

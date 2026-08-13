@@ -477,1136 +477,1262 @@
    "w": 32,
    "h": 32
   },
-  "citizen_farmer_walk0": {
+  "citizen_resident_walk0": {
    "x": 1970,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_walk1": {
+  "citizen_resident_walk1": {
    "x": 1983,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_walk2": {
+  "citizen_resident_walk2": {
    "x": 1996,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_walk3": {
+  "citizen_resident_walk3": {
    "x": 2009,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_walk4": {
+  "citizen_resident_walk4": {
    "x": 2022,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_walk5": {
+  "citizen_resident_walk5": {
    "x": 2035,
    "y": 178,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_idle0": {
+  "citizen_resident_idle0": {
    "x": 0,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_idle1": {
+  "citizen_resident_idle1": {
    "x": 13,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_idle2": {
+  "citizen_resident_idle2": {
    "x": 26,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_idle3": {
+  "citizen_resident_idle3": {
    "x": 39,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_work0": {
+  "citizen_resident_work0": {
    "x": 52,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_work1": {
+  "citizen_resident_work1": {
    "x": 65,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_work2": {
+  "citizen_resident_work2": {
    "x": 78,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_work3": {
+  "citizen_resident_work3": {
    "x": 91,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_sleep0": {
+  "citizen_resident_sleep0": {
    "x": 104,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_sleep1": {
+  "citizen_resident_sleep1": {
    "x": 117,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_injured0": {
+  "citizen_resident_injured0": {
    "x": 130,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_injured1": {
+  "citizen_resident_injured1": {
    "x": 143,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_injured2": {
+  "citizen_resident_injured2": {
    "x": 156,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_farmer_injured3": {
+  "citizen_resident_injured3": {
    "x": 169,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_farmer": {
+  "portrait_resident": {
    "x": 182,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_mechanic_walk0": {
+  "citizen_farmer_walk0": {
    "x": 215,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_walk1": {
+  "citizen_farmer_walk1": {
    "x": 228,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_walk2": {
+  "citizen_farmer_walk2": {
    "x": 241,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_walk3": {
+  "citizen_farmer_walk3": {
    "x": 254,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_walk4": {
+  "citizen_farmer_walk4": {
    "x": 267,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_walk5": {
+  "citizen_farmer_walk5": {
    "x": 280,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_idle0": {
+  "citizen_farmer_idle0": {
    "x": 293,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_idle1": {
+  "citizen_farmer_idle1": {
    "x": 306,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_idle2": {
+  "citizen_farmer_idle2": {
    "x": 319,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_idle3": {
+  "citizen_farmer_idle3": {
    "x": 332,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_work0": {
+  "citizen_farmer_work0": {
    "x": 345,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_work1": {
+  "citizen_farmer_work1": {
    "x": 358,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_work2": {
+  "citizen_farmer_work2": {
    "x": 371,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_work3": {
+  "citizen_farmer_work3": {
    "x": 384,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_sleep0": {
+  "citizen_farmer_sleep0": {
    "x": 397,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_sleep1": {
+  "citizen_farmer_sleep1": {
    "x": 410,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_injured0": {
+  "citizen_farmer_injured0": {
    "x": 423,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_injured1": {
+  "citizen_farmer_injured1": {
    "x": 436,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_injured2": {
+  "citizen_farmer_injured2": {
    "x": 449,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_mechanic_injured3": {
+  "citizen_farmer_injured3": {
    "x": 462,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_mechanic": {
+  "portrait_farmer": {
    "x": 475,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_medic_walk0": {
+  "citizen_mechanic_walk0": {
    "x": 508,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_walk1": {
+  "citizen_mechanic_walk1": {
    "x": 521,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_walk2": {
+  "citizen_mechanic_walk2": {
    "x": 534,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_walk3": {
+  "citizen_mechanic_walk3": {
    "x": 547,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_walk4": {
+  "citizen_mechanic_walk4": {
    "x": 560,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_walk5": {
+  "citizen_mechanic_walk5": {
    "x": 573,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_idle0": {
+  "citizen_mechanic_idle0": {
    "x": 586,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_idle1": {
+  "citizen_mechanic_idle1": {
    "x": 599,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_idle2": {
+  "citizen_mechanic_idle2": {
    "x": 612,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_idle3": {
+  "citizen_mechanic_idle3": {
    "x": 625,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_work0": {
+  "citizen_mechanic_work0": {
    "x": 638,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_work1": {
+  "citizen_mechanic_work1": {
    "x": 651,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_work2": {
+  "citizen_mechanic_work2": {
    "x": 664,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_work3": {
+  "citizen_mechanic_work3": {
    "x": 677,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_sleep0": {
+  "citizen_mechanic_sleep0": {
    "x": 690,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_sleep1": {
+  "citizen_mechanic_sleep1": {
    "x": 703,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_injured0": {
+  "citizen_mechanic_injured0": {
    "x": 716,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_injured1": {
+  "citizen_mechanic_injured1": {
    "x": 729,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_injured2": {
+  "citizen_mechanic_injured2": {
    "x": 742,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_medic_injured3": {
+  "citizen_mechanic_injured3": {
    "x": 755,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_medic": {
+  "portrait_mechanic": {
    "x": 768,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_deputy_walk0": {
+  "citizen_medic_walk0": {
    "x": 801,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_walk1": {
+  "citizen_medic_walk1": {
    "x": 814,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_walk2": {
+  "citizen_medic_walk2": {
    "x": 827,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_walk3": {
+  "citizen_medic_walk3": {
    "x": 840,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_walk4": {
+  "citizen_medic_walk4": {
    "x": 853,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_walk5": {
+  "citizen_medic_walk5": {
    "x": 866,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_idle0": {
+  "citizen_medic_idle0": {
    "x": 879,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_idle1": {
+  "citizen_medic_idle1": {
    "x": 892,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_idle2": {
+  "citizen_medic_idle2": {
    "x": 905,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_idle3": {
+  "citizen_medic_idle3": {
    "x": 918,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_work0": {
+  "citizen_medic_work0": {
    "x": 931,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_work1": {
+  "citizen_medic_work1": {
    "x": 944,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_work2": {
+  "citizen_medic_work2": {
    "x": 957,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_work3": {
+  "citizen_medic_work3": {
    "x": 970,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_sleep0": {
+  "citizen_medic_sleep0": {
    "x": 983,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_sleep1": {
+  "citizen_medic_sleep1": {
    "x": 996,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_injured0": {
+  "citizen_medic_injured0": {
    "x": 1009,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_injured1": {
+  "citizen_medic_injured1": {
    "x": 1022,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_injured2": {
+  "citizen_medic_injured2": {
    "x": 1035,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_deputy_injured3": {
+  "citizen_medic_injured3": {
    "x": 1048,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_deputy": {
+  "portrait_medic": {
    "x": 1061,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_militia_walk0": {
+  "citizen_deputy_walk0": {
    "x": 1094,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_walk1": {
+  "citizen_deputy_walk1": {
    "x": 1107,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_walk2": {
+  "citizen_deputy_walk2": {
    "x": 1120,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_walk3": {
+  "citizen_deputy_walk3": {
    "x": 1133,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_walk4": {
+  "citizen_deputy_walk4": {
    "x": 1146,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_walk5": {
+  "citizen_deputy_walk5": {
    "x": 1159,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_idle0": {
+  "citizen_deputy_idle0": {
    "x": 1172,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_idle1": {
+  "citizen_deputy_idle1": {
    "x": 1185,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_idle2": {
+  "citizen_deputy_idle2": {
    "x": 1198,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_idle3": {
+  "citizen_deputy_idle3": {
    "x": 1211,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_work0": {
+  "citizen_deputy_work0": {
    "x": 1224,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_work1": {
+  "citizen_deputy_work1": {
    "x": 1237,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_work2": {
+  "citizen_deputy_work2": {
    "x": 1250,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_work3": {
+  "citizen_deputy_work3": {
    "x": 1263,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_sleep0": {
+  "citizen_deputy_sleep0": {
    "x": 1276,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_sleep1": {
+  "citizen_deputy_sleep1": {
    "x": 1289,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_injured0": {
+  "citizen_deputy_injured0": {
    "x": 1302,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_injured1": {
+  "citizen_deputy_injured1": {
    "x": 1315,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_injured2": {
+  "citizen_deputy_injured2": {
    "x": 1328,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_militia_injured3": {
+  "citizen_deputy_injured3": {
    "x": 1341,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_militia": {
+  "portrait_deputy": {
    "x": 1354,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_child_walk0": {
+  "citizen_militia_walk0": {
    "x": 1387,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_walk1": {
+  "citizen_militia_walk1": {
    "x": 1400,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_walk2": {
+  "citizen_militia_walk2": {
    "x": 1413,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_walk3": {
+  "citizen_militia_walk3": {
    "x": 1426,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_walk4": {
+  "citizen_militia_walk4": {
    "x": 1439,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_walk5": {
+  "citizen_militia_walk5": {
    "x": 1452,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_idle0": {
+  "citizen_militia_idle0": {
    "x": 1465,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_idle1": {
+  "citizen_militia_idle1": {
    "x": 1478,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_idle2": {
+  "citizen_militia_idle2": {
    "x": 1491,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_idle3": {
+  "citizen_militia_idle3": {
    "x": 1504,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_work0": {
+  "citizen_militia_work0": {
    "x": 1517,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_work1": {
+  "citizen_militia_work1": {
    "x": 1530,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_work2": {
+  "citizen_militia_work2": {
    "x": 1543,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_work3": {
+  "citizen_militia_work3": {
    "x": 1556,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_sleep0": {
+  "citizen_militia_sleep0": {
    "x": 1569,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_sleep1": {
+  "citizen_militia_sleep1": {
    "x": 1582,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_injured0": {
+  "citizen_militia_injured0": {
    "x": 1595,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_injured1": {
+  "citizen_militia_injured1": {
    "x": 1608,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_injured2": {
+  "citizen_militia_injured2": {
    "x": 1621,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_child_injured3": {
+  "citizen_militia_injured3": {
    "x": 1634,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_child": {
+  "portrait_militia": {
    "x": 1647,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_elder_walk0": {
+  "citizen_child_walk0": {
    "x": 1680,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_walk1": {
+  "citizen_child_walk1": {
    "x": 1693,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_walk2": {
+  "citizen_child_walk2": {
    "x": 1706,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_walk3": {
+  "citizen_child_walk3": {
    "x": 1719,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_walk4": {
+  "citizen_child_walk4": {
    "x": 1732,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_walk5": {
+  "citizen_child_walk5": {
    "x": 1745,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_idle0": {
+  "citizen_child_idle0": {
    "x": 1758,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_idle1": {
+  "citizen_child_idle1": {
    "x": 1771,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_idle2": {
+  "citizen_child_idle2": {
    "x": 1784,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_idle3": {
+  "citizen_child_idle3": {
    "x": 1797,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_work0": {
+  "citizen_child_work0": {
    "x": 1810,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_work1": {
+  "citizen_child_work1": {
    "x": 1823,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_work2": {
+  "citizen_child_work2": {
    "x": 1836,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_work3": {
+  "citizen_child_work3": {
    "x": 1849,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_sleep0": {
+  "citizen_child_sleep0": {
    "x": 1862,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_sleep1": {
+  "citizen_child_sleep1": {
    "x": 1875,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_injured0": {
+  "citizen_child_injured0": {
    "x": 1888,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_injured1": {
+  "citizen_child_injured1": {
    "x": 1901,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_injured2": {
+  "citizen_child_injured2": {
    "x": 1914,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_elder_injured3": {
+  "citizen_child_injured3": {
    "x": 1927,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "portrait_elder": {
+  "portrait_child": {
    "x": 1940,
    "y": 267,
    "w": 32,
    "h": 32
   },
-  "citizen_hazmat_walk0": {
+  "citizen_elder_walk0": {
    "x": 1973,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_walk1": {
+  "citizen_elder_walk1": {
    "x": 1986,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_walk2": {
+  "citizen_elder_walk2": {
    "x": 1999,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_walk3": {
+  "citizen_elder_walk3": {
    "x": 2012,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_walk4": {
+  "citizen_elder_walk4": {
    "x": 2025,
    "y": 267,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_walk5": {
+  "citizen_elder_walk5": {
    "x": 0,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_idle0": {
+  "citizen_elder_idle0": {
    "x": 13,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_idle1": {
+  "citizen_elder_idle1": {
    "x": 26,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_idle2": {
+  "citizen_elder_idle2": {
    "x": 39,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_idle3": {
+  "citizen_elder_idle3": {
    "x": 52,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_work0": {
+  "citizen_elder_work0": {
    "x": 65,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_work1": {
+  "citizen_elder_work1": {
    "x": 78,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_work2": {
+  "citizen_elder_work2": {
    "x": 91,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_work3": {
+  "citizen_elder_work3": {
    "x": 104,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_sleep0": {
+  "citizen_elder_sleep0": {
    "x": 117,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_sleep1": {
+  "citizen_elder_sleep1": {
    "x": 130,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_injured0": {
+  "citizen_elder_injured0": {
    "x": 143,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_injured1": {
+  "citizen_elder_injured1": {
    "x": 156,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_injured2": {
+  "citizen_elder_injured2": {
    "x": 169,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_hazmat_injured3": {
+  "citizen_elder_injured3": {
    "x": 182,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "portrait_hazmat": {
+  "portrait_elder": {
    "x": 195,
    "y": 300,
    "w": 32,
    "h": 32
   },
-  "citizen_irradiated_walk0": {
+  "citizen_hazmat_walk0": {
    "x": 228,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_walk1": {
+  "citizen_hazmat_walk1": {
    "x": 241,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_walk2": {
+  "citizen_hazmat_walk2": {
    "x": 254,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_walk3": {
+  "citizen_hazmat_walk3": {
    "x": 267,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_walk4": {
+  "citizen_hazmat_walk4": {
    "x": 280,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_walk5": {
+  "citizen_hazmat_walk5": {
    "x": 293,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_idle0": {
+  "citizen_hazmat_idle0": {
    "x": 306,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_idle1": {
+  "citizen_hazmat_idle1": {
    "x": 319,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_idle2": {
+  "citizen_hazmat_idle2": {
    "x": 332,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_idle3": {
+  "citizen_hazmat_idle3": {
    "x": 345,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_work0": {
+  "citizen_hazmat_work0": {
    "x": 358,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_work1": {
+  "citizen_hazmat_work1": {
    "x": 371,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_work2": {
+  "citizen_hazmat_work2": {
    "x": 384,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_work3": {
+  "citizen_hazmat_work3": {
    "x": 397,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_sleep0": {
+  "citizen_hazmat_sleep0": {
    "x": 410,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_sleep1": {
+  "citizen_hazmat_sleep1": {
    "x": 423,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_injured0": {
+  "citizen_hazmat_injured0": {
    "x": 436,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_injured1": {
+  "citizen_hazmat_injured1": {
    "x": 449,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_injured2": {
+  "citizen_hazmat_injured2": {
    "x": 462,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "citizen_irradiated_injured3": {
+  "citizen_hazmat_injured3": {
    "x": 475,
    "y": 300,
    "w": 12,
    "h": 16
   },
-  "portrait_irradiated": {
+  "portrait_hazmat": {
    "x": 488,
+   "y": 300,
+   "w": 32,
+   "h": 32
+  },
+  "citizen_irradiated_walk0": {
+   "x": 521,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_walk1": {
+   "x": 534,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_walk2": {
+   "x": 547,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_walk3": {
+   "x": 560,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_walk4": {
+   "x": 573,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_walk5": {
+   "x": 586,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_idle0": {
+   "x": 599,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_idle1": {
+   "x": 612,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_idle2": {
+   "x": 625,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_idle3": {
+   "x": 638,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_work0": {
+   "x": 651,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_work1": {
+   "x": 664,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_work2": {
+   "x": 677,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_work3": {
+   "x": 690,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_sleep0": {
+   "x": 703,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_sleep1": {
+   "x": 716,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_injured0": {
+   "x": 729,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_injured1": {
+   "x": 742,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_injured2": {
+   "x": 755,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "citizen_irradiated_injured3": {
+   "x": 768,
+   "y": 300,
+   "w": 12,
+   "h": 16
+  },
+  "portrait_irradiated": {
+   "x": 781,
    "y": 300,
    "w": 32,
    "h": 32
@@ -1792,235 +1918,235 @@
    "h": 16
   },
   "skyline": {
-   "x": 521,
+   "x": 814,
    "y": 300,
    "w": 256,
    "h": 96
   },
   "tile_wall": {
-   "x": 778,
+   "x": 1071,
    "y": 300,
    "w": 32,
    "h": 32
   },
   "tile_rock": {
-   "x": 811,
+   "x": 1104,
    "y": 300,
    "w": 32,
    "h": 32
   },
   "tile_shaft": {
-   "x": 844,
+   "x": 1137,
    "y": 300,
    "w": 32,
    "h": 32
   },
   "threat_husk": {
-   "x": 877,
+   "x": 1170,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_shambler": {
-   "x": 894,
+   "x": 1187,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_bloater": {
-   "x": 911,
+   "x": 1204,
    "y": 300,
    "w": 24,
    "h": 24
   },
   "threat_ravager": {
-   "x": 936,
+   "x": 1229,
    "y": 300,
    "w": 24,
    "h": 24
   },
   "threat_alpha": {
-   "x": 961,
+   "x": 1254,
    "y": 300,
    "w": 32,
    "h": 32
   },
   "threat_broodmother": {
-   "x": 994,
+   "x": 1287,
    "y": 300,
    "w": 32,
    "h": 32
   },
   "threat_raider": {
-   "x": 1027,
+   "x": 1320,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_ash_company": {
-   "x": 1044,
+   "x": 1337,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_scrapjaw": {
-   "x": 1061,
+   "x": 1354,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_cultist": {
-   "x": 1078,
+   "x": 1371,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "threat_trader": {
-   "x": 1095,
+   "x": 1388,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_crate": {
-   "x": 1112,
+   "x": 1405,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_barrel": {
-   "x": 1129,
+   "x": 1422,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_locker": {
-   "x": 1146,
+   "x": 1439,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_bunk": {
-   "x": 1163,
+   "x": 1456,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_terminal": {
-   "x": 1180,
+   "x": 1473,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_plant": {
-   "x": 1197,
+   "x": 1490,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_toolboard": {
-   "x": 1214,
+   "x": 1507,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_lamp": {
-   "x": 1231,
+   "x": 1524,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_spool": {
-   "x": 1248,
+   "x": 1541,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_fan": {
-   "x": 1265,
+   "x": 1558,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_shelf": {
-   "x": 1282,
+   "x": 1575,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_gurney": {
-   "x": 1299,
+   "x": 1592,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_weaponrack": {
-   "x": 1316,
+   "x": 1609,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "prop_orecart": {
-   "x": 1333,
+   "x": 1626,
    "y": 300,
    "w": 16,
    "h": 16
   },
   "digit_0": {
-   "x": 1350,
+   "x": 1643,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_1": {
-   "x": 1354,
+   "x": 1647,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_2": {
-   "x": 1358,
+   "x": 1651,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_3": {
-   "x": 1362,
+   "x": 1655,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_4": {
-   "x": 1366,
+   "x": 1659,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_5": {
-   "x": 1370,
+   "x": 1663,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_6": {
-   "x": 1374,
+   "x": 1667,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_7": {
-   "x": 1378,
+   "x": 1671,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_8": {
-   "x": 1382,
+   "x": 1675,
    "y": 300,
    "w": 3,
    "h": 5
   },
   "digit_9": {
-   "x": 1386,
+   "x": 1679,
    "y": 300,
    "w": 3,
    "h": 5

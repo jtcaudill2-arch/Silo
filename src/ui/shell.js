@@ -117,6 +117,7 @@ export class Shell {
     this.clockShift = document.getElementById('clock-shift');
     this.speedBtn = document.getElementById('btn-speed');
     this.alertRail = document.getElementById('alert-rail');
+    this.crewReadout = document.getElementById('crew-readout');
     this.directive = document.getElementById('directive');
     this.directiveText = document.getElementById('directive-text');
     this.directiveWhy = document.getElementById('directive-why');
@@ -453,6 +454,7 @@ export class Shell {
   renderChrome() {
     const state = this.state;
     this.renderStrip(state);
+    this.renderCrew(state);
     this.renderDirective(state);
     this.checkUnlocks(state);
     this.renderChangeLine(state);
@@ -664,6 +666,82 @@ export class Shell {
   }
 
   // -------------------------------------------------------------- strip ---
+
+  /**
+   * How many people are inside, and how many of them are at a post.
+   *
+   * The question this answers is "is the silo working", and before this the
+   * only way to ask it was to open the People panel and count rows. It sits on
+   * the cross-section rather than in the resource strip because the strip is
+   * full — test/mobile.mjs pins the first morning's four counters at 238 of
+   * 238px on a 390px phone, and a fifth tile pushes it into a scroll.
+   *
+   * The swatches are doing the real work. The numbers alone would be a
+   * statistic; the swatches say *which figures on the screen* those numbers
+   * are, which is what turns the cross-section from decoration into a readout.
+   * They are the sprite tones themselves — `resident` steel and the `base`
+   * working denim — so the chip and the people it describes cannot drift
+   * apart without somebody noticing.
+   *
+   * Hidden until somebody is off shift as well as on it. On the first morning
+   * every adult is working and the split says nothing, and the opening screen
+   * is deliberately the smallest thing in the game.
+   */
+  renderCrew(state) {
+    if (!this.crewReadout) return;
+
+    let inside = 0;
+    let atPosts = 0;
+    let outside = 0;
+    let children = 0;
+    for (const id of state.citizenIds) {
+      const c = state.citizens[id];
+      if (!c || c.status === 'dead') continue;
+      if (c.status === 'expedition') { outside++; continue; }
+      inside++;
+      if (c.status === 'working') atPosts++;
+      else if (c.age < BAL.citizens.workingAgeMin) children++;
+    }
+    const off = inside - atPosts;
+
+    if (!atPosts || !off) {
+      this.crewReadout.hidden = true;
+      return;
+    }
+    this.crewReadout.hidden = false;
+
+    if (!this._crewNodes) {
+      const mk = (cls) => {
+        const dot = el('span.crew-dot', { style: { background: cls } });
+        const n = el('span.crew-n.mono', '0');
+        const label = el('span', '');
+        return { part: el('span.crew-part', dot, n, label), n, label };
+      };
+      // The sprite tones, not approximations of them: `base` suitLit and
+      // `resident` suitLit as tools/art/citizens.mjs bakes them.
+      const work = mk('#6c81a4');
+      const rest = mk('#787f82');
+      clear(this.crewReadout);
+      this.crewReadout.appendChild(work.part);
+      this.crewReadout.appendChild(rest.part);
+      this.crewReadout.onclick = () => this.open('people');
+      this._crewNodes = { work, rest };
+    }
+
+    const { work, rest } = this._crewNodes;
+    work.n.textContent = String(atPosts);
+    work.label.textContent = 'at posts';
+    rest.n.textContent = String(off);
+    // "off shift" was wrong, and wrong in a way that mattered: measured on a
+    // day-220 silo, 53 of the 93 people inside were children, so a number
+    // labelled "off shift" was mostly people who have never had a shift.
+    rest.label.textContent = 'not working';
+    const adultsOff = off - children;
+    this.crewReadout.title =
+      `${inside} inside. ${atPosts} at a post, ${adultsOff} idle, ${children} too young to work` +
+      (outside ? `, and ${outside} outside the silo` : '') +
+      ". Crew wear their unit's colour; everyone else wears grey.";
+  }
 
   renderStrip(state) {
     // Rebuilt in place: each tile keeps its node so the strip doesn't

@@ -61,6 +61,10 @@ import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
 import { formSquad } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
+import { drawCitizens } from '../src/render/citizens.js';
+import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
+import { citizenRole } from '../src/render/sprites.js';
+import { FLOOR_H, SLOT_W } from '../src/render/canvas.js';
 import { BAL, TIME } from '../src/config/balance.js';
 
 const failures = [];
@@ -1898,6 +1902,258 @@ console.log('');
     fail(`a weaker second raid replaced a stronger pending one (strength ${s.world.pendingRaid?.strength})`);
   } else {
     ok('two raids on one day merge to the stronger, rather than the later overwriting it');
+  }
+}
+
+// ---- 28. the silo has people in it, and you can see who is working --------
+//
+// The cross-section drew `citizenFloorsRendered` (3) floors of people centred
+// on the geometric middle of the viewport, while the viewport shows twenty-one
+// floors. Measured on a day-220 save: focusing floor 2 clamps `camY` to -20,
+// which puts the centre at world y 399 — floor 10 — so the game drew people on
+// floors 9-11 while every staffed room was on floors 1-7. The silo rendered
+// empty, and not because the sprites were faint.
+//
+// The camera is faked rather than constructed, because `canvas.js` owns a real
+// one and this is a check about which floors get drawn, not about the DOM.
+{
+  const store = newStore(0x1234);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  // Short, like the rest of this file. A hundred and twenty unmanaged days
+  // starves the silo to nobody, and an empty roster proves nothing about where
+  // people are drawn — the first attempt at this fixture ran 120 and reported
+  // "no staffed rooms" because everyone was dead.
+  game.runDays(5);
+  // Crew whatever was built during those days, or the rooms stand empty and
+  // this section proves nothing about where people are drawn.
+  store.dispatchAll(autoAssign(s));
+
+  // The floors people are actually on, derived the way drawCitizens derives
+  // them, so the expectation cannot drift from the thing under test.
+  const staffed = new Set();
+  for (const id of s.citizenIds) {
+    const c = s.citizens[id];
+    if (!c || c.status === 'dead' || c.status === 'expedition' || !c.job) continue;
+    const room = s.silo.rooms[c.job.roomId];
+    if (room) staffed.add(room.floor);
+  }
+
+  // A viewport the shape of a phone: 21 floors tall, parked at the top.
+  const drawnAt = new Set();
+  const ctx = {
+    set fillStyle(_v) {}, get fillStyle() { return ''; },
+    fillRect(x, y) { drawnAt.add(Math.floor(y / FLOOR_H) + 1); },
+  };
+  const cam = {
+    camY: -20, time: 1000, drawn: 0, spriteBudget: 400,
+    viewWorldH: () => 838,
+    visibleFloorRange: () => ({ from: 1, to: 22 }),
+  };
+  drawCitizens(ctx, s, cam);
+
+  const missed = [...staffed].filter((f) => f <= 22 && !drawnAt.has(f));
+  if (!staffed.size) {
+    fail('the fixture had no staffed rooms, so it cannot show whether their floors are drawn');
+  } else if (missed.length) {
+    fail(
+      `floors ${missed.join(', ')} have staff and no people were drawn on them — ` +
+      `the cross-section is only drawing floors ${[...drawnAt].sort((a, b) => a - b).join(', ')}`
+    );
+  } else {
+    ok(`every staffed floor on screen has people on it (${[...staffed].sort((a, b) => a - b).join(', ')})`);
+  }
+
+  // And nobody stands in the dark. Idle citizens used to drift across the full
+  // `slotsPerFloor` width whether or not anything was built there, so a
+  // half-built floor put people outside its last room with no floor under them.
+  const builtSpan = (floorN) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const room of Object.values(s.silo.rooms)) {
+      if (room.floor !== floorN) continue;
+      lo = Math.min(lo, room.slot * SLOT_W);
+      hi = Math.max(hi, (room.slot + room.width) * SLOT_W);
+    }
+    return hi > lo ? { lo, hi } : null;
+  };
+  const strays = [];
+  const ctx2 = {
+    set fillStyle(_v) {}, get fillStyle() { return ''; },
+    fillRect(x, y) {
+      const floorN = Math.floor(y / FLOOR_H) + 1;
+      const span = builtSpan(floorN);
+      if (span && (x < span.lo - SLOT_W || x > span.hi + SLOT_W)) strays.push({ floorN, x });
+    },
+  };
+  cam.drawn = 0;
+  drawCitizens(ctx2, s, cam);
+  if (strays.length) {
+    fail(
+      `${strays.length} people were drawn outside the built part of their floor ` +
+      `(e.g. floor ${strays[0].floorN} at x ${Math.round(strays[0].x)}) — standing in unexcavated rock`
+    );
+  } else {
+    ok('nobody is drawn outside the built part of their floor');
+  }
+}
+
+// ---- 29. the shirt says whether somebody is working -------------------------
+//
+// The whole point of the colour: a glance across a floor separates the crew
+// from everyone else. `citizenRole` keyed off the job somebody *held* rather
+// than whether they were standing in it, so a farmer looked identical asleep
+// and at the bench, and the biggest group of non-workers in the game — 53 of
+// the 93 people inside a day-220 silo were children — wore the working blue.
+{
+  const store = newStore(4242);
+  const s = store.state;
+  const adult = s.citizenIds.map((i) => s.citizens[i]).find((c) => c.age >= 25 && c.age < 60);
+  if (!adult) fail('no working-age adult in the fixture');
+  else {
+    adult._jobSkill = 'farming';
+
+    adult.status = 'working';
+    const onShift = citizenRole(adult);
+    adult.status = 'idle';
+    const offShift = citizenRole(adult);
+
+    if (onShift === offShift) {
+      fail(`the same person reads as "${onShift}" both at a post and off shift — the shirt says nothing`);
+    } else if (onShift !== 'farmer') {
+      fail(`somebody working a farming post drew as "${onShift}", not their unit`);
+    } else if (offShift !== 'resident') {
+      fail(`somebody off shift drew as "${offShift}", not the off-shift coveralls`);
+    } else {
+      ok(`the shirt follows the shift: "${onShift}" at a post, "${offShift}" off it`);
+    }
+
+    // Off shift is one colour for everybody, whatever job they hold — that is
+    // what makes "coloured means working" a rule rather than a tendency.
+    adult._jobSkill = 'mechanics';
+    if (citizenRole(adult) !== 'resident') {
+      fail('a mechanic off shift drew as something other than the shared off-shift role');
+    }
+
+    // Condition still outranks the shift: somebody sick enough to be a warning
+    // must not be hidden by a job, and somebody outside is outside.
+    adult.status = 'working';
+    adult.radiation = BAL.citizens.radiation.sicknessThreshold + 1;
+    if (citizenRole(adult) !== 'irradiated') fail('a working citizen hid their radiation sickness');
+    adult.radiation = 0;
+    adult.status = 'expedition';
+    if (citizenRole(adult) !== 'hazmat') fail('a citizen on an expedition did not draw in a suit');
+    else ok('and condition still outranks it: sickness and the surface both win');
+  }
+}
+
+// ---- 30. every figure the renderer asks for exists in the atlas -------------
+//
+// `citizenRole` returning a name the art does not bake is a 404 and a citizen
+// who renders as nothing. This is the same guard §17 gives rooms, for people —
+// and it is checked against the art source rather than a copy of the list, so
+// adding a role to one side and not the other is a red suite.
+{
+  const src = readSource('../tools/art/citizens.mjs');
+  const m = src.match(/export const ROLES = \[([\s\S]*?)\];/);
+  if (!m) {
+    fail('could not find ROLES in tools/art/citizens.mjs — this check has gone stale');
+  } else {
+    const drawn = new Set([...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]));
+    // Every branch citizenRole can take, driven through it rather than copied.
+    const asked = new Set();
+    const probe = (patch) => {
+      const c = {
+        id: 1, age: 30, status: 'idle', radiation: 0, squadId: null,
+        skills: {}, traits: [], ...patch,
+      };
+      asked.add(citizenRole(c));
+    };
+    probe({ radiation: BAL.citizens.radiation.sicknessThreshold + 1 });
+    probe({ status: 'expedition' });
+    probe({ age: 5 });
+    probe({ age: 90 });
+    probe({ status: 'working', squadId: 3 });
+    for (const skill of ['farming', 'mechanics', 'engineering', 'medicine', 'admin', 'combat']) {
+      probe({ status: 'working', _jobSkill: skill });
+    }
+    probe({ status: 'working' });
+    probe({});
+
+    const missing = [...asked].filter((r) => !drawn.has(r));
+    if (missing.length) {
+      fail(`citizenRole() can return ${missing.join(', ')}, which the art tool does not draw — those citizens render as nothing`);
+    } else {
+      ok(`every one of the ${asked.size} figures the renderer asks for is drawn by the art tool`);
+    }
+  }
+}
+
+// ---- 31. everyone off shift wears the same colour --------------------------
+//
+// The rule the cross-section is read by: coloured means at a post, grey means
+// not. `citizenRole` only reaches 'child' and 'elder' after the shift check,
+// so they are off-shift roles by construction — and they were painted in the
+// working denim. That was the largest share of the error, not a corner of it:
+// measured on a day-220 silo, 53 of the 93 people inside were children, so
+// most of the "not working" population wore the colour that means working.
+//
+// Checked against the pixels the art tool actually bakes, because this is a
+// claim about colour and nothing else can confirm it.
+{
+  const px = (role) => {
+    const cap = { w: CW, h: CH, px: new Array(CW * CH).fill(null),
+      set(x, y, c) { if (c && x >= 0 && y >= 0 && x < CW && y < CH) this.px[y * CW + x] = c; } };
+    drawCitizenArt(cap, { action: 'idle', frame: 0, role, seed: 'same' });
+    const seen = new Map();
+    for (const c of cap.px) if (c) { const k = c.join(','); seen.set(k, (seen.get(k) || 0) + 1); }
+    return seen;
+  };
+  // Every coloured pixel on the figure, not just the commonest one.
+  //
+  // The first version of this took the single most-common non-ink colour as
+  // "the suit". That reads the *lit* tone, and a suit is three tones — so a
+  // mutation that put `c.suit` back to denim and left `suitLit`/`suitDark`
+  // alone changed nothing it looked at and passed. A partial revert is
+  // exactly the shape this is meant to catch.
+  //
+  // Dark pixels are skipped because boots and the keyline are near-black and
+  // slightly blue whatever the coveralls are. Skin cannot be filtered by hue:
+  // `skinShade` is (196,161,129) and the mechanic's coverall is (160,112,42),
+  // which are the same warm family, so a filter wide enough to drop the face
+  // drops the one working colour closest to it. The face contributes one or
+  // two pixels at this size, so the comparison below is a ratio rather than a
+  // threshold of zero — a suit is three tones over about thirty pixels, and
+  // reverting even one of them clears it by a wide margin.
+  const saturatedPixels = (role) => {
+    let n = 0;
+    for (const [k, count] of px(role)) {
+      const [r, g, b] = k.split(',').map(Number);
+      if (r > 200) continue;                       // skin
+      if (Math.max(r, g, b) < 60) continue;        // boots, hair, keyline
+      if (Math.max(r, g, b) - Math.min(r, g, b) >= 18) n += count;
+    }
+    return n;
+  };
+
+  const offShift = ['resident', 'child', 'elder'];
+  const FACE = 3; // what a head contributes, and the most cloth may not exceed
+  const worst = Math.max(...offShift.map(saturatedPixels));
+  const wrong = offShift.filter((r) => saturatedPixels(r) > FACE);
+  const crew = saturatedPixels('base');
+
+  if (wrong.length) {
+    fail(
+      `${wrong.map((r) => `${r} (${saturatedPixels(r)}px)`).join(', ')} carry coloured cloth — ` +
+      'they can only be reached off shift, so they read as crew when they are not'
+    );
+  } else if (!(crew >= worst * 4)) {
+    fail(
+      `a working figure carries ${crew} coloured pixels against ${worst} on an off-shift one — ` +
+      'that is not a difference anybody can see across a floor'
+    );
+  } else {
+    ok(`the crew wear colour and nobody else does: ${crew} coloured pixels working against ${worst} off shift`);
   }
 }
 

@@ -1677,7 +1677,11 @@ export const BAL = {
     // rendering fault rather than as a crowd. A handful, well spaced, says
     // "busy" far better — the roster is where the real headcount lives.
     maxCitizensPerRoom: 5,
-    maxIdleCitizensPerFloor: 8,
+    // Off-shift people per floor. Raised from 8 once `idleFloor` stopped
+    // stacking the entire off-shift population onto two floors: with everyone
+    // dealt across the residential floors instead, 12 is a busy corridor
+    // rather than a smear, and the lanes in `citizenX` keep them apart.
+    maxIdleCitizensPerFloor: 12,
     tileSize: 32,
     floorHeight: 40,
     floorWidth: 384, // 6 slots * 64

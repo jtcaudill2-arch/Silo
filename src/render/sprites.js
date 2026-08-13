@@ -115,18 +115,38 @@ export function citizenAction(c, moving) {
 }
 
 /**
- * Which figure to draw them as. Condition first — irradiated is a warning and
- * must not be hidden by a job — then age, then the work they actually do, so
- * the silo reads as a place with farmers and mechanics in it rather than two
- * hundred identical jumpsuits.
+ * Which figure to draw them as.
+ *
+ * The order is the whole design, and it changed: **on shift or not** now
+ * outranks age, because that is the question the cross-section is being asked.
+ * Somebody at a post wears their unit's colour; everybody else wears grey
+ * coveralls. Across a floor that reads instantly as "these six are running the
+ * farm and those four are not", which no arrangement of silhouettes does at
+ * twelve pixels.
+ *
+ * Condition still outranks everything: irradiated is a warning and a hazmat
+ * suit means they are outside, and neither may be hidden by a job.
+ *
+ * Below the shift check, age still speaks — a child at school and an elder off
+ * shift are both drawn as themselves, and neither is crew.
+ *
+ * `status === 'working'` is the signal rather than `c.job`, and the two are
+ * not the same question: `job` is the post somebody holds, `working` is
+ * whether they are standing in it. Measured on a day-220 silo, they happen to
+ * agree exactly — 34 posts, 34 working, stable across six days — but a
+ * citizen resting, sick or in school holds their post and is not at it, and
+ * the colour should follow the body, not the paperwork.
  */
 export function citizenRole(c) {
   if (c.radiation >= BAL.citizens.radiation.sicknessThreshold) return 'irradiated';
   if (c.status === 'expedition') return 'hazmat';
+  if (c.status === 'working') {
+    if (c.squadId != null) return 'militia';
+    return SKILL_ROLE[jobSkillOf(c)] || 'base';
+  }
   if (c.age < BAL.citizens.workingAgeMin) return 'child';
   if (c.age >= BAL.citizens.vitality.declineSteepAge) return 'elder';
-  if (c.squadId != null) return 'militia';
-  return SKILL_ROLE[jobSkillOf(c)] || 'base';
+  return 'resident';
 }
 
 const SKILL_ROLE = {

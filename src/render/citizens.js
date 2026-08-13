@@ -19,12 +19,26 @@ import { withAlpha } from './floors.js';
 import * as sprites from './sprites.js';
 
 export function drawCitizens(ctx, state, cam) {
+  // Everybody on screen, not a three-floor slice of the middle of it.
+  //
+  // This used to draw `citizenFloorsRendered` (3) floors centred on the
+  // geometric middle of the viewport, and the result was a silo with nobody in
+  // it. The viewport is 838 world units tall — twenty-one floors — so three of
+  // them is a seventh of what the player is looking at, and *which* three was
+  // decided by arithmetic rather than by where anyone lives.
+  //
+  // Measured on a day-220 save: focusing floor 2 clamps `camY` to -20, which
+  // puts the viewport centre at world y 399, which is floor 10. The game drew
+  // people on floors 9-11. Every staffed room in that silo was on floors 1-7.
+  // The people were not faint or small; they were somewhere else.
+  //
+  // The budget is what limits this now, not a window — see `order` below, which
+  // spends it nearest-first so a crowded screen loses its most distant faces
+  // rather than the ones under the player's thumb.
   const range = cam.visibleFloorRange();
-  const centre = cam.camY + cam.viewWorldH() / 2;
-  const centreFloor = Math.floor(centre / FLOOR_H) + 1;
-  const half = Math.floor(BAL.render.citizenFloorsRendered / 2);
-  const from = Math.max(range.from, centreFloor - half);
-  const to = Math.min(range.to, centreFloor + half);
+  const centreFloor = Math.floor((cam.camY + cam.viewWorldH() / 2) / FLOOR_H) + 1;
+  const from = range.from;
+  const to = range.to;
   if (to < from) return;
 
   const t = cam.time * 0.001;
@@ -43,8 +57,18 @@ export function drawCitizens(ctx, state, cam) {
     byFloor.get(floorN).push({ c, room });
   }
 
-  for (const [floorN, list] of byFloor) {
+  // Nearest the camera centre first. The sprite budget is real on a phone, and
+  // when it runs out it should cost the player the floors they are least
+  // looking at. Iterating the Map in insertion order spent it top-down, so a
+  // deep silo drew its shallowest floors and left the focused one empty.
+  const order = [...byFloor.keys()].sort(
+    (a, b) => Math.abs(a - centreFloor) - Math.abs(b - centreFloor)
+  );
+
+  for (const floorN of order) {
+    const list = byFloor.get(floorN);
     const y = (floorN - 1) * FLOOR_H + FLOOR_H - 6;
+    const extent = builtExtent(state, floorN);
 
     // Give everyone a lane before drawing anybody.
     //
@@ -75,7 +99,7 @@ export function drawCitizens(ctx, state, cam) {
 
     for (const { c, room, lane, lanes } of shown) {
       if (drawn >= BAL.render.maxSpritesPerFrame - cam.drawn) return;
-      const x = citizenX(c, room, t, reduced, lane, lanes);
+      const x = citizenX(c, room, t, reduced, lane, lanes, extent);
       // Walking if they're between posts or idle; working if they're at one.
       const moving = !room || c.status !== 'working';
       // The sprite picker needs to know what job somebody holds to choose a
@@ -100,14 +124,36 @@ export function drawCitizens(ctx, state, cam) {
 }
 
 /**
- * Horizontal position. Working citizens mill inside their room; idle ones
- * drift along the whole floor. Both are pure functions of id + time, which is
- * what keeps this free of per-citizen render state.
+ * The built extent of a floor, in slots, or null if nothing stands on it.
+ *
+ * Idle citizens used to drift across the full `slotsPerFloor` width whether or
+ * not there was anything there, so on a floor that is only half built people
+ * stood in the dark outside the last room — figures with no floor under them,
+ * which reads as a rendering fault rather than as a corridor.
  */
-function citizenX(c, room, t, reduced, lane = 0, lanes = 1) {
+function builtExtent(state, floorN) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const room of Object.values(state.silo.rooms)) {
+    if (room.floor !== floorN) continue;
+    lo = Math.min(lo, room.slot);
+    hi = Math.max(hi, room.slot + room.width);
+  }
+  return hi > lo ? { lo, hi } : null;
+}
+
+/**
+ * Horizontal position. Working citizens mill inside their room; idle ones
+ * drift along the built part of their floor. Both are pure functions of
+ * id + time, which is what keeps this free of per-citizen render state.
+ */
+function citizenX(c, room, t, reduced, lane = 0, lanes = 1, extent = null) {
   const phase = ((c.id * 2654435761) % 1000) / 1000;
-  const span = room ? room.width * SLOT_W - 14 : SLOT_W * BAL.silo.slotsPerFloor - 16;
-  const left = room ? room.slot * SLOT_W + 7 : 8;
+  const wide = extent
+    ? { left: extent.lo * SLOT_W + 8, span: (extent.hi - extent.lo) * SLOT_W - 16 }
+    : { left: 8, span: SLOT_W * BAL.silo.slotsPerFloor - 16 };
+  const span = room ? room.width * SLOT_W - 14 : Math.max(SLOT_W / 2, wide.span);
+  const left = room ? room.slot * SLOT_W + 7 : wide.left;
 
   // One lane each, centred in its share of the room. When a post is crowded
   // past what the width can hold the lanes overlap — but evenly, which reads
@@ -153,21 +199,31 @@ function drawOne(ctx, c, x, y) {
  * The cache lives in this module, not on `state` — render code must never
  * write to the store, or the cache ends up serialised into save files.
  */
-let idleFloorCache = { cycle: -1, floor: 1 };
+let idleFloorCache = { cycle: -1, floors: [1] };
 
 function idleFloor(state, c) {
   if (idleFloorCache.cycle !== state.clock.cycle) {
-    let floor = 1;
+    // Every floor with somewhere to be, not the first one that matched.
+    //
+    // This took the *first* cafeteria or residence it found and put everybody
+    // on that floor or the one below it, which meant the whole off-shift
+    // population of the silo stood on two floors. With
+    // `maxIdleCitizensPerFloor` at 8 that showed at most sixteen of them
+    // however many there were — measured, 53 people off shift and 16 drawn —
+    // so the silo read as empty in exactly the places people actually live.
+    const floors = [];
     for (const room of Object.values(state.silo.rooms)) {
       if (room.type === 'cafeteria' || room.type === 'residences') {
-        floor = room.floor;
-        break;
+        if (!floors.includes(room.floor)) floors.push(room.floor);
       }
     }
-    idleFloorCache = { cycle: state.clock.cycle, floor };
+    floors.sort((a, b) => a - b);
+    idleFloorCache = { cycle: state.clock.cycle, floors: floors.length ? floors : [1] };
   }
-  // Spread them across the residential floors rather than stacking them.
-  return idleFloorCache.floor + (c.id % 2);
+  // Dealt out by id, so the same person is always in the same place and the
+  // crowd does not shuffle between frames.
+  const { floors } = idleFloorCache;
+  return floors[c.id % floors.length];
 }
 
 export default { drawCitizens };

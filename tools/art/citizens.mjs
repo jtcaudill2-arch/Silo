@@ -130,8 +130,8 @@ export const CONSUMER_ACTIONS = { walk: 4, work: 2, idle: 2, sleep: 2 };
 
 /** One cue each. See the per-role notes in ROLE_CUES. */
 export const ROLES = [
-  'base', 'farmer', 'mechanic', 'medic', 'deputy', 'militia', 'child', 'elder',
-  'hazmat', 'irradiated',
+  'base', 'resident', 'farmer', 'mechanic', 'medic', 'deputy', 'militia',
+  'child', 'elder', 'hazmat', 'irradiated',
 ];
 
 /* -------------------------------------------------------------- palette -- */
@@ -383,6 +383,11 @@ const SHOULDER_X = 5;
 /** One line per role: what the single cue is, and why it survives 12 pixels. */
 const ROLE_CUES = {
   base: 'nothing added — the reference character, grey-blue jumpsuit',
+  resident:
+    'the same person off shift: grey coveralls instead of the working blue. ' +
+    'No silhouette cue is added, because being off duty is not a job and ' +
+    'should not hand anybody equipment. The whole read is the colour, which ' +
+    'is what survives at twelve pixels when an apron does not',
   farmer: 'canvas apron down the front, breaking the jumpsuit silhouette',
   mechanic: 'tool belt at the waist and goggles pushed up above the hairline',
   medic: 'pale coat over the jumpsuit, tails past the hip',
@@ -472,17 +477,47 @@ function config(role, seed, { age = null } = {}) {
   };
 
   switch (id) {
+    // Off shift, and the only thing that says so is the colour.
+    //
+    // Every other role here earns its difference with a silhouette cue — an
+    // apron, a coat, goggles. This one deliberately does not, because "not
+    // working" is not a job and should not hand anybody equipment. It is the
+    // same person in grey coveralls.
+    //
+    // Steel rather than a desaturated denim: denim pushed toward grey stays
+    // blue enough to be taken for the working suit at sprite size, and the
+    // entire point is that a glance across a floor separates the crew from
+    // everyone else.
+    case 'resident':
+      c.suit = tone('steel', jitter - 0.06);
+      c.suitLit = tone('steelLit', jitter - 0.06);
+      c.suitDark = tone('steelDark', jitter - 0.06);
+      c.sleeve = tone('steel', jitter + 0.04);
+      break;
+
+    // The working roles carry their unit's colour as well as their cue. At
+    // 12x16 on a phone an apron is two pixels and a colour is the whole
+    // torso, so the colour is what reads across a floor; the cue is what
+    // tells them apart when the player leans in.
     case 'farmer':
       c.apron = true;
+      c.suit = tone('verdigris', jitter - 0.08);
+      c.suitLit = tone('verdigris', jitter + 0.16);
+      c.suitDark = tone('verdigris', jitter - 0.34);
+      c.sleeve = tone('verdigris', jitter + 0.02);
       break;
 
     case 'mechanic':
       c.belt = true;
       c.goggles = true;
-      c.suit = tone('denim', jitter - 0.12);
-      c.suitLit = tone('denimLit', jitter - 0.12);
-      c.suitDark = tone('denimDark', jitter - 0.12);
-      c.sleeve = tone('denim', jitter - 0.02);
+      // Sodium at full strength is the lamp colour used all over the rooms
+      // behind these sprites, so it is taken well down: dark enough to be a
+      // work coverall rather than a light source, warm enough to be nobody
+      // else on the floor.
+      c.suit = tone('sodium', jitter - 0.44);
+      c.suitLit = tone('sodium', jitter - 0.24);
+      c.suitDark = tone('sodium', jitter - 0.62);
+      c.sleeve = tone('sodium', jitter - 0.36);
       break;
 
     case 'medic':
@@ -537,19 +572,29 @@ function config(role, seed, { age = null } = {}) {
       // the gap that separates the legs. The oversized-suit read comes from
       // longSleeve instead, which is a cue rather than a collision.
       c.longSleeve = true;
-      c.suit = tone('denim', jitter + 0.06);
-      c.suitLit = tone('denimLit', jitter + 0.06);
-      c.suitDark = tone('denimDark', jitter + 0.06);
-      c.sleeve = tone('denim', jitter + 0.14);
+      // Grey, like every other role that is not at a post.
+      //
+      // `citizenRole` only reaches 'child' and 'elder' *after* the shift
+      // check, so both are off-shift roles by construction, and wearing the
+      // working denim made them read as crew. That was not a small error:
+      // measured on a day-220 silo, 53 of the 93 people inside were children,
+      // so the single largest group of non-workers wore the colour that means
+      // "working". Lifted from the adult grey so oversized coveralls still
+      // read as hand-me-downs.
+      c.suit = tone('steel', jitter + 0.08);
+      c.suitLit = tone('steelLit', jitter + 0.08);
+      c.suitDark = tone('steelDark', jitter + 0.08);
+      c.sleeve = tone('steel', jitter + 0.16);
       break;
 
     case 'elder':
       c.m = METRICS.elder;
       c.headDX = 1;
-      c.suit = tone('denim', jitter - 0.05);
-      c.suitLit = tone('denimLit', jitter - 0.05);
-      c.suitDark = tone('denimDark', jitter - 0.05);
-      c.sleeve = tone('denim', jitter + 0.03);
+      // Off shift by construction, like 'child' above — see the note there.
+      c.suit = tone('steel', jitter - 0.1);
+      c.suitLit = tone('steelLit', jitter - 0.1);
+      c.suitDark = tone('steelDark', jitter - 0.1);
+      c.sleeve = tone('steel', jitter - 0.02);
       break;
 
     case 'hazmat':
@@ -2050,7 +2095,22 @@ async function selfTest() {
   check(Object.keys(ACTIONS).length === 5, 'ACTIONS should describe five actions');
   check(ACTIONS.walk === 6 && ACTIONS.idle === 4 && ACTIONS.work === 4
     && ACTIONS.sleep === 2 && ACTIONS.injured === 4, 'ACTIONS frame counts drifted');
-  check(ROLES.length === 10, 'ROLES should list ten roles');
+  // Every role the renderer can ask for is drawable, rather than a count.
+  //
+  // This was `ROLES.length === 10`, which is a number that has to be edited
+  // every time a role is added and says nothing about whether the set is
+  // right. What matters is that src/render/sprites.js:citizenRole() cannot
+  // return a name this module does not draw — that is a 404 in the atlas and
+  // a citizen who renders as nothing.
+  const ASKED_FOR = [
+    'base', 'resident', 'farmer', 'mechanic', 'medic', 'deputy', 'militia',
+    'child', 'elder', 'hazmat', 'irradiated',
+  ];
+  for (const role of ASKED_FOR) {
+    check(ROLES.includes(role), `citizenRole() can return "${role}" and ROLES does not list it`);
+  }
+  check(ROLES.every((r) => ASKED_FOR.includes(r)),
+    `ROLES draws ${ROLES.filter((r) => !ASKED_FOR.includes(r)).join(', ')}, which nothing asks for`);
   for (const role of ROLES) check(!!ROLE_CUES[role], `role "${role}" has no documented cue`);
 
   // Everything the shipped renderer can ask for must resolve to something this
