@@ -68,6 +68,7 @@ import { NODES as DOCTRINE_NODES, NODE_LIST as DOCTRINE_LIST } from '../src/data
 import { commendationsFor, doctrineMod, whyNot, spent as doctrineSpent } from '../src/sim/doctrine.js';
 import { ammoFactor } from '../src/sim/combat.js';
 import { squadCap } from '../src/sim/military.js';
+import { caretakerDay } from '../src/sim/caretaker.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -4404,6 +4405,129 @@ console.log('');
   } else {
     ok(`the Armory is load-bearing: a worn rifle goes 40 → ${repaired.toFixed(0)} with one, and stays at ` +
       `${neglected.toFixed(0)} without`);
+  }
+}
+
+// ---- 55. a weekend away does not kill the silo ------------------------------
+//
+// A game day is twelve real minutes, so closing the app on a Friday and
+// opening it on a Sunday is sixty game days of simulation with nobody in them.
+// The catch-up cap is doing its job — it clamps any absence to twelve real
+// hours — but sixty unattended days was still lethal in one specific and
+// deeply unfair way.
+//
+// Measured before the fix, on a silo whose life-support rooms were standing
+// uncrewed when the player closed the app: extinct on all three seeds, first
+// loss on day eighteen of the absence, cause of death "dehydration" fifty
+// times over. A silo of forty-eight people does not stand around dying of
+// thirst next to a working pump because the mayor is asleep — somebody
+// notices and goes and turns it on.
+//
+// A settled silo already survived this, which is why it went unnoticed: it is
+// specifically the *new* player, who has built rooms and not yet crewed them,
+// who loses everything.
+{
+  const away = (crewed) => {
+    const store = newStore(303);
+    const s = store.state;
+    const game = new Game(store);
+    store.dispatchAll(autoAssign(s));
+    for (let d = 0; d < 20; d++) {
+      game.runDays(1);
+      s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+      for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+    }
+    if (!crewed) {
+      // The state a distracted new player leaves behind.
+      for (const r of Object.values(s.silo.rooms)) r.staff = [];
+      for (const id of s.citizenIds) {
+        const c = s.citizens[id];
+        if (c.job) { c.job = null; c.status = 'idle'; }
+      }
+    }
+    const before = s.citizenIds.length;
+    // Exactly what `runCatchup` runs for an absence past the cap.
+    const days = Math.floor(BAL.catchup.capMs / (BAL.time.TICK_MS * TIME.ticksPerDay));
+    for (let d = 0; d < days; d++) {
+      if (s.meta.gameOver) break;
+      game.coarseDay();
+    }
+    return { before, after: s.citizenIds.length, over: s.meta.gameOver, days };
+  };
+
+  const neglected = away(false);
+  const tended = away(true);
+  const lost = (r) => (r.before - r.after) / Math.max(1, r.before);
+
+  if (neglected.days < 40) {
+    fail(`the catch-up cap simulates only ${neglected.days} days, so this section is not testing an absence`);
+  } else if (neglected.over) {
+    fail(`${neglected.days} days away ended the run outright (${neglected.over}) — a player who closed the ` +
+      'app on a silo they had not finished crewing lost everything');
+  } else if (lost(neglected) > 0.25) {
+    fail(`${neglected.days} days away cost ${Math.round(100 * lost(neglected))}% of an uncrewed silo ` +
+      `(${neglected.before} → ${neglected.after})`);
+  } else if (lost(tended) > 0.25) {
+    fail(`${neglected.days} days away cost ${Math.round(100 * lost(tended))}% of a properly crewed silo`);
+  } else {
+    ok(`${neglected.days} days away is survivable: an uncrewed silo goes ${neglected.before} → ` +
+      `${neglected.after}, a crewed one ${tended.before} → ${tended.after}`);
+  }
+}
+
+// And the caretaker keeps its hands off everything else.
+//
+// It exists to stop people dying of thirst, not to play the game. A player who
+// comes back to a living silo must not also come back to one that has been
+// re-planned: nothing built, nothing researched, nothing crafted, no squad
+// formed, no expedition launched, nobody moved out of a post they were already
+// standing in.
+{
+  // A silo far enough along to have workshops, a clinic and an armoury as well
+  // as pumps, and enough people already at posts that moving them would show.
+  // A three-day fixture has neither, so both halves of this passed against a
+  // caretaker that crewed everything and reshuffled the whole roster.
+  const store = newStore(304);
+  const s = store.state;
+  const g = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 40; d++) {
+    g.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  // Empty one room that is NOT life support, so there is an open post the
+  // caretaker has to refuse. Without this the check is unfalsifiable: after
+  // forty days every other room is already fully crewed, so a caretaker that
+  // crewed anything at all had nothing spare to crew it with.
+  const LIFE = new Set(['water_reclaimer', 'hydroponics', 'generator_hall', 'reactor', 'air_filtration',
+    'protein_vats', 'deep_well']);
+  const stray = Object.values(s.silo.rooms).find((r) => !LIFE.has(r.type) && (r.staff?.length || 0) > 0);
+  if (!stray) fail('the fixture has no crewed room outside life support, so restraint cannot be tested');
+  for (const cid of stray?.staff || []) {
+    const c = s.citizens[cid];
+    if (c) { c.job = null; c.status = 'idle'; }
+  }
+  if (stray) stray.staff = [];
+
+  const posted = s.citizenIds.filter((id) => s.citizens[id].job).map((id) => [id, s.citizens[id].job.roomId]);
+  const actions = caretakerDay(s);
+  const kinds = [...new Set(actions.map((a) => a.type))];
+
+  if (kinds.some((k) => k !== 'CITIZEN_ASSIGN')) {
+    fail(`the caretaker did more than crew: ${kinds.filter((k) => k !== 'CITIZEN_ASSIGN').join(', ')}`);
+  } else {
+    // Nobody already at a post may be moved by it.
+    const moved = actions.filter((a) => posted.some(([id]) => id === a.citizenId));
+    if (moved.length) {
+      fail(`the caretaker moved ${moved.length} people who were already posted — it is re-planning the silo`);
+    } else {
+      // And it only crews things that keep people alive.
+      const types = [...new Set(actions.map((a) => s.silo.rooms[a.roomId].type))];
+      const strayed = types.filter((t) => !LIFE.has(t));
+      if (strayed.length) fail(`the caretaker crewed ${strayed.join(', ')}, which is not life support`);
+      else ok(`and the caretaker only crews life support, and only with people who were idle`);
+    }
   }
 }
 

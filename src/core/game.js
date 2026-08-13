@@ -12,6 +12,7 @@ import { emit } from './events.js';
 import * as economy from '../sim/economy.js';
 import * as jobs from '../sim/jobs.js';
 import * as population from '../sim/population.js';
+import { caretakerDay } from '../sim/caretaker.js';
 import * as research from '../sim/research.js';
 import * as build from '../sim/build.js';
 import * as military from '../sim/military.js';
@@ -290,6 +291,18 @@ export class Game {
     });
     this.loop.setTick(tick);
 
+    // Somebody keeps the pumps running while nobody is watching.
+    //
+    // A game day is twelve real minutes, so a weekend away is sixty game days
+    // with no player in them. Measured before this line existed: a silo whose
+    // life-support rooms were standing uncrewed when the player closed the app
+    // was extinct inside twenty days, all three seeds, cause of death
+    // dehydration fifty times over. A silo of forty-eight people does not die
+    // of thirst next to a working pump because the mayor is asleep.
+    //
+    // Deliberately only on the coarse path, which is only ever reached from
+    // catch-up: while the player is watching, crewing is their job.
+    store.dispatchAll(caretakerDay(this.state));
     store.dispatchAll(economy.simulateDayCoarse(this.state, this.ctx));
     this.advanceConstruction(clock.cycle);
     this.day(clock.day);
