@@ -263,7 +263,7 @@ export function resolve(state, memberIds, enemy, opts = {}) {
     if (best < enemy.def.minWeaponTier) {
       theirPower *= 3.5;
       log.push(
-        `Nothing the squad is carrying will go through it. Tier-${enemy.def.minWeaponTier} weapons or nothing.`
+        `Nothing the squad is carrying will go through it. Pierce ${enemy.def.minWeaponTier} or nothing.`
       );
     }
   }

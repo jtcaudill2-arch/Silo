@@ -146,6 +146,3 @@ export function requires(node) {
   if (node.rank === 1) return ['debrief'];
   return NODE_LIST.filter((n) => n.doctrine === node.doctrine && n.rank === node.rank - 1).map((n) => n.id);
 }
-
-/** Every effect key any node grants — the list the mod lookup must cover. */
-export const EFFECT_KEYS = [...new Set(NODE_LIST.flatMap((n) => Object.keys(n.effect)))];

@@ -913,7 +913,25 @@ const expeditionReducers = {
     // frontier it had just set and every run would pay for ever.
     if (state.doctrine) {
       const earned = commendationsFor(state, { band: exp.band, casualties: a.casualties || [] });
-      state.doctrine.frontier = frontierAfter(state, exp.band);
+      // The frontier advances only if somebody actually came back.
+      //
+      // This ran unconditionally, and the field is documented — in its own
+      // helper and in the commit that introduced it — as "the deepest tier
+      // this silo has ever *come back from*". A party annihilated on the Scar
+      // therefore set the frontier to 4 and permanently closed every band
+      // below it as an earning route: measured, a later clean run to the deep,
+      // the mid waste or the near ruins was worth 0 commendations for the rest
+      // of the campaign, with nothing in the panel explaining why. One
+      // over-reach that killed a squad also switched off the whole talent
+      // tree.
+      //
+      // Survivors rather than "nobody lost", because the two rules answer
+      // different questions: the award asks whether the run went well, and the
+      // frontier asks where the silo has been. Coming home from the Scar
+      // having buried two people is still having been to the Scar.
+      if ((a.survivors || []).length) {
+        state.doctrine.frontier = frontierAfter(state, exp.band);
+      }
       if (earned > 0) {
         state.doctrine.points += earned;
         state.doctrine.earned += earned;

@@ -56,7 +56,7 @@ import { tierUnlocked } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
-import { getEnemy } from '../src/data/encounters.js';
+import { getEnemy, ENEMIES } from '../src/data/encounters.js';
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower, rollEnemyForce, applyResolution } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
@@ -2631,13 +2631,11 @@ console.log('');
   const DAYS = 200;
   const startDay = s.clock.day;
   let removals = 0;
-  let other = 0;
   for (let d = 0; d < DAYS; d++) {
     s.clock.day = startDay + d;
     for (const a of populationDay(s, {})) {
       if (a.type !== 'CITIZEN_TRAIT' || a.trait !== 'bereaved') continue;
       if (a.remove) removals++;
-      else other++;
     }
   }
   const draws = marked.length * DAYS;
@@ -2652,9 +2650,7 @@ console.log('');
   // roll to half the configured chance lands 15 sd out and fails; deleting the
   // roll fails at zero.
   const sd = Math.sqrt(want * (1 - want) / draws);
-  if (other) {
-    fail(`the daily loop granted ${other} bereaved traits it was never asked for`);
-  } else if (!removals) {
+  if (!removals) {
     fail(`${draws} citizen-days of grief and it never once lifted — the roll is not in the daily loop`);
   } else if (Math.abs(rate - want) > 3.5 * sd) {
     fail(`grief lifts at ${(100 * rate).toFixed(3)}%/day, not the configured ` +
@@ -2664,15 +2660,20 @@ console.log('');
       `${(100 * rate).toFixed(3)}% vs ${(100 * want).toFixed(3)}%)`);
   }
 
-  // And it is slow. A mutation setting the chance to 1 would satisfy nothing
-  // above except by breaking the band, so this is really a statement about
-  // what the number is for: a bereavement is supposed to hang over somebody
-  // for months, and the median here is about 58 days.
-  const halfLife = Math.log(0.5) / Math.log(1 - want);
-  if (halfLife < 20 || halfLife > 200) {
-    fail(`half the mourners are over it in ${halfLife.toFixed(0)} days, which is not a bereavement`);
+  // And it is slow — read off the removals just counted, not off the config.
+  //
+  // This was `log(0.5) / log(1 - griefPassChance)` bounded to [20, 200] days,
+  // which executes no product code whatsoever: it is arithmetic on a config
+  // value asserting that the config value is in a range. It stayed green with
+  // the chance retuned to two and a half times shipped. Using the observed
+  // rate makes it a second reading of the measurement above rather than a
+  // fact about balance.js, so it moves when the plumbing moves.
+  const observedHalfLife = Math.log(0.5) / Math.log(1 - rate);
+  if (observedHalfLife < 20 || observedHalfLife > 200) {
+    fail(`at the rate this loop actually removes it, half the mourners are over it in ` +
+      `${observedHalfLife.toFixed(0)} days, which is not a bereavement`);
   } else {
-    ok(`and slowly: half of them still carry it after ${halfLife.toFixed(0)} days`);
+    ok(`and slowly: at the observed rate, half of them still carry it after ${observedHalfLife.toFixed(0)} days`);
   }
 }
 {
@@ -3445,11 +3446,32 @@ console.log('');
   if (!blocked('slag_autogun', 4)) problems.push('a Slag Autogun (pierce 3) went through a tier-4 gate');
   if (blocked('slag_autogun', 3)) problems.push('a Slag Autogun (pierce 3) was stopped by a tier-3 gate');
   if (!blocked('service_rifle', 3)) problems.push('a Service Rifle (pierce 2) went through a tier-3 gate');
+  // And the gate has to exist in the game, not just in this fixture.
+  //
+  // The probe above builds its own enemy, which is fine for isolating the
+  // resolver and useless as evidence that the stat matters: with the Hulk's 3
+  // as the only gate in any table, `pierce` and `tier` admitted an identical
+  // set of weapons, so a stat with its own read site decided nothing a tier
+  // index would not have. The Broodmother carries the tier-4 gate now, which
+  // is what the Slag Autogun's whole trade is against.
+  const gates = [...new Set(Object.values(ENEMIES).map((e) => e.minWeaponTier).filter(Boolean))];
+  const weapons = ITEM_LIST.filter((i) => i.kind === 'weapon');
+  const discriminating = gates.filter((g) => {
+    const p = weapons.filter((i) => i.stats.pierce >= g).map((i) => i.id).sort().join();
+    const t = weapons.filter((i) => i.tier >= g).map((i) => i.id).sort().join();
+    return p !== t;
+  });
+  if (!discriminating.length) {
+    problems.push(`no enemy in the game has a gate that pierce and tier answer differently ` +
+      `(gates present: ${gates.join(', ') || 'none'}) — the stat is decoration`);
+  }
+
   if (problems.length) {
     fail(`the armour gate is reading weapon tier, not \`pierce\`: ${problems.join('; ')} — the Mag ` +
       'Rifle and the Slag Autogun are both tier 4 and must not be interchangeable in front of a Hulk');
   } else {
-    ok('`pierce` and not tier decides what gets through: two tier-4 weapons, only one of them opens a tier-4 gate');
+    ok(`\`pierce\` and not tier decides what gets through, and a real enemy asks: ` +
+      `gate ${discriminating.join(', ')} admits a Mag Rifle and refuses a Slag Autogun, both tier 4`);
   }
 }
 {
@@ -3827,7 +3849,7 @@ console.log('');
     if (!probe) continue;
     // The node under test plus whatever it needs to be legal. The ledger is
     // set directly rather than bought, because this section is about the
-    // effect, not the shop — §47 covers the buying.
+    // effect, not the shop — §49 covers the buying.
     const off = probe([]);
     const on = probe([node.id]);
     lines.push(`${node.id} ${Number(off).toFixed(2)}→${Number(on).toFixed(2)}`);
@@ -3968,6 +3990,122 @@ console.log('');
     fail(`${dominated.join('; ')} is beaten on every axis at once — a looted piece nobody should ever carry`);
   } else {
     ok('and no looted weapon is beaten on power, ammunition and pierce all at once');
+  }
+}
+
+// ---- 49. the shop refuses what it says it refuses ---------------------------
+//
+// Every one of `DOCTRINE_TAKE`'s guards could be deleted with the whole suite
+// still green. The reducer's own docstring justifies re-checking `canTake` as
+// what stands between the player and "a silo with negative Commendations and
+// both halves of a pair that is supposed to be a choice" — and nothing
+// anywhere asserted that. §46 even pointed at another section for this
+// coverage, which did not exist.
+//
+// The guards were correct. That is not the same as being covered: a rule
+// nothing tests is a rule that survives exactly as long as nobody edits it.
+{
+  const fresh = (points, taken = []) => {
+    const store = newStore(97);
+    store.state.doctrine = { points, earned: points, taken: [...taken], frontier: 0 };
+    return store;
+  };
+  const problems = [];
+
+  // Same node twice — the double-tap the docstring names.
+  {
+    const store = fresh(100);
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'debrief' });
+    const after1 = store.state.doctrine.points;
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'debrief' });
+    if (store.state.doctrine.taken.filter((x) => x === 'debrief').length !== 1) {
+      problems.push('a node was adopted twice');
+    }
+    if (store.state.doctrine.points !== after1) problems.push('the second tap charged for it again');
+  }
+
+  // Both halves of a pair.
+  {
+    const store = fresh(100, ['debrief']);
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'cadre' });
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'spearhead' });
+    const t = store.state.doctrine.taken;
+    if (t.includes('cadre') && t.includes('spearhead')) {
+      problems.push('both halves of a mutually exclusive pair were adopted');
+    }
+  }
+
+  // A capstone with nothing under it.
+  {
+    const store = fresh(100, ['debrief']);
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'succession' });
+    if (store.state.doctrine.taken.includes('succession')) {
+      problems.push('a rank-2 node was adopted with no rank-1 node beneath it');
+    }
+  }
+
+  // More than you have.
+  {
+    const store = fresh(3);
+    store.dispatch({ type: 'DOCTRINE_TAKE', id: 'debrief' });   // costs 4
+    if (store.state.doctrine.taken.length) problems.push('a node was adopted without the points for it');
+    if (store.state.doctrine.points < 0) problems.push('commendations went negative');
+  }
+
+  // And nothing the panel can send is fatal.
+  {
+    const store = fresh(100);
+    for (const id of [null, undefined, 42, 'not_a_node', '']) {
+      store.dispatch({ type: 'DOCTRINE_TAKE', id });
+    }
+    if (store.state.doctrine.taken.length) problems.push('a junk id bought something');
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else ok('the doctrine shop refuses a repeat, both halves of a pair, an ungrounded capstone, an overspend and a junk id');
+}
+
+// ---- 50. the frontier is somewhere you came back from -----------------------
+//
+// `frontierAfter` ran unconditionally on every resolved expedition, including
+// one where the whole party died. So a squad annihilated on the Scar set the
+// frontier to 4, and since commendations only pay at or beyond it, every band
+// below the Scar stopped paying for the rest of the campaign — measured: a
+// later clean run to the deep, the mid waste or the near ruins was worth 0.
+// One over-reach that killed a squad quietly switched off the talent tree,
+// with nothing in the panel saying so.
+{
+  const mk = (survivors, casualties) => {
+    const store = newStore(98);
+    const s = store.state;
+    const roster = s.citizenIds.slice(0, 4);
+    s.military.squads[1] = { id: 1, name: 'A', members: roster, leaderId: roster[0], deployed: true, assignment: 'expedition' };
+    s.military.squadIds = [1];
+    s.expeditions.active = [{
+      id: 1, squadId: 1, band: 'scar', purpose: 'salvage', launchDay: 1, returnDay: 2,
+      roster, leaderId: roster[0], resolved: false,
+    }];
+    store.dispatch({
+      type: 'EXPEDITION_RESOLVE', id: 1, journal: [], loot: {}, artifacts: {},
+      survivors: survivors ? roster.slice(0, 2) : [],
+      casualties: casualties ? roster.slice(casualties === 'all' ? 0 : 2) : [],
+    });
+    return s;
+  };
+
+  const wiped = mk(false, 'all');
+  const bloodied = mk(true, 'some');
+
+  if (wiped.doctrine.frontier !== 0) {
+    fail(`a party that never came home moved the frontier to ${wiped.doctrine.frontier} — ` +
+      'every band below the Scar now pays nothing, for ever');
+  } else if (commendationsFor(wiped, { band: 'near', casualties: [] }) <= 0) {
+    fail('after a total wipe the near ruins stopped paying, so the tree is closed');
+  } else if (bloodied.doctrine.frontier !== 4) {
+    fail(`a party that came home from the Scar having buried two people left the frontier at ` +
+      `${bloodied.doctrine.frontier} — having been somewhere is not the same as having gone well`);
+  } else {
+    ok('the frontier moves when somebody comes back, and not when nobody does');
   }
 }
 

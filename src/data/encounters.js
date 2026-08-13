@@ -69,7 +69,14 @@ export const MUTANTS = [
   },
   {
     id: 'broodmother', name: 'Broodmother', tier: 5, power: 85, human: false,
-    flee: 0, count: [1, 1], spawns: 'shamblers', unique: true, anchored: true,
+    // The only pierce gate above 3 in the game, and the reason `pierce` is a
+    // stat at all. With the Hulk's 3 as the sole gate, pierce and tier admitted
+    // an identical set of weapons — every item that cleared one cleared the
+    // other — so a stat with its own read site decided nothing a tier index
+    // would not have. This is what the Slag Autogun's trade is against: it is
+    // the hardest-hitting weapon in the game and it pierces 3, so the capstone
+    // fight is the one place it cannot go.
+    flee: 0, count: [1, 1], spawns: 'shamblers', unique: true, anchored: true, minWeaponTier: 4,
     desc: 'Spawns more of them every round. It does not move, and it does not have to.',
   },
 ];
