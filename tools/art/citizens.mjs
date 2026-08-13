@@ -501,10 +501,10 @@ function config(role, seed, { age = null } = {}) {
     // tells them apart when the player leans in.
     case 'farmer':
       c.apron = true;
-      c.suit = tone('verdigris', jitter - 0.08);
-      c.suitLit = tone('verdigris', jitter + 0.16);
-      c.suitDark = tone('verdigris', jitter - 0.34);
-      c.sleeve = tone('verdigris', jitter + 0.02);
+      c.suit = tone('verdigris', jitter - 0.18);
+      c.suitLit = tone('verdigris', jitter + 0.02);
+      c.suitDark = tone('verdigris', jitter - 0.46);
+      c.sleeve = tone('verdigris', jitter - 0.08);
       break;
 
     case 'mechanic':
@@ -514,10 +514,10 @@ function config(role, seed, { age = null } = {}) {
       // behind these sprites, so it is taken well down: dark enough to be a
       // work coverall rather than a light source, warm enough to be nobody
       // else on the floor.
-      c.suit = tone('sodium', jitter - 0.44);
-      c.suitLit = tone('sodium', jitter - 0.24);
-      c.suitDark = tone('sodium', jitter - 0.62);
-      c.sleeve = tone('sodium', jitter - 0.36);
+      c.suit = tone('sodium', jitter - 0.22);
+      c.suitLit = tone('sodium', jitter - 0.04);
+      c.suitDark = tone('sodium', jitter - 0.46);
+      c.sleeve = tone('sodium', jitter - 0.14);
       break;
 
     case 'medic':
@@ -552,11 +552,22 @@ function config(role, seed, { age = null } = {}) {
       break;
 
     case 'militia':
+      // Rust, because dark denim made a soldier the hardest figure on the
+      // screen to identify. Measured as the mean colour of the torso block,
+      // the old militia sat 23 from `base` and 18 from `resident` — a fighter
+      // was harder to tell from somebody off shift than an ordinary worker
+      // was, which is the exact opposite of what the player needs to see.
+      //
+      // Rust is the last unused hue in the palette and it is the right one:
+      // it is the only warm red here, it reads as danger, and it is nowhere
+      // near the greys the walls and machinery are built from. Kept a shade
+      // down from full strength so it is webbing and hard-wearing cloth
+      // rather than a warning light.
       c.plates = true;
-      c.suit = tone('denim', jitter - 0.2);
-      c.suitLit = tone('denimLit', jitter - 0.2);
-      c.suitDark = tone('denimDark', jitter - 0.2);
-      c.sleeve = tone('denim', jitter - 0.1);
+      c.suit = tone('rust', jitter - 0.14);
+      c.suitLit = tone('rust', jitter + 0.10);
+      c.suitDark = tone('rust', jitter - 0.44);
+      c.sleeve = tone('rust', jitter - 0.04);
       break;
 
     case 'child':

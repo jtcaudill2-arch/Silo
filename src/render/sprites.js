@@ -115,6 +115,24 @@ export function citizenAction(c, moving) {
 }
 
 /**
+ * On duty, which is not the same as `status === 'working'`.
+ *
+ * Soldiers were the casualty of getting this wrong. A garrison squad's members
+ * carry `status: 'training'` — they are standing watch and drilling, which is
+ * their post — so a check for 'working' alone dropped every one of them
+ * through to the off-shift grey. The silo's guards were drawn as civilians
+ * who had knocked off, which is the opposite of what a player scanning for
+ * their defence needs to see.
+ *
+ * `economy.js:126` already draws this line in the same place, counting both
+ * statuses as somebody being at work, so this is the game's existing
+ * definition rather than a new one.
+ */
+function onDuty(c) {
+  return c.status === 'working' || c.status === 'training';
+}
+
+/**
  * Which figure to draw them as.
  *
  * The order is the whole design, and it changed: **on shift or not** now
@@ -130,17 +148,17 @@ export function citizenAction(c, moving) {
  * Below the shift check, age still speaks — a child at school and an elder off
  * shift are both drawn as themselves, and neither is crew.
  *
- * `status === 'working'` is the signal rather than `c.job`, and the two are
- * not the same question: `job` is the post somebody holds, `working` is
- * whether they are standing in it. Measured on a day-220 silo, they happen to
- * agree exactly — 34 posts, 34 working, stable across six days — but a
- * citizen resting, sick or in school holds their post and is not at it, and
- * the colour should follow the body, not the paperwork.
+ * Being on duty is the signal rather than `c.job`, and the two are not the
+ * same question: `job` is the post somebody holds, on duty is whether they are
+ * standing in it. Measured on a day-220 silo they agree almost exactly for
+ * civilians — 34 posts, 34 working — but a citizen resting, sick or in school
+ * holds their post and is not at it, and the colour should follow the body,
+ * not the paperwork.
  */
 export function citizenRole(c) {
   if (c.radiation >= BAL.citizens.radiation.sicknessThreshold) return 'irradiated';
   if (c.status === 'expedition') return 'hazmat';
-  if (c.status === 'working') {
+  if (onDuty(c)) {
     if (c.squadId != null) return 'militia';
     return SKILL_ROLE[jobSkillOf(c)] || 'base';
   }

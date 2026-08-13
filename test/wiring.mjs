@@ -2157,6 +2157,105 @@ console.log('');
   }
 }
 
+// ---- 32. the guards are on duty, and they look like it ---------------------
+//
+// Two failures, and the first was mine from the commit before this one.
+//
+// Making the shift check `status === 'working'` dropped every soldier through
+// to the off-shift grey, because a garrison squad's members carry
+// `status: 'training'` — they are standing watch and drilling, which *is*
+// their post. The silo's guards were drawn as civilians who had knocked off.
+// `economy.js` already counts both statuses as being at work; the renderer
+// now draws the same line.
+{
+  const store = newStore(4242);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  game.runDays(3);
+  store.dispatchAll(formSquad(s, 'Watch'));
+  const sqId = s.military.squadIds[0];
+  const adults = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  for (let i = 0; i < BAL.military.squadMin; i++) {
+    if (adults[i]) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: adults[i].id });
+  }
+  game.runDays(2);
+
+  const squad = s.military.squads[sqId];
+  const roles = squad.members.map((cid) => citizenRole(s.citizens[cid]));
+  const civilian = roles.filter((r) => r !== 'militia');
+
+  if (!squad.members.length) {
+    fail('the fixture crewed no squad, so it cannot show how a guard is drawn');
+  } else if (squad.deployed) {
+    fail('the fixture squad went outside — this section is about the ones standing watch');
+  } else if (civilian.length) {
+    fail(
+      `${civilian.length} of ${roles.length} in a garrison squad drew as ${[...new Set(civilian)].join('/')} ` +
+      'rather than militia — the silo\'s guards are being drawn as off-duty civilians'
+    );
+  } else {
+    ok(`a garrison squad is drawn as soldiers, standing watch counting as duty (${roles.length} of ${roles.length})`);
+  }
+
+  // Off duty is still off duty, soldier or not: somebody asleep in the dorm is
+  // not standing anywhere, and the rule the cross-section is read by does not
+  // get an exception for rank.
+  const resting = s.citizens[squad.members[0]];
+  const wasStatus = resting.status;
+  resting.status = 'idle';
+  if (citizenRole(resting) === 'militia') {
+    fail('a soldier off duty still wore the militia colour, so "coloured means working" is not a rule');
+  } else {
+    ok('and a soldier off duty is grey like everybody else');
+  }
+  resting.status = wasStatus;
+}
+
+// ---- 33. no two jobs on screen are the same colour --------------------------
+//
+// The point of colouring the crew is telling them apart, and militia failed
+// it: as dark denim a soldier sat 23 from `base` and 18 from `resident` on the
+// mean of their torso, which is to say a fighter was harder to distinguish
+// from somebody off shift than an ordinary worker was.
+//
+// Measured on the cloth rather than the whole figure. Sampling the torso block
+// alone is not enough either — the militia's plates and the mechanic's belt
+// cover most of it, so a mean over that region compares *cues* and reported
+// those two as 22 apart while the eye reads maroon against gold. The suit
+// tones are read from the source instead, which is the thing being chosen.
+{
+  const src = readSource('../tools/art/citizens.mjs');
+  // `case 'role':` ... `c.suit = tone('name', ...)` — the family each role
+  // dresses in, which is the decision this section is about.
+  const family = {};
+  for (const m of src.matchAll(/case '(\w+)':[\s\S]{0,900}?c\.suit = tone\('(\w+)'/g)) {
+    family[m[1]] = m[2];
+  }
+  family.base = (src.match(/\n    suit: tone\('(\w+)'/) || [])[1];
+
+  const crew = ['base', 'farmer', 'mechanic', 'medic', 'deputy', 'militia'];
+  const known = crew.filter((r) => family[r]);
+  if (known.length < 4) {
+    fail(`could not read the suit family for ${crew.filter((r) => !family[r]).join(', ')} — this check has gone stale`);
+  } else {
+    // medic is the exception and says so in its own comment: the coat is bone
+    // and the jumpsuit under it stays denim, because the coat is what is seen.
+    const wearing = known.filter((r) => r !== 'medic').map((r) => `${r}:${family[r]}`);
+    const families = wearing.map((w) => w.split(':')[1]);
+    const dupes = families.filter((f, i) => families.indexOf(f) !== i);
+    if (dupes.length) {
+      fail(`${wearing.join(', ')} — ${[...new Set(dupes)].join(', ')} is worn by more than one job on screen`);
+    } else {
+      ok(`every job on screen wears its own colour: ${wearing.join(', ')}`);
+    }
+    // And none of them wears the off-shift grey, which would make that job
+    // invisible against the population it is supposed to stand out from.
+    const greyed = known.filter((r) => family[r] === 'steel');
+    if (greyed.length) fail(`${greyed.join(', ')} wear the off-shift grey, so they read as nobody working`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }
