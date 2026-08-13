@@ -1323,6 +1323,16 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--hairline);
 }
 .gear-row.locked { opacity: .5; }
+/* 24x24 art blitted at 2x. Fixed box, so a frame that fails to load leaves a
+   hole rather than reflowing every row under it. */
+.gear-icon {
+  width: 48px; height: 48px; flex: 0 0 auto;
+  image-rendering: pixelated; margin-top: 2px;
+}
+.gear-icon-missing { border: 1px dashed var(--hairline); border-radius: var(--radius); }
+/* Looted kit: listed, not offered. No chevron and no press state, because
+   there is nothing here to buy. */
+.gear-found { cursor: default; }
 .gear-main { flex: 1; min-width: 0; }
 .gear-name { font-size: 13px; display: flex; align-items: center; gap: 5px; }
 .gear-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }

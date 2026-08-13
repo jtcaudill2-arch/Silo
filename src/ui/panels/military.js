@@ -7,7 +7,7 @@
  */
 
 import { BAL } from '../../config/balance.js';
-import { getItem, itemsOfKind } from '../../data/items.js';
+import { getItem, itemsOfKind, allOfKind } from '../../data/items.js';
 import { fullName, topSkill } from '../../sim/population.js';
 import {
   readiness, squadMembers, formSquad, craft, canCraft, craftableItems,
@@ -16,6 +16,7 @@ import {
 import { employableCitizens } from '../../sim/jobs.js';
 import { lockReason } from '../../sim/unlocks.js';
 import { portraitCanvas } from '../../render/portraits.js';
+import { frameCanvas } from '../../render/sprites.js';
 import { openCitizen } from '../citizenCard.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmtDelta } from '../dom.js';
 
@@ -270,6 +271,7 @@ function renderArmory(state, body, shell) {
               shell.renderPanel(true);
             },
           },
+          gearIcon(item),
           el(
             'div.gear-main',
             el('div.gear-name', `${item.name} `, chip(`T${item.tier}`)),
@@ -285,7 +287,77 @@ function renderArmory(state, body, shell) {
         )
       );
     }
+
+    lootRows(state, body, kind);
   }
+}
+
+/**
+ * The looted kit of a kind, listed under the ladder it does not belong to.
+ *
+ * `itemsOfKind` deliberately excludes anything with `loot: true`, because that
+ * list is what the craft rows iterate and a looted piece has no `craft` block
+ * to price — so without this, the six pieces a player can only take off a
+ * conquered garrison, the Slag Crews or the Scar appeared NOWHERE in the
+ * Armory. They were racked, they were issued by `equipBest`, they decided
+ * fights, and the only place they were ever named was a tier digit on a squad
+ * member's card.
+ *
+ * Nothing is shown until the player owns one: a row for kit they have never
+ * seen is a spoiler and a tease, and the Armory is a list of what is in the
+ * room. Once it is in the room it gets the same icon and the same tier strip
+ * as everything else, so a Slag Autogun and a Magnetic Rifle can be compared
+ * where the player actually chooses between them.
+ */
+function lootRows(state, body, kind) {
+  for (const item of allOfKind(kind)) {
+    if (!item.loot) continue;
+    const owned = Object.values(state.military.gear).filter((g) => g.item === item.id);
+    if (!owned.length) continue;
+    const spare = owned.filter((g) => !g.assignedTo).length;
+
+    body.appendChild(
+      el(
+        'div.gear-row.gear-found',
+        gearIcon(item),
+        el(
+          'div.gear-main',
+          el('div.gear-name', `${item.name} `, chip(`T${item.tier}`), chip('found', 'warn')),
+          el('div.gear-desc', item.desc),
+          el(
+            'div.gear-meta',
+            chip(`${owned.length} racked, ${spare} spare`, spare ? 'good' : ''),
+            chip('not made here')
+          )
+        )
+      )
+    );
+  }
+}
+
+/**
+ * The icon for a piece of gear, cut out of the sprite atlas.
+ *
+ * The Armory is a list of eighteen rows of prose, and prose is the slowest
+ * possible way to answer "which of these is better" — which is the only
+ * question the screen is asked. tools/art/gear.mjs draws each item at 24x24
+ * with its tier as a five-slot pip strip and its provenance as the pips'
+ * colour, so the ranking and the "this came off a body in the Scar" both land
+ * before a single word is read. See that file's header for the whole scheme.
+ *
+ * 2x, because the art is authored at 24 and the row is 72px tall: any
+ * non-integer scale would resample a 1px keyline and turn every icon to mush.
+ *
+ * `frameCanvas` returns null when the atlas has not loaded or the frame does
+ * not exist — a brand-new item somebody added to items.js without drawing it,
+ * for instance — so this always returns SOMETHING of the same size. A missing
+ * icon must not shift every row in the list.
+ */
+function gearIcon(item) {
+  const c = frameCanvas(`gear_${item.id}`, 2);
+  if (!c) return el('div.gear-icon.gear-icon-missing');
+  c.className = 'gear-icon';
+  return c;
 }
 
 function tile(k, v, cls = '') {

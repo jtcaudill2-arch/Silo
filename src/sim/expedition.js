@@ -20,8 +20,8 @@ import { LOOT, getItem } from '../data/items.js';
 import { getRoom } from '../data/rooms.js';
 import { fullName, makeCitizen } from './population.js';
 import { effects as researchEffects } from './research.js';
-import { rollEnemyForce, resolve as resolveCombat, applyResolution } from './combat.js';
-import { squadMembers, readiness } from './military.js';
+import { rollEnemyForce, resolve as resolveCombat, applyResolution, ammoAppetite, averageSuitStat } from './combat.js';
+import { squadMembers, readiness, lootGear } from './military.js';
 import { isConquestRun, resolveRun as resolveConquestRun, canLaunchRun, accumulate } from './conquest.js';
 
 export const BANDS = BAL.expedition.bands;
@@ -47,15 +47,29 @@ export function airlockCapacity(state) {
   return cap;
 }
 
-export function supplyCost(band, memberCount) {
+/**
+ * What the airlock has to be able to hand over before it opens.
+ *
+ * `appetite` is the squad's mean `stats.ammo` — see `ammoAppetite` in
+ * combat.js. Food, water and meds are per body and do not care what anybody is
+ * carrying; ammunition is per *weapon*, which is the whole cost side of the
+ * appetite stat. It defaults to 1.0, which is the Service Rifle, which is the
+ * number the game charged for everybody before there were per-item stats.
+ */
+export function supplyCost(band, memberCount, appetite = 1) {
   const days = band.travelDays;
   const S = BAL.expedition.supplies;
   return {
     food: Math.ceil(S.foodPerMemberPerDay * memberCount * days),
     water: Math.ceil(S.waterPerMemberPerDay * memberCount * days),
     meds: Math.ceil(S.medsPerMemberPerDay * memberCount * days),
-    ammo: Math.ceil(S.ammoPerMemberPerDay * memberCount * days),
+    ammo: Math.ceil(S.ammoPerMemberPerDay * memberCount * days * appetite),
   };
+}
+
+/** The squad as it will go out, for anything that needs their gear. */
+function rosterCitizens(state, ids) {
+  return ids.map((id) => state.citizens[id]).filter(Boolean);
 }
 
 export function canLaunch(state, squadId, bandKey) {
@@ -83,7 +97,10 @@ export function canLaunch(state, squadId, bandKey) {
   if (missing) {
     return { ok: false, reason: `${missing} of the squad have no env-suit. Nobody goes out without one.` };
   }
-  const worstTier = Math.min(...suits.map((s) => getItem(s.item)?.tier ?? 0));
+  // The suit's own `stats.band`, not its rank. They agree for the crafted
+  // four; they part company for the Registry Skin, which is a tier-5 suit
+  // that opens the Scar and not some band above it that does not exist.
+  const worstTier = Math.min(...suits.map((s) => getItem(s.item)?.stats?.band ?? 0));
   if (worstTier < band.suitTier) {
     return {
       ok: false,
@@ -91,7 +108,7 @@ export function canLaunch(state, squadId, bandKey) {
     };
   }
 
-  const cost = supplyCost(band, members.length);
+  const cost = supplyCost(band, members.length, ammoAppetite(state, members));
   for (const [k, v] of Object.entries(cost)) {
     if ((state.resources[k] || 0) < v) {
       return { ok: false, reason: `Not enough ${k} to supply ${members.length} for ${band.travelDays} days (needs ${v}).` };
@@ -347,12 +364,16 @@ export function resolveExpedition(state, expedition) {
 
   // ---- radiation from time outside ----------------------------------------
   const hoursOutside = (dayCount + extraDays) * BAL.expedition.hoursPerDay;
-  const suitTierAvg = averageSuitTier(state, expedition.roster);
-  const shielding = BAL.gear.suit.degradePerHourOutside[Math.max(0, suitTierAvg - 1)] ?? 0.55;
+  // Two numbers off the suits themselves, where there used to be one array
+  // indexed by a rounded average tier. Rounding the tier had a cliff in it —
+  // a squad in tier-5 suits indexed past the end of the array and fell back to
+  // 0.55, the *worst* value in it — and averaging the stat has no such edge.
+  const shielding = averageSuitStat(state, expedition.roster, 'shielding');
+  const wearRate = averageSuitStat(state, expedition.roster, 'wear');
   const breached = suitIntegrity <= 0;
   const doseRate = breached ? BAL.gear.suit.breachRadPerHour : radPerHour * shielding;
   radAccrued += doseRate * hoursOutside;
-  suitIntegrity = Math.max(0, suitIntegrity - shielding * hoursOutside * 0.35);
+  suitIntegrity = Math.max(0, suitIntegrity - wearRate * hoursOutside * BAL.gear.suit.wearHoursFraction);
 
   if (breached) {
     journal.push('At least one suit failed outright. Everyone in it took the full dose.');
@@ -380,7 +401,14 @@ export function resolveExpedition(state, expedition) {
   // fight count, so a squad annihilated on day one of four still posted 75% of
   // its ammunition home, one line after the journal said there was nobody left
   // to carry anything.
-  const carried = supplyCost(band, expedition.roster.length).ammo;
+  // Off the same frozen roster and the same appetite the supply was bought
+  // with, so a squad of autogunners gets its own oversized load back rather
+  // than the baseline squad's.
+  const carried = supplyCost(
+    band,
+    expedition.roster.length,
+    ammoAppetite(state, rosterCitizens(state, expedition.roster))
+  ).ammo;
   const unfired = survivors.length ? Math.floor(carried * (1 - fightDays / dayCount)) : 0;
   if (unfired > 0) {
     actions.push({ type: 'RESOURCE_DELTA', deltas: { ammo: unfired } });
@@ -451,7 +479,23 @@ function runCombat(ctx, enc, suitIntegrity) {
   if (res.outcome.win && res.loot > 0) {
     addLoot(ctx, ctx.band.rewardTier, res.loot * 0.5);
   }
+  // What the enemy itself was carrying, keyed on who they were rather than on
+  // the ground they were standing on. A Warband met on the approach drops the
+  // same table as a Warband met at your own airlock — see raid.js, which rolls
+  // this one too.
+  if (res.outcome.win) rollDrops(ctx, def);
   return res;
+}
+
+/** Roll an enemy's `drops` table once, for a fight that was won. */
+function rollDrops(ctx, def) {
+  for (const [gid, chance] of Object.entries(def?.drops || {})) {
+    if (!ctx.rng.chance(chance)) continue;
+    const got = lootGear(gid);
+    if (!got) continue;
+    ctx.actions.push(got.action);
+    ctx.journal.push(`They stripped a ${got.item.name} off the dead and carried it back.`);
+  }
 }
 
 function runScavenge(ctx, enc) {
@@ -619,6 +663,17 @@ function addLoot(ctx, tier, mult, bias, artifactBonus = 0) {
     }
   }
   if (taken.length) journal.push(`Recovered: ${taken.join(', ')}.`);
+  // Gear, in the same loop and on the same `mult`, but on its own line: a
+  // rifle nobody in the silo could have built is not an item in a list of
+  // scrap tonnages. `artifactBonus` deliberately does not apply — that is a
+  // scavenge choice's bet on the archive, not on the armoury.
+  for (const [gid, chance] of Object.entries(table.gear || {})) {
+    if (!rng.chance(chance * mult)) continue;
+    const got = lootGear(gid);
+    if (!got) continue;
+    ctx.actions.push(got.action);
+    journal.push(`A ${got.item.name} came back with them. Nothing in the silo could have made one.`);
+  }
 }
 
 // ------------------------------------------------------------------ daily ---
@@ -645,12 +700,6 @@ function averageSuitIntegrity(state, roster) {
   return vals.length ? avg(vals) : 0;
 }
 
-function averageSuitTier(state, roster) {
-  const tiers = roster
-    .map((id) => state.citizens[id]?.gear?.suit)
-    .map((gid) => (gid ? getItem(state.military.gear[gid]?.item)?.tier ?? 1 : 1));
-  return tiers.length ? Math.round(avg(tiers)) : 1;
-}
 
 function avg(arr) {
   if (!arr.length) return 0;
@@ -702,7 +751,7 @@ export function riskPreview(state, squadId, bandKey) {
       Math.round(band.radPerHour * band.travelDays * BAL.expedition.hoursPerDay * 0.2),
       Math.round(band.radPerHour * band.travelDays * BAL.expedition.hoursPerDay * 0.6),
     ],
-    supplies: supplyCost(band, members.length),
+    supplies: supplyCost(band, members.length, ammoAppetite(state, members)),
     encounters: Math.max(1, Math.round(band.travelDays)),
     bandIndex: bi,
   };

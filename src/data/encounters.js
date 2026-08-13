@@ -27,11 +27,21 @@ export const RAIDERS = [
   {
     id: 'slag_crews', name: 'The Slag Crews', tier: 3, power: 35, human: true,
     flee: 0.4, count: [5, 10], armored: 0.2, takesPrisoners: true,
+    // What is left on the ground after you beat them. Rolled once on a won
+    // fight, wherever the fight happened — the wasteland or your own airlock.
+    // Only the two organised bands drop anything: Scrappers are carrying
+    // whatever they found, which is the point of them.
+    drops: { slag_plate: 0.14, slag_autogun: 0.10 },
     desc: 'Organised, armoured, and they do not kill everybody. That is worse.',
   },
   {
     id: 'warband', name: 'Warband', tier: 4, power: 60, human: true,
     flee: 0.4, count: [8, 16], vehicles: true, pursues: true,
+    // A Warband met in the open is a funeral at every tier in the game (0-9%
+    // measured), so in practice this table is paid at the airlock, on home
+    // terrain, to a player who kept a squad back. That is the decision the
+    // game priced only in avoided losses until now.
+    drops: { slag_autogun: 0.16, slag_plate: 0.12, rail_carbine: 0.04 },
     desc: 'Vehicles, discipline, and a stated intention to follow you home.',
   },
 ];

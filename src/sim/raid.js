@@ -27,6 +27,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { RAIDERS } from '../data/encounters.js';
 import { rollEnemyForce, resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
+import { lootGear } from './military.js';
 import { fullName } from './population.js';
 
 const R = BAL.raid;
@@ -255,9 +256,27 @@ export function simulateDay(state) {
   const what = theftText(taken);
   if (Object.keys(deltas).length) actions.push({ type: 'RESOURCE_DELTA', deltas });
 
+  const spoils = [];
   if (res.outcome.win) {
     actions.push({ type: 'ORDER_DELTA', amount: R.orderOnRepelled, reason: 'a raid turned back' });
     actions.push({ type: 'STAT_BUMP', stats: { raidsRepelled: 1 } });
+
+    // What they left in the corridor.
+    //
+    // The same `drops` table an expedition rolls when it beats the same band
+    // in the open — deliberately the same table, because it is the same
+    // people. A Warband is a funeral in the wasteland (0-9% at every tier
+    // measured) and a real fight at your own airlock on home terrain (83% at
+    // tier 4), so this is where the table is actually paid, and it pays it to
+    // a player who kept a squad home. Until now the only thing standing at the
+    // door bought was losses that did not happen.
+    for (const [gid, chance] of Object.entries(def.drops || {})) {
+      if (!rng.chance(chance)) continue;
+      const got = lootGear(gid);
+      if (!got) continue;
+      actions.push(got.action);
+      spoils.push(got.item.name);
+    }
   } else {
     actions.push({ type: 'STAT_BUMP', stats: { raidsLost: 1 } });
   }
@@ -280,6 +299,15 @@ export function simulateDay(state) {
           (what ? (res.outcome.win ? ` ${what} went up in the fighting.` : ` They got away with ${what}.`) : ''),
       },
       ...res.log.filter(Boolean).map((line) => ({ kind: 'combat', text: line })),
+      // Named, always. A drop the player cannot read about is a drop that did
+      // not happen as far as they know.
+      ...(spoils.length
+        ? [{
+            kind: 'expedition',
+            text: `Left in the corridor and carried to the Armory: ${theftText(spoils)}. ` +
+              'Nobody here could have made any of it.',
+          }]
+        : []),
     ],
   });
 

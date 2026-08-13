@@ -33,6 +33,7 @@ import {
   drawSkyline, drawWallTile, drawRockTile, drawShaftTile,
   THREATS, THREAT_SIZES, PROPS, PROP_SIZE, TILE, SKYLINE_W, SKYLINE_H,
 } from './art/scenery.mjs';
+import { GEAR, GEAR_SIZE } from './art/gear.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const OUT = join(ROOT, 'assets');
@@ -112,6 +113,17 @@ for (const [name, draw] of Object.entries(THREATS)) {
 }
 for (const [name, draw] of Object.entries(PROPS)) {
   draw(sheet.sprite(`prop_${name}`, PROP_SIZE, PROP_SIZE), hash(`prop:${name}`));
+}
+
+// ------------------------------------------------------------------ gear ---
+
+// Weapons, armour and env-suits, 24x24, for the Armory list. These are the
+// only frames in the sheet drawn for the DOM rather than for the world: the
+// panel cuts them out with sprites.js:frameCanvas() and blits them at 2x.
+// The frame name is `gear_<item id>`, matching src/data/items.js, and
+// tools/art/gear.mjs's self-test fails if an item there has no icon here.
+for (const [id, draw] of Object.entries(GEAR)) {
+  draw(sheet.sprite(`gear_${id}`, GEAR_SIZE, GEAR_SIZE));
 }
 
 // ------------------------------------------------------------ bitmap font ---

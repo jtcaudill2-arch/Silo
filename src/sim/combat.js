@@ -18,7 +18,7 @@
 
 import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
-import { getItem } from '../data/items.js';
+import { getItem, SUITS } from '../data/items.js';
 import { fullName } from './population.js';
 import { traitMod } from '../data/traits.js';
 import { effects as researchEffects } from './research.js';
@@ -36,18 +36,21 @@ export function unitPower(state, c, opts = {}) {
   const weapon = gear.weapon ? state.military.gear[gear.weapon] : null;
   const armor = gear.armor ? state.military.gear[gear.armor] : null;
 
-  const weaponTier = weapon ? getItem(weapon.item)?.tier ?? 1 : 0;
-  const armorTier = armor ? getItem(armor.item)?.tier ?? 1 : 0;
-
   const base =
     c.stats.str * C.weights.str +
     c.stats.agi * C.weights.agi +
     (c.skills.combat || 0) * C.weights.combat;
 
-  // A weapon in poor repair is worth less than its tier claims.
+  // A weapon in poor repair is worth less than the item claims.
   const wear = weapon ? 0.6 + 0.4 * (weapon.durability / BAL.gear.durabilityMax) : 1;
-  const weaponMult = (C.gearTierMult[Math.max(0, weaponTier - 1)] ?? 0.8) * (weapon ? wear : 0.8);
-  const armorMult = 1 + armorTier * C.armorPerTier;
+  // `stats.power` off the item, not a tier index. For the crafted four these
+  // are the numbers `gearTierMult` held; a looted piece can sit between two
+  // rungs, which is the whole point of it.
+  const weaponPower = weapon ? getItem(weapon.item)?.stats?.power ?? C.unarmedPower : C.unarmedPower;
+  const weaponMult = weaponPower * (weapon ? wear : 1);
+  // Likewise `stats.dr` — `1 + tier * 0.12` for the crafted ladder, and
+  // nothing for a citizen with an empty armour slot.
+  const armorMult = 1 + (armor ? getItem(armor.item)?.stats?.dr ?? 0 : 0);
 
   const research = researchEffects(state);
 
@@ -65,9 +68,67 @@ export function unitPower(state, c, opts = {}) {
   );
 }
 
-/** Ammunition multiplier for the whole force. */
-export function ammoFactor(state, memberCount) {
-  const need = memberCount * BAL.expedition.supplies.ammoPerMemberPerDay;
+/**
+ * Rounds per person per day this force actually wants, as a multiplier on
+ * `supplies.ammoPerMemberPerDay`. A Slag Autogun is 2.0 of them and a Pipe Gun
+ * is 0.8, so the hardest-hitting weapon in the game is also the one that can
+ * leave a squad standing at the airlock.
+ *
+ * A member with nothing in the weapon slot reads 1.0 rather than 0. That is
+ * deliberate and it is what the shipped game charged: a squad with no rifles
+ * still draws its two rounds a head a day, and making bare hands free would
+ * quietly cut the early silo's supply bill for a squad that cannot shoot.
+ *
+ * The single read of `?? 1` per member is what keeps the whole crafted-kit
+ * baseline where it was: `service_rifle` is 1.0, so a squad carrying the
+ * weapon everything else is priced against costs exactly what it always did.
+ */
+export function ammoAppetite(state, members) {
+  if (!Array.isArray(members) || !members.length) return 1;
+  let total = 0;
+  for (const c of members) {
+    const gid = c?.gear?.weapon;
+    const item = gid ? getItem(state.military.gear[gid]?.item) : null;
+    total += item?.stats?.ammo ?? 1;
+  }
+  return total / members.length;
+}
+
+/**
+ * The squad's mean value of one env-suit stat, by citizen id.
+ *
+ * It lives here rather than in expedition.js because conquest.js needs it too
+ * and conquest.js is imported *by* expedition.js — putting it there would
+ * close the cycle. Both already import this module.
+ *
+ * Somebody with no suit reads the tier-1 figure, which is what the old
+ * rounded-tier version did with a missing suit; `canLaunch` refuses to send a
+ * bare body outside in the first place.
+ *
+ * Averaging the stat rather than rounding the average *tier* also removes a
+ * cliff: a squad in tier-5 suits rounded to tier 5, indexed past the end of
+ * the four-entry `degradePerHourOutside` array, and fell back to 0.55 — the
+ * worst value in it. The best suits in the game read as the worst.
+ */
+export function averageSuitStat(state, roster, key) {
+  const worst = SUITS[0].stats[key];
+  if (!roster?.length) return worst;
+  let total = 0;
+  for (const id of roster) {
+    const gid = state.citizens[id]?.gear?.suit;
+    const item = gid ? getItem(state.military.gear[gid]?.item) : null;
+    total += item?.stats?.[key] ?? worst;
+  }
+  return total / roster.length;
+}
+
+/**
+ * Ammunition multiplier for the whole force. Takes the members rather than a
+ * count, because what they are carrying decides how much they need.
+ */
+export function ammoFactor(state, members) {
+  const count = Array.isArray(members) ? members.length : members;
+  const need = count * BAL.expedition.supplies.ammoPerMemberPerDay * ammoAppetite(state, members);
   const have = state.resources.ammo;
   if (have >= need) return C.ammoFactorFull;
   if (need <= 0) return C.ammoFactorFull;
@@ -150,7 +211,7 @@ export function resolve(state, memberIds, enemy, opts = {}) {
   // fight where that is the wrong question: a squad five floors inside
   // somebody else's silo is carrying what it carried in, and the stores back
   // home are irrelevant to it. See sim/conquest.js, the hold stage.
-  const af = opts.ammoFactorOverride ?? ammoFactor(state, members.length);
+  const af = opts.ammoFactorOverride ?? ammoFactor(state, members);
 
   // ---- our effective power ----------------------------------------------
   const powers = members.map((c) => ({
@@ -177,9 +238,12 @@ export function resolve(state, memberIds, enemy, opts = {}) {
   // ---- theirs -------------------------------------------------------------
   let theirPower = enemy.power;
   if (enemy.modifier?.incomingMult) theirPower /= enemy.modifier.incomingMult; // carapace = harder to hurt
-  // A Hulk is immune to weapons below tier 3 (spec §11).
+  // A Hulk is immune to weapons below tier 3 (spec §11). What gets through is
+  // the weapon's own `pierce`, not its rank: the Slag Autogun is a tier-4
+  // piece that pierces 3, so it out-hits a Mag Rifle everywhere except in
+  // front of the one thing that needs punching through.
   if (enemy.def?.minWeaponTier) {
-    const best = bestWeaponTier(state, members);
+    const best = bestPierce(state, members);
     if (best < enemy.def.minWeaponTier) {
       theirPower *= 3.5;
       log.push(
@@ -214,9 +278,17 @@ export function resolve(state, memberIds, enemy, opts = {}) {
   // ---- survivors: injuries, traits, bleed, rad ----------------------------
   const injuries = [];
   for (const { c } of pool) {
+    // `soak` is the fraction of a wound the plate takes instead of the person
+    // wearing it. It is deliberately read *after* the outcome and the
+    // casualty draw, and it consumes no rolls of its own — so armour decides
+    // how badly the survivors come home and cannot decide who lives, who
+    // dies, or whether the fight was won. That separation is what keeps every
+    // win rate in the game where it was.
+    const soak = armorSoak(state, c);
     const hurt = Math.round(
       rng.int(C.injury.survivorHealthLoss[0], C.injury.survivorHealthLoss[1]) *
         (outcome.win ? 0.7 : 1.2) *
+        (1 - soak) *
         traitMod(c.traits, 'injuryTaken')
     );
     const inj = { id: c.id, health: -hurt, rad: 0, trait: null };
@@ -259,13 +331,21 @@ export function resolve(state, memberIds, enemy, opts = {}) {
   };
 }
 
-function bestWeaponTier(state, members) {
+/** The fraction of a wound this citizen's armour absorbs. Bare skin is 0. */
+function armorSoak(state, c) {
+  const gid = c.gear?.armor;
+  if (!gid) return 0;
+  return getItem(state.military.gear[gid]?.item)?.stats?.soak ?? 0;
+}
+
+/** The best `stats.pierce` anybody in the squad is carrying. Nothing is 0. */
+function bestPierce(state, members) {
   let best = 0;
   for (const c of members) {
     const gid = c.gear?.weapon;
     if (!gid) continue;
     const item = getItem(state.military.gear[gid]?.item);
-    if (item) best = Math.max(best, item.tier);
+    if (item) best = Math.max(best, item.stats?.pierce ?? item.tier);
   }
   return best;
 }
@@ -460,6 +540,46 @@ export function applyResolution(state, res, { context = 'expedition', kiaKind = 
 
   for (const gid of res.gearLost) actions.push({ type: 'GEAR_DESTROY', id: gid });
 
+  // A fight wears out what was carried through it.
+  //
+  // `durabilityLossPerCombat` has sat in balance.js since gear existed and was
+  // read by nothing; `GEAR_WEAR` had a reducer and was dispatched from nowhere
+  // in src/. So `unitPower`'s wear term above was pinned at exactly 1.0 for
+  // the whole history of the project, every weapon in every save finished its
+  // campaign at durability 100, and the Armory's repair loop — which filters
+  // on `durability < max` — had never repaired a single item.
+  //
+  // Measured here, at the shipped loss of 6 a fight, mag_rifle +
+  // breacher_plate, 600 fights a cell:
+  //
+  //   fights unrepaired   durability   wear   Warband raid   breach mil 95
+  //                    0          100   1.00           82%             93%
+  //                    2           88   0.95           76%             92%
+  //                    5           70   0.88           66%             88%
+  //                    8           52   0.81           56%             85%
+  //                   12           28   0.71           40%             75%
+  //
+  // Sixteen points against a Warband at the door for five unrepaired fights.
+  // That is the Armory becoming a room worth staffing.
+  //
+  // Survivors only. The casualties' kit is either destroyed above or handed
+  // back to the rack by CITIZEN_DIE, and wearing a piece that is about to be
+  // deleted is a write nobody can see. Weapons and armour only: a suit's
+  // condition is `integrity`, and EXPEDITION_RESOLVE already writes that from
+  // the hours spent outside.
+  const wear = [];
+  for (const inj of res.injuries) {
+    const c = state.citizens[inj.id];
+    if (!c) continue;
+    for (const slot of ['weapon', 'armor']) {
+      const gid = c.gear?.[slot];
+      if (gid && state.military.gear[gid]) {
+        wear.push({ id: gid, durability: BAL.gear.durabilityLossPerCombat });
+      }
+    }
+  }
+  if (wear.length) actions.push({ type: 'GEAR_WEAR', wear, emit: false });
+
   if (res.outcome.win) {
     actions.push({ type: 'ORDER_DELTA', amount: BAL.order.victoryBonus, reason: 'a victory' });
   }
@@ -467,4 +587,4 @@ export function applyResolution(state, res, { context = 'expedition', kiaKind = 
   return actions;
 }
 
-export default { resolve, unitPower, rollEnemyForce, applyResolution, ammoFactor };
+export default { resolve, unitPower, rollEnemyForce, applyResolution, ammoFactor, ammoAppetite };

@@ -1039,7 +1039,19 @@ export const BAL = {
   // -------------------------------------------------------------- gear ---
   gear: {
     durabilityMax: 100,
+    // Charged per surviving member per fight, from `applyResolution`. This sat
+    // here read by nothing for the project's whole history — `GEAR_WEAR` had a
+    // reducer and no dispatcher — so every weapon in every campaign finished
+    // at 100 and the Armory's repair loop never ran. Measured at 6: five
+    // unrepaired fights cost 16 points against a Warband at the door. See the
+    // table in combat.js.
     durabilityLossPerCombat: 6,
+    // STILL READ BY NOTHING, and left that way on purpose rather than wired
+    // in the same pass. Per-combat wear alone already takes a weapon down 30
+    // points across a five-floor hold, and a second, unmeasured source on top
+    // of it would make the balance question "is gear wear right?" impossible
+    // to answer — two variables, one measurement. Wire it, or delete it, but
+    // do it against its own numbers.
     durabilityLossPerExpeditionDay: 1.5,
     repairPerCyclePerQuartermaster: 2.2,
     repairScrapPerPoint: 0.35,
@@ -1047,7 +1059,19 @@ export const BAL = {
       integrityMax: 100,
       repairAlloyPerPoint: 0.2,
       repairPartsPerPoint: 0.1,
-      degradePerHourOutside: [0.55, 0.42, 0.3, 0.2], // by suit tier
+      // `degradePerHourOutside` was one array doing two jobs — the dose
+      // multiplier and the integrity burn — for four suits. Both now live on
+      // the item, as `stats.shielding` and `stats.wear`, at the same values
+      // the array held. Splitting them is what lets the Registry Skin be a
+      // better suit: dose already clamps at 100 on every band a tier-4 suit
+      // can reach, so a suit that only shielded better would be a stat the
+      // player cannot see.
+      //
+      // What fraction of an hour outside actually lands on the seals. This was
+      // an inline 0.35 in expedition.js and a second inline 0.35 in
+      // conquest.js — two copies of one tunable, in a project whose rule is
+      // that every tunable lives here. Both now read this.
+      wearHoursFraction: 0.35,
       degradePerCombatHit: 5,
       breachRadPerHour: 12,
       breachHealthPerHour: 1.5,
@@ -1161,8 +1185,16 @@ export const BAL = {
   // ------------------------------------------------------------ combat ---
   combat: {
     weights: { str: 0.3, agi: 0.2, combat: 0.5 },
-    gearTierMult: [1.0, 1.4, 1.9, 2.5], // weapon tier 1-4
-    armorPerTier: 0.12,
+    // What a weapon tier used to be worth, and what a tier of armour used to
+    // add, both now live on the item: `items[].stats.power` and
+    // `items[].stats.dr`. The crafted four carry exactly the numbers that were
+    // here — [1.0, 1.4, 1.9, 2.5] and 1 + tier * 0.12 — so nothing tuned
+    // against them moved. A tier is a rank; a stat is a trade-off, and the
+    // looted kit needed to be able to say "harder-hitting and hungrier",
+    // which one array indexed by tier cannot.
+    //
+    // What is left here is the one case with no item to hang it on.
+    unarmedPower: 0.8, // bare hands, and a weapon nobody has heard of
     ammoFactorFull: 1.0,
     ammoFactorEmpty: 0.45,
     moraleModBase: 0.8,
@@ -1531,6 +1563,17 @@ export const BAL = {
       // in it as the deep ruins, which is the fiction and also keeps
       // `origin_shard` (tier 4, the Scar) as something you have to walk to.
       artifactTier: 3,
+      // What comes off their armoury racks, per point of `power.military` —
+      // the column that until now decided only how hard the fight was, and
+      // paid nothing for having been hard. At The Anvil's 95 that is 0.95 a
+      // piece per sack against Selby's 0.20, so a hard silo is worth roughly
+      // five times a soft one. Split across the breach and the hold on
+      // `breachShare`, like the stores and the archive.
+      //
+      // Neither of these is craftable. Beating somebody who had a Garrison
+      // Rifle is the only way to hold one.
+      gearChancePerMilitary: 0.010,
+      gearTable: ['garrison_rifle', 'slag_plate'],
     },
 
     // ---- what a stage costs to actually attempt ----

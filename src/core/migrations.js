@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -204,6 +204,45 @@ export const MIGRATIONS = {
       state.stats.raidsRepelled ??= 0;
       state.stats.raidsLost ??= 0;
       state.stats.silosTaken ??= 0;
+    }
+    return state;
+  },
+
+  // 17 -> 18: per-item gear stats, a loot tier above the crafted ladder, and
+  // the durability that was always declared and never written.
+  //
+  // The stats themselves need no migration and it is worth saying why: a gear
+  // record stores an *item id*, and `power`, `dr`, `ammo`, `pierce`, `soak`,
+  // `band`, `shielding` and `wear` are all read off the item definition in
+  // code. An old save's Mag Rifle picks up `stats.power: 2.5` — the same 2.5
+  // `gearTierMult[3]` handed it yesterday — the moment it is loaded. What
+  // does need writing is the shape of the gear records themselves.
+  //
+  // 1. `loot`. Every piece in an existing save was made at a bench, because
+  //    until this build there was no other way to come by one. So the answer
+  //    for all of them is false. It is written out rather than left absent for
+  //    the reason `found` was on rooms: the Armory now sorts and labels on
+  //    this field, and a save where that turns on `false` versus `undefined`
+  //    is a save whose shape is a guess.
+  //
+  // 2. `integrity`. `GEAR_CRAFT` has always written it, so this is belt and
+  //    braces for a record from a build that predates suits — but the armoury
+  //    repair queue now filters on `integrity < max`, and `undefined < 100` is
+  //    false, which would silently exclude such a piece from repair for ever.
+  //
+  // 3. `durability`. Same, and with a live consequence: `unitPower`'s wear
+  //    term is `0.6 + 0.4 * (durability / durabilityMax)`, and an undefined
+  //    durability makes that NaN, which propagates through squad power into
+  //    the ratio and out into an outcome lookup that finds nothing. Every
+  //    weapon in every existing save is at 100 — nothing has ever written this
+  //    field — so this is the value they already have, made explicit before
+  //    the first thing that reads it starts subtracting from it.
+  17: (state) => {
+    for (const g of Object.values(state.military?.gear || {})) {
+      if (!g || typeof g !== 'object') continue;
+      g.loot ??= false;
+      if (!Number.isFinite(g.durability)) g.durability = BAL.gear.durabilityMax;
+      if (!Number.isFinite(g.integrity)) g.integrity = BAL.gear.suit.integrityMax;
     }
     return state;
   },

@@ -652,6 +652,11 @@ const logReducers = {
 // ------------------------------------------------------------- military ---
 
 const militaryReducers = {
+  // Mints one piece at full durability. Used for both halves of how a silo
+  // comes by gear: the benches, and the ground. `a.loot` is what says which,
+  // and it is written onto the piece rather than inferred later — an item's
+  // `loot` flag says the *type* cannot be built, and this says *this one* was
+  // found, which is what a player wants to know about the rifle in the rack.
   GEAR_CRAFT(state, a) {
     const id = String(state.military.nextGearId++);
     state.military.gear[id] = {
@@ -660,6 +665,7 @@ const militaryReducers = {
       durability: BAL.gear.durabilityMax,
       integrity: BAL.gear.suit.integrityMax,
       assignedTo: null,
+      loot: !!a.loot,
     };
   },
 

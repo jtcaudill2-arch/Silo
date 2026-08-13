@@ -33,9 +33,9 @@
 
 import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
-import { resolve as resolveCombat, applyResolution, unitPower } from './combat.js';
+import { resolve as resolveCombat, applyResolution, unitPower, averageSuitStat } from './combat.js';
 import { conquestState, CONQUEST_STAGES } from './diplomacy.js';
-import { readySquads } from './military.js';
+import { readySquads, lootGear } from './military.js';
 import { getItem, LOOT } from '../data/items.js';
 
 const Q = BAL.conquest;
@@ -217,6 +217,7 @@ function sack(silo, rng, share) {
   const S = Q.sack;
   const economy = silo?.power?.economy ?? 40;
   const science = silo?.power?.science ?? 30;
+  const military = silo?.power?.military ?? 40;
   const total = economy * S.perEconomy * share;
 
   const loot = {};
@@ -238,7 +239,21 @@ function sack(silo, rng, share) {
       taken.push(`a ${aid.replace(/_/g, ' ')}`);
     }
   }
-  return { loot, artifacts, taken };
+
+  // And what was on their armoury racks, keyed on `power.military` — the
+  // column that until now decided only how hard the fight was and paid nothing
+  // for having been hard. The Anvil at 95 is roughly five times the yield of
+  // Selby at 20. Neither piece can be built here; beating somebody who had one
+  // is the only way to hold one.
+  const gear = [];
+  for (const gid of S.gearTable) {
+    if (!rng.chance(military * S.gearChancePerMilitary * share)) continue;
+    const got = lootGear(gid);
+    if (!got) continue;
+    gear.push(got.action);
+    taken.push(`a ${got.item.name} off their racks`);
+  }
+  return { loot, artifacts, taken, gear };
 }
 
 /**
@@ -291,23 +306,18 @@ function outsideWear(state, expedition, roster) {
   const band = BAL.expedition.bands.find((b) => b.key === expedition.band) || { travelDays: 6 };
   const start = averageSuitIntegrity(state, roster);
   const hours = band.travelDays * BAL.expedition.hoursPerDay;
-  const shielding = suitShielding(state, roster);
-  return Math.max(0, start - shielding * hours * 0.35);
+  // `wear`, not `shielding`. One constant used to do both jobs, which is why
+  // a suit could never be better at surviving the walk than at stopping the
+  // dose — and the dose is already clamped on every band that matters.
+  const wear = averageSuitStat(state, roster, 'wear');
+  return Math.max(0, start - wear * hours * BAL.gear.suit.wearHoursFraction);
 }
 
 function outsideDose(expedition, state, roster) {
   const band = BAL.expedition.bands.find((b) => b.key === expedition.band) || { travelDays: 6, radPerHour: 7 };
   const hours = band.travelDays * BAL.expedition.hoursPerDay;
   if (!state) return Math.round(band.radPerHour * hours * 0.55);
-  return Math.round(band.radPerHour * suitShielding(state, roster) * hours);
-}
-
-function suitShielding(state, roster) {
-  const tiers = roster
-    .map((id) => state.citizens[id]?.gear?.suit)
-    .map((gid) => (gid ? getItem(state.military.gear[gid]?.item)?.tier ?? 1 : 1));
-  const tier = tiers.length ? Math.round(tiers.reduce((a, b) => a + b, 0) / tiers.length) : 1;
-  return BAL.gear.suit.degradePerHourOutside[Math.max(0, tier - 1)] ?? 0.55;
+  return Math.round(band.radPerHour * averageSuitStat(state, roster, 'shielding') * hours);
 }
 
 function averageSuitIntegrity(state, roster) {
@@ -530,6 +540,7 @@ export function resolveRun(state, expedition) {
       journal.push('The door is open and the first floor is theirs. Now they have to keep it.');
       const got = sack(silo, rng, Q.sack.breachShare);
       loot = got.loot; artifacts = got.artifacts;
+      actions.push(...got.gear);
       if (got.taken.length) journal.push(`Carried out of the entry level: ${got.taken.join(', ')}.`);
       actions.push({
         type: 'LOG',
@@ -654,6 +665,7 @@ export function resolveRun(state, expedition) {
       actions.push({ type: 'STAT_BUMP', stats: { silosTaken: 1 } });
       const got = sack(silo, rng, 1 - Q.sack.breachShare);
       loot = got.loot; artifacts = got.artifacts;
+      actions.push(...got.gear);
       if (got.taken.length) journal.push(`Out of their storerooms: ${got.taken.join(', ')}.`);
       journal.push(`All ${Q.holdCombats} floors. ${silo.name} is Silo 12's.`);
     } else {

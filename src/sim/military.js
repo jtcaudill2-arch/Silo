@@ -12,6 +12,7 @@ import { getItem, bestCraftable, ITEM_LIST } from '../data/items.js';
 import { getRoom } from '../data/rooms.js';
 import { fullName } from './population.js';
 import { effects as researchEffects } from './research.js';
+import { ammoAppetite } from './combat.js';
 import { SQUAD_NAMES } from '../data/names.js';
 
 // ------------------------------------------------------------------ gear ---
@@ -19,6 +20,12 @@ import { SQUAD_NAMES } from '../data/names.js';
 export function craftableItems(state) {
   const e = researchEffects(state);
   return ITEM_LIST.filter((item) => {
+    // Looted kit is not made here. Without this the Slag Autogun and the
+    // Garrison Rifle both come back from this call the moment `firearms_4`
+    // lands — they are tier 4, they name no `unlock`, and the tier gate admits
+    // them — and every caller then reaches for a `craft` block that is not
+    // there.
+    if (item.loot) return false;
     if (item.unlock && !state.research.completed.includes(item.unlock)) return false;
     const maxTier =
       item.kind === 'weapon' ? e.weaponTier || 1 :
@@ -31,6 +38,11 @@ export function craftableItems(state) {
 export function canCraft(state, itemId) {
   const item = getItem(itemId);
   if (!item) return { ok: false, reason: 'No such item.' };
+  // Before anything touches `item.craft`. A looted piece has no recipe, and
+  // the resource loop below is `Object.entries(item.craft)` — which on a loot
+  // item throws `TypeError: Cannot convert undefined or null to object`
+  // rather than refusing politely.
+  if (item.loot) return { ok: false, reason: 'Not made here. Found.' };
   if (item.unlock && !state.research.completed.includes(item.unlock)) {
     return { ok: false, reason: `Needs research: ${item.unlock.replace(/_/g, ' ')}.` };
   }
@@ -62,6 +74,30 @@ export function craft(state, itemId) {
     { type: 'GEAR_CRAFT', item: itemId },
     { type: 'LOG', entry: { kind: 'plain', text: `${item.name} finished and racked.` } },
   ];
+}
+
+/**
+ * A piece of gear that was found rather than made.
+ *
+ * Reuses `GEAR_CRAFT` rather than adding an action type. The reducer already
+ * mints a piece at full durability from an item id, which is exactly what a
+ * drop needs, and test/harness.mjs asserts that nothing is dispatched without
+ * a reducer — a new type would fail that immediately and buy nothing.
+ *
+ * `loot: true` rides along and is written onto the piece. It is what
+ * test/wiring.mjs §42 counts to measure the drop rates in play, and it is the
+ * difference the Armory needs between "the silo owns a Slag Plate" and "the
+ * silo made one", which it cannot.
+ *
+ * Returns null for an unknown id rather than minting a piece of nothing — a
+ * typo in a drop table must not become a gear record with no item behind it.
+ * The caller writes the sentence, because where it came from is the half of it
+ * worth reading, and only the caller knows.
+ */
+export function lootGear(itemId) {
+  const item = getItem(itemId);
+  if (!item) return null;
+  return { item, action: { type: 'GEAR_CRAFT', item: itemId, loot: true } };
 }
 
 export function gearStorageCap(state) {
@@ -195,18 +231,32 @@ export function readiness(state, squadId) {
   const health = avg(members.map((c) => c.health / 100));
   const morale = avg(members.map((c) => c.morale / 100));
 
+  // Divided by the top *craftable* tier and then clamped, which it was not.
+  //
+  // The raw form is `tier / 4`, written when 4 was the top of the ladder. A
+  // tier-5 looted piece scores 1.25, the weighted sum runs to 1.125, and
+  // readiness — documented and drawn as 0-1 — comes back above 1 for a squad
+  // carrying the best kit in the game. The panel meter overflows its track and
+  // `expedition.mjs`'s readiness print goes over 100%.
+  //
+  // The clamp is per item rather than on the total so that one Rail-Carbine
+  // cannot pay for a bare armour slot.
   const equipment = avg(
     members.map((c) => {
       let score = 0;
       const w = c.gear?.weapon ? state.military.gear[c.gear.weapon] : null;
       const a = c.gear?.armor ? state.military.gear[c.gear.armor] : null;
-      if (w) score += 0.6 * ((getItem(w.item)?.tier ?? 1) / 4) * (w.durability / 100);
-      if (a) score += 0.4 * ((getItem(a.item)?.tier ?? 1) / 4) * (a.durability / 100);
+      if (w) score += 0.6 * gearScore(w) * (w.durability / 100);
+      if (a) score += 0.4 * gearScore(a) * (a.durability / 100);
       return score;
     })
   );
 
-  const ammoNeed = members.length * BAL.expedition.supplies.ammoPerMemberPerDay * 3;
+  // Three days of what this squad's weapons actually eat. A squad of Slag
+  // Autoguns reads its own appetite here, so "ready" means ready to go out
+  // with what it is holding rather than with a Service Rifle.
+  const ammoNeed = members.length * BAL.expedition.supplies.ammoPerMemberPerDay * 3 *
+    ammoAppetite(state, members);
   const ammo = Math.min(1, state.resources.ammo / Math.max(1, ammoNeed));
 
   return (
@@ -218,9 +268,18 @@ export function readiness(state, squadId) {
   );
 }
 
-/** Squad power for the risk preview, without rolling anything. */
+/**
+ * Squad power for the risk preview, without rolling anything.
+ *
+ * The stat read here is the same one `unitPower` reads, off the item, and it
+ * has to be: this is the number the player is shown before deciding to send
+ * them, and a preview computed from a different table than the fight is a
+ * preview that lies. It stayed on `gearTierMult` and `armorPerTier` when
+ * combat.js moved off them, which the design spec's read-site list missed —
+ * a tier-5 Rail-Carbine would have previewed at the `?? 0.8` fallback, i.e.
+ * weaker than a Pipe Gun.
+ */
 export function squadPower(state, squadId) {
-  // Imported lazily to avoid a cycle: combat imports population, not military.
   const members = squadMembers(state, squadId);
   if (!members.length) return 0;
   let total = 0;
@@ -228,20 +287,41 @@ export function squadPower(state, squadId) {
     const gear = c.gear || {};
     const weapon = gear.weapon ? state.military.gear[gear.weapon] : null;
     const armor = gear.armor ? state.military.gear[gear.armor] : null;
-    const wTier = weapon ? getItem(weapon.item)?.tier ?? 1 : 0;
-    const aTier = armor ? getItem(armor.item)?.tier ?? 1 : 0;
     const base =
       c.stats.str * BAL.combat.weights.str +
       c.stats.agi * BAL.combat.weights.agi +
       (c.skills.combat || 0) * BAL.combat.weights.combat;
     total +=
       base *
-      (BAL.combat.gearTierMult[Math.max(0, wTier - 1)] ?? 0.8) *
-      (1 + aTier * BAL.combat.armorPerTier) *
+      (weapon ? getItem(weapon.item)?.stats?.power ?? BAL.combat.unarmedPower : BAL.combat.unarmedPower) *
+      (1 + (armor ? getItem(armor.item)?.stats?.dr ?? 0 : 0)) *
       (c.health / 100) *
       (c.vitality / 100);
   }
   return total;
+}
+
+/**
+ * An item's contribution to the equipment term of readiness, 0-1.
+ *
+ * `topCraftableTier` rather than a literal 4, so the divisor is the top of the
+ * ladder the player can actually build toward, and the clamp so a looted piece
+ * above that ladder cannot push a 0-1 figure over 1.
+ */
+function gearScore(g) {
+  const tier = getItem(g.item)?.tier ?? 1;
+  return Math.min(1, tier / topCraftableTier(getItem(g.item)?.kind));
+}
+
+const TOP_TIER = {};
+function topCraftableTier(kind) {
+  if (TOP_TIER[kind] === undefined) {
+    TOP_TIER[kind] = Math.max(
+      1,
+      ...ITEM_LIST.filter((i) => i.kind === kind && i.craft).map((i) => i.tier)
+    );
+  }
+  return TOP_TIER[kind];
 }
 
 // ------------------------------------------------------------------ daily ---
@@ -356,9 +436,26 @@ export function simulateCycle(state) {
   const capacity = armories.reduce((n, r) => n + r.level * r.width, 0) *
     BAL.gear.repairPerCyclePerQuartermaster;
 
+  // Worn on *either* axis, and queued by whichever is worse.
+  //
+  // This read `g.durability` alone. Nothing in the game wrote durability until
+  // `GEAR_WEAR` was wired, so the filter was never true and this loop had
+  // never repaired anything — but the more interesting half is that it would
+  // still never have repaired a suit, because a suit's condition is
+  // `integrity` and its durability sits at 100 for ever. Suits *do* fall:
+  // measured at campaign end they average 25-37 with some at 0, and a suit at
+  // 0 is a breach, which is the full unshielded dose on everyone in the party.
+  //
+  // `GEAR_REPAIR` has always added to both fields, so this is the whole fix:
+  // let the queue see integrity, and rank by the worse of the two so a suit at
+  // 4 is treated ahead of a rifle at 88.
+  const condition = (g) => Math.min(
+    g.durability ?? BAL.gear.durabilityMax,
+    g.integrity ?? BAL.gear.suit.integrityMax
+  );
   const worn = Object.values(state.military.gear)
-    .filter((g) => g.durability < BAL.gear.durabilityMax)
-    .sort((a, b) => a.durability - b.durability)
+    .filter((g) => g.durability < BAL.gear.durabilityMax || g.integrity < BAL.gear.suit.integrityMax)
+    .sort((a, b) => condition(a) - condition(b))
     .slice(0, 4);
   if (!worn.length) return [];
 

@@ -45,7 +45,7 @@ import { gearStorageCap, craftableItems } from '../src/sim/military.js';
 import { computeCaps, staffSlots } from '../src/sim/economy.js';
 import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
 import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
-import { ITEM_LIST } from '../src/data/items.js';
+import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/data/items.js';
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { streamFor } from '../src/core/rng.js';
@@ -56,11 +56,12 @@ import { tierUnlocked } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
+import { getEnemy } from '../src/data/encounters.js';
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun } from '../src/sim/conquest.js';
-import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
+import { resolve as resolveCombat, unitPower, rollEnemyForce, applyResolution } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
 import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
-import { formSquad, unassignedGear, equipBest } from '../src/sim/military.js';
+import { formSquad, unassignedGear, equipBest, canCraft, readiness, simulateCycle as militaryCycle } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
@@ -1286,11 +1287,38 @@ console.log('');
   s.silo.floors.length = 92;
   for (const f of s.silo.floors) { if (f.n <= 60) { f.excavated = true; f.shored = false; } }
   s.silo.floors[59].integrity = 30; // two of the old partial collapses
+  // And a rack of gear from before per-item stats, loot, or durability that
+  // moved: three records in the shapes a save can really be carrying.
+  s.military.gear.old1 = { id: 'old1', item: 'service_rifle', assignedTo: null };
+  s.military.gear.old2 = { id: 'old2', item: 'suit_2', durability: 100, assignedTo: null };
+  s.military.gear.old3 = { id: 'old3', item: 'mag_rifle', durability: 71, integrity: 100, assignedTo: null };
 
   let state = s;
   for (let v = 10; v < SCHEMA_VERSION; v++) if (MIGRATIONS[v]) state = MIGRATIONS[v](state) || state;
 
   const problems = [];
+  {
+    // The gear step. `loot` is new and every existing piece was made at a
+    // bench; `durability` and `integrity` are backfilled because the code that
+    // now reads them does arithmetic with them — an undefined durability makes
+    // `unitPower`'s wear term NaN, which propagates into the combat ratio and
+    // out into an outcome lookup that finds nothing, and an undefined
+    // integrity is silently excluded from the Armory's repair queue for ever
+    // (`undefined < 100` is false).
+    const g = state.military.gear;
+    if (g.old1.loot !== false || g.old2.loot !== false) problems.push('gear missing `loot: false`');
+    if (g.old1.durability !== BAL.gear.durabilityMax) problems.push(`old1 durability ${g.old1.durability}`);
+    if (g.old1.integrity !== BAL.gear.suit.integrityMax) problems.push(`old1 integrity ${g.old1.integrity}`);
+    if (g.old2.integrity !== BAL.gear.suit.integrityMax) problems.push(`old2 integrity ${g.old2.integrity}`);
+    // And it must not overwrite a value the save already had.
+    if (g.old3.durability !== 71) problems.push(`a rifle at 71 durability was reset to ${g.old3.durability}`);
+    // The stats themselves are code, not save data, so a migrated piece must
+    // arrive carrying them without the save having said anything. What the
+    // *value* should be is §40's question, not this one.
+    if (!Number.isFinite(getItem(g.old3.item)?.stats?.power)) {
+      problems.push('a migrated Mag Rifle came back with no power stat at all');
+    }
+  }
   if (state.silo.floors.length !== BAL.silo.totalFloors) problems.push(`floors ${state.silo.floors.length}`);
   if (!Object.values(state.silo.rooms).every((r) => r.found === false)) problems.push('rooms missing `found: false`');
   if (!state.silo.floors.every((f) => f.integrity === BAL.silo.condition.start)) {
@@ -1301,7 +1329,8 @@ console.log('');
     problems.push('an excavated floor came back unshored — the player paid for that shoring');
   }
   if (problems.length) fail(`migrating a v10 save left: ${problems.join('; ')}`);
-  else ok(`a v10 save migrates to v${SCHEMA_VERSION}: 144 floors, all sound, all shored, every room commissioned`);
+  else ok(`a v10 save migrates to v${SCHEMA_VERSION}: 144 floors, all sound, all shored, every room ` +
+    'commissioned, every piece of gear stamped built-not-found and given a condition it can be worn down from');
 
   // Re-running must not corrupt: a save can be migrated more than once.
   const before = JSON.stringify(state);
@@ -2710,6 +2739,879 @@ console.log('');
     fail(`${unreachable.join(', ')} has no unlock and still cannot be built`);
   } else {
     ok(`all ${ITEM_LIST.filter((i) => i.craft).length} priced items are buildable, each by the node it names`);
+  }
+}
+
+// ---- 40. the crafted ladder did not move ------------------------------------
+//
+// Weapon power and armour DR moved off `BAL.combat.gearTierMult` and
+// `BAL.combat.armorPerTier` onto the items. Every other tuned number in this
+// game — `garrisonPowerPerMilitary`, `raid.sizeScale`, `holdGarrisonScale`,
+// `garrisonResponse`, and the win-rate tables in balance.js's own comments —
+// was measured against those two constants. If the crafted four came out of
+// the refactor even slightly different, all of that silently stops describing
+// the game.
+//
+// So this pins the arithmetic rather than the plumbing: the four weapons must
+// carry exactly [1.0, 1.4, 1.9, 2.5] and the four armours exactly tier x 0.12,
+// and `unitPower` must produce the number those imply, to the bit.
+//
+// Measured against a pristine HEAD snapshot before this landed: 42 fight cells
+// x 600 trials a side, identical win counts and identical mean ratios in all
+// 42; and `unitPower` identical across all 25 crafted weapon x armour
+// combinations at three durabilities.
+{
+  const WANT_POWER = { pipe_gun: 1.0, service_rifle: 1.4, breaching_carbine: 1.9, mag_rifle: 2.5 };
+  const drift = [];
+  for (const [id, want] of Object.entries(WANT_POWER)) {
+    const got = getItem(id).stats.power;
+    if (got !== want) drift.push(`${id} power ${got}, was ${want}`);
+  }
+  for (const item of ITEM_LIST) {
+    if (item.kind !== 'armor' || !item.craft) continue;
+    const want = item.tier * 0.12;
+    if (item.stats.dr !== want) drift.push(`${item.id} dr ${item.stats.dr}, was ${want}`);
+  }
+  if (drift.length) {
+    fail(`the crafted ladder moved in the refactor: ${drift.join('; ')} — every balance number ` +
+      'in this game was tuned against the old values and none of them describe it any more');
+  } else {
+    ok('the crafted ladder is bit-identical to the constants it replaced (4 weapons, 4 armours)');
+  }
+
+  // And the arithmetic actually reaches `unitPower`, which is the half a table
+  // of literals cannot show. Two citizens identical but for the rifle: the
+  // ratio of their power must be the ratio of the two `power` stats exactly.
+  // This is *not* a test that reads its own constant — the expected ratio comes
+  // from the item table and the measured one from the resolver, so a resolver
+  // that ignored `stats.power` and kept a tier lookup would fail here.
+  const store = newStore(31);
+  const s = store.state;
+  const [a, b] = s.citizenIds.slice(0, 2);
+  for (const id of [a, b]) {
+    const c = s.citizens[id];
+    c.health = 100; c.vitality = 100; c.traits = [];
+    c.stats = { ...c.stats, str: 6, agi: 6 };
+    c.skills = { ...c.skills, combat: 20 };
+    c.gear = { weapon: null, armor: null, suit: null };
+  }
+  s.military.gear.p1 = { id: 'p1', item: 'pipe_gun', durability: 100, integrity: 100, assignedTo: a, loot: false };
+  s.military.gear.p2 = { id: 'p2', item: 'mag_rifle', durability: 100, integrity: 100, assignedTo: b, loot: false };
+  s.citizens[a].gear.weapon = 'p1';
+  s.citizens[b].gear.weapon = 'p2';
+  const ratio = unitPower(s, s.citizens[b]) / unitPower(s, s.citizens[a]);
+  const want = getItem('mag_rifle').stats.power / getItem('pipe_gun').stats.power;
+  if (Math.abs(ratio - want) > 1e-12) {
+    fail(`a Mag Rifle is worth ${ratio.toFixed(4)}x a Pipe Gun in the resolver and ${want.toFixed(4)}x ` +
+      'on the item — `unitPower` is not reading `stats.power`');
+  } else {
+    ok(`\`unitPower\` reads the item's own power (Mag Rifle is ${ratio.toFixed(2)}x a Pipe Gun, exactly as tabled)`);
+  }
+
+  // The tier-5 cliff this refactor exists to remove. `gearTierMult` was a
+  // four-entry array read by `tier - 1` with a `?? 0.8` fallback, so a tier-5
+  // weapon indexed off the end and came back at 0.8 — weaker than a Pipe Gun,
+  // and the best weapon in the game reading as the worst.
+  s.military.gear.p2.item = 'rail_carbine';
+  const five = unitPower(s, s.citizens[b]) / unitPower(s, s.citizens[a]);
+  if (!(five > ratio)) {
+    fail(`a tier-5 Rail-Carbine is worth ${five.toFixed(2)}x a Pipe Gun and a tier-4 Mag Rifle ` +
+      `${ratio.toFixed(2)}x — the top of the ladder falls off the end of it`);
+  } else {
+    ok(`and a tier-5 weapon is stronger than a tier-4 one (${five.toFixed(2)}x vs ${ratio.toFixed(2)}x), not weaker`);
+  }
+}
+
+// ---- 41. found kit cannot be built, and does not break the bench ------------
+//
+// A loot item has no `craft` block, and three call sites iterated it
+// unconditionally. Measured with one loot item injected and no guards:
+// `craftableItems` returned `slag_autogun`, and both `canCraft` and the
+// Armory's own row builder — `Object.entries(item.craft)` at
+// ui/panels/military.js:279 — threw `TypeError: Cannot convert undefined or
+// null to object`. That is the whole Military tab failing to render, for a
+// player whose only crime was winning a fight.
+{
+  const store = newStore(52);
+  const s = store.state;
+  s.research.completed = RESEARCH_LIST.map((n) => n.id);
+  // An Armory, so `canCraft` gets past its room gate to the resource loop —
+  // which is the line that actually throws.
+  s.silo.rooms.wtest_armory = {
+    id: 'wtest_armory', type: 'armory', floor: 3, slot: 0, width: 2, level: 1,
+    condition: 100, powered: true, buildingUntilCycle: 0, staff: [], found: false,
+  };
+
+  const loot = ITEM_LIST.filter((i) => i.loot);
+  if (loot.length < 6) fail(`only ${loot.length} loot items exist; the ladder needs 6`);
+
+  const offered = craftableItems(s).filter((i) => i.loot).map((i) => i.id);
+  if (offered.length) {
+    fail(`the benches offered to build ${offered.join(', ')} with the whole tree finished — ` +
+      'they have no recipe, so this is a crash waiting on a click');
+  } else {
+    ok(`no looted kit is offered at the benches, with all ${RESEARCH_LIST.length} research nodes done`);
+  }
+
+  // Every loot item, through the two functions and the panel's own expression.
+  const threw = [];
+  const built = [];
+  for (const item of loot) {
+    let check;
+    try {
+      check = canCraft(s, item.id);
+    } catch (e) {
+      threw.push(`canCraft(${item.id}) ${e.constructor.name}`);
+      continue;
+    }
+    if (check.ok) built.push(item.id);
+    try {
+      // Verbatim the panel's row: `itemsOfKind(kind)` -> `Object.entries(item.craft)`.
+      for (const row of itemsOfKind(item.kind)) Object.entries(row.craft).map(([k, v]) => `${v} ${k}`);
+    } catch (e) {
+      threw.push(`the Armory row for a ${item.kind} ${e.constructor.name}: ${e.message}`);
+    }
+    if (bestCraftable(item.kind, item.tier)?.loot) {
+      threw.push(`bestCraftable('${item.kind}', ${item.tier}) picked a looted piece`);
+    }
+  }
+  if (threw.length) {
+    fail(`opening the Armory with looted kit in the game: ${[...new Set(threw)].join('; ')}`);
+  } else if (built.length) {
+    fail(`${built.join(', ')} reported itself buildable — nothing found can also be made`);
+  } else {
+    ok(`all ${loot.length} looted pieces refuse politely and the Armory renders (canCraft, itemsOfKind, bestCraftable)`);
+  }
+
+  // And it says why, in words, rather than falling through to "No such item."
+  // Guarded, because without the guard this call is the throw itself, and a
+  // section that dies here reports nothing about the sections after it.
+  let reason = '';
+  try {
+    reason = canCraft(s, 'rail_carbine').reason;
+  } catch (e) {
+    reason = `${e.constructor.name}: ${e.message}`;
+  }
+  if (!/found/i.test(reason)) {
+    fail(`the Armory's reason for a Rail-Carbine is "${reason}", which does not tell the player it is loot`);
+  } else {
+    ok(`and it says so: "${reason}"`);
+  }
+}
+
+// ---- 42. the wasteland pays in kit, and the game can tell it apart ----------
+//
+// Three channels, none of which existed: a `gear` block on LOOT 3 and 4, a
+// `drops` block on the two organised raider bands, and `gearChancePerMilitary`
+// on the conquest sack. All three mint through the existing `GEAR_CRAFT`
+// rather than a new action type, so test/harness.mjs's "no action without a
+// reducer" assertion still covers them.
+//
+// Measured over eight 900-day campaigns after wiring: the channels fire, and
+// the piece that comes back is a piece the silo could not have built.
+{
+  // (a) The LOOT tables, through the real `resolveExpedition`.
+  //
+  // Driven on the Scar with a squad that wins, over enough seeds that the
+  // 0.04-0.07 chances land. The assertion is on the *piece in the rack*, not
+  // on a chance in a table: a `gear` key that nothing reads would leave this
+  // at zero, which is exactly how `durabilityLossPerCombat` stayed dead for
+  // the project's whole history.
+  const got = new Map();
+  let draws = 0;
+  let journalled = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 500;
+    s.resources.ammo = 100000;
+    const roster = s.citizenIds.slice(0, 6);
+    let g = 0;
+    for (const id of roster) {
+      const c = s.citizens[id];
+      c.health = 100; c.vitality = 100; c.morale = 80; c.traits = [];
+      c.stats = { ...c.stats, str: 9, agi: 9 };
+      c.skills = { ...c.skills, combat: 90 };
+      c.gear = { weapon: null, armor: null, suit: null };
+      for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', 'breacher_plate'], ['suit', 'suit_4']]) {
+        const gid = 'wt' + ++g;
+        s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+        c.gear[slot] = gid;
+      }
+    }
+    const out = resolveExpedition(s, {
+      id: 7000 + seed, squadId: 1, band: 'scar', purpose: 'salvage', target: null,
+      launchDay: 500, returnDay: 500, roster, leaderId: roster[0], resolved: false,
+    });
+    for (const line of out.journal) if (/^Recovered: /.test(line)) draws++;
+    for (const a of out.actions) {
+      if (a.type !== 'GEAR_CRAFT') continue;
+      if (!a.loot) { fail(`the wasteland minted a ${a.item} without marking it loot`); continue; }
+      got.set(a.item, (got.get(a.item) || 0) + 1);
+      if (out.journal.some((l) => l.includes(getItem(a.item).name))) journalled++;
+    }
+  }
+  const table = Object.keys(LOOT[4].gear);
+  const missing = table.filter((id) => !got.has(id));
+  const total = [...got.values()].reduce((a, b) => a + b, 0);
+  if (!total) {
+    fail(`60 Scar runs and ${draws} loot draws produced no gear at all — LOOT[4].gear is read by nothing`);
+  } else if (missing.length) {
+    fail(`${missing.join(', ')} never dropped in 60 Scar runs (${draws} draws) — it is in the table and unreachable`);
+  } else if (journalled !== total) {
+    fail(`${total - journalled} of ${total} drops were never named in the journal — the player is handed ` +
+      'kit they are not told about');
+  } else {
+    ok(`the Scar pays in kit: ${total} pieces over 60 runs (${draws} draws), all ${table.length} items reachable, ` +
+      'every one of them named in the journal');
+  }
+  // Nothing craftable may come down this channel. The whole point of the tier
+  // is that it cannot be built, and a table typo naming `mag_rifle` would be
+  // a free bench.
+  const buildable = [...got.keys()].filter((id) => !getItem(id).loot);
+  if (buildable.length) fail(`${buildable.join(', ')} dropped as loot and is also craftable`);
+}
+{
+  // (b) The enemy channel at the airlock — which is where it is actually paid.
+  //
+  // A Warband met in the open is a funeral at every tier in the game; met at
+  // your own door on home terrain it is a real fight you can win. So this is
+  // the channel that pays a player for keeping a squad home, which the game
+  // previously priced only in losses that did not happen. Driven through
+  // `raid.simulateDay`, the real entry point, on the real day loop's data.
+  let wins = 0;
+  let drops = 0;
+  let named = 0;
+  for (let day = 1; day <= 120; day++) {
+    const store = newStore(0x7000 + day);
+    const s = store.state;
+    s.clock.day = 400;
+    s.resources.ammo = 100000;
+    const ids = s.citizenIds.slice(0, 10);
+    let g = 0;
+    for (const id of ids) {
+      const c = s.citizens[id];
+      c.health = 100; c.vitality = 100; c.morale = 90; c.traits = [];
+      c.stats = { ...c.stats, str: 9, agi: 9 };
+      c.skills = { ...c.skills, combat: 95 };
+      c.gear = { weapon: null, armor: null, suit: null };
+      for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', 'breacher_plate']]) {
+        const gid = 'rt' + ++g;
+        s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+        c.gear[slot] = gid;
+      }
+    }
+    s.military.squads['1'] = {
+      id: '1', name: 'Probe', members: ids, leaderId: ids[0], assignment: 'garrison', deployed: false,
+    };
+    s.military.squadIds = ['1'];
+    s.world.pendingRaid = {
+      siloId: Object.keys(s.world.silos)[0],
+      day: 400 - BAL.raid.graceDays,
+      strength: 1, // hardest band
+    };
+    const acts = raid.simulateDay(s);
+    if (!acts.some((a) => a.type === 'STAT_BUMP' && a.stats?.raidsRepelled)) continue;
+    wins++;
+    const minted = acts.filter((a) => a.type === 'GEAR_CRAFT');
+    drops += minted.length;
+    const lines = acts.filter((a) => a.type === 'LOG_MANY').flatMap((a) => a.entries).map((e) => e.text).join(' ');
+    for (const m of minted) {
+      if (!m.loot) fail(`a raid minted a ${m.item} without marking it loot`);
+      if (lines.includes(getItem(m.item).name)) named++;
+    }
+  }
+  if (!wins) {
+    fail('no raid was repelled in 120 attempts, so the drop channel proved nothing');
+  } else if (!drops) {
+    fail(`${wins} raids repelled at the airlock and not one piece of gear came off them — ` +
+      'the `drops` block on the raider bands is read by nothing in raid.js');
+  } else if (named !== drops) {
+    fail(`${drops - named} of ${drops} pieces taken at the airlock were never written to the log`);
+  } else {
+    ok(`standing at the door pays: ${drops} pieces off ${wins} repelled raids, every one named in the log`);
+  }
+}
+{
+  // (c) The conquest channel, through the real `resolveRun` breach stage.
+  //
+  // `power.military` has decided only how hard the fight is since the world
+  // table existed, and paid nothing for having been hard. This is the first
+  // thing that reads it as a reward. The assertion is comparative — a hard
+  // silo must pay more than a soft one — because an absolute count is a
+  // restatement of the constant it is drawn from and could not detect a wrong
+  // one.
+  const runSack = (military, seedBase) => {
+    let pieces = 0;
+    let sacked = 0;
+    for (let seed = 0; seed < 90; seed++) {
+      const store = newStore(seedBase + seed);
+      const s = store.state;
+      s.clock.day = 600;
+      s.resources.ammo = 100000;
+      // Not the first row in the table — it is collapsed in some worlds, and
+      // `resolveRun` correctly refuses to breach a hole in the ground.
+      const silo = Object.values(s.world.silos).find((x) => x.status !== 'collapsed' && x.contact !== 'satellite');
+      if (!silo) continue;
+      silo.power = { ...silo.power, military, economy: 50, science: 30 };
+      silo.conquest = { stage: 'breach', scoutRuns: 9, undermined: true, defenseMult: 0.5 };
+      const roster = s.citizenIds.slice(0, 8);
+      let g = 0;
+      for (const id of roster) {
+        const c = s.citizens[id];
+        c.health = 100; c.vitality = 100; c.morale = 90; c.traits = [];
+        c.stats = { ...c.stats, str: 9, agi: 9 };
+        c.skills = { ...c.skills, combat: 95 };
+        c.gear = { weapon: null, armor: null, suit: null };
+        for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', 'breacher_plate'], ['suit', 'suit_4']]) {
+          const gid = 'ct' + ++g;
+          s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+          c.gear[slot] = gid;
+        }
+      }
+      const out = resolveConquestRun(s, {
+        id: 8000 + seed, squadId: 1, band: BAL.conquest.band, purpose: 'breach', target: silo.id,
+        launchDay: 600, returnDay: 600, roster, leaderId: roster[0], resolved: false,
+      });
+      if (!out.actions.some((a) => a.type === 'CONQUEST_PATCH')) continue; // breach failed
+      sacked++;
+      for (const a of out.actions) {
+        if (a.type !== 'GEAR_CRAFT') continue;
+        pieces++;
+        if (!a.loot) fail(`a sack minted a ${a.item} without marking it loot`);
+        if (!BAL.conquest.sack.gearTable.includes(a.item)) fail(`a sack produced ${a.item}, which is not on its table`);
+        if (!out.journal.some((l) => l.includes(getItem(a.item).name))) {
+          fail(`a ${a.item} came out of a silo and the report never mentioned it`);
+        }
+      }
+    }
+    return { pieces, sacked };
+  };
+  const soft = runSack(20, 0x2200);
+  const hard = runSack(95, 0x2200);
+  if (!soft.sacked || !hard.sacked) {
+    fail('no breach succeeded, so the conquest drop channel proved nothing');
+  } else if (!hard.pieces) {
+    fail(`${hard.sacked} silos at military 95 were sacked and produced no gear — ` +
+      '`gearChancePerMilitary` is read by nothing in `sack()`');
+  } else if (!(hard.pieces / hard.sacked > soft.pieces / soft.sacked * 2)) {
+    fail(`sacking a military-95 silo yields ${(hard.pieces / hard.sacked).toFixed(2)} pieces and a ` +
+      `military-20 one ${(soft.pieces / soft.sacked).toFixed(2)} — taking a hard silo is not worth ` +
+      'more than taking a soft one, so the rating still decides nothing but the difficulty');
+  } else {
+    ok(`a hard silo is worth taking: ${(hard.pieces / hard.sacked).toFixed(2)} pieces a sack at military 95 ` +
+      `vs ${(soft.pieces / soft.sacked).toFixed(2)} at military 20`);
+  }
+}
+
+// ---- 43. gear wears out, and the Armory finally has something to do ---------
+//
+// `BAL.gear.durabilityLossPerCombat` has existed since gear did and was read
+// by nothing. `GEAR_WEAR` had a reducer and was dispatched from nowhere in
+// src/. So `unitPower`'s wear term — `0.6 + 0.4 * (durability / max)` — was
+// pinned at exactly 1.0 for the project's whole history, and the Armory's
+// repair loop, which filters `durability < durabilityMax`, had never repaired
+// a single item in any campaign anybody has ever played.
+//
+// The suit half is worse and separate: a suit's condition is `integrity`, its
+// durability sits at 100 for ever, and the repair filter never looked at
+// integrity — so suits fell to 0 (measured: campaign-end averages of 25-37,
+// some at 0) and stayed there, and a suit at 0 is a breach, which is the full
+// unshielded dose on everyone in the party.
+{
+  const store = newStore(606);
+  const s = store.state;
+  s.clock.day = 300;
+  s.resources.ammo = 100000;
+  const roster = s.citizenIds.slice(0, 8);
+  let g = 0;
+  const ids = [];
+  for (const id of roster) {
+    const c = s.citizens[id];
+    c.health = 100; c.vitality = 100; c.morale = 90; c.traits = [];
+    c.stats = { ...c.stats, str: 9, agi: 9 };
+    c.skills = { ...c.skills, combat: 95 };
+    c.gear = { weapon: null, armor: null, suit: null };
+    for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', 'breacher_plate']]) {
+      const gid = 'wr' + ++g;
+      ids.push(gid);
+      s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+      c.gear[slot] = gid;
+    }
+  }
+  const enemy = rollEnemyForce(streamFor(1, 'wear', 'e'), getEnemy('scrappers'), { sizeScale: 0.2 });
+  const res = resolveCombat(s, roster, enemy, { battleId: 'wear-probe' });
+  store.dispatchAll(applyResolution(s, res, { context: 'raid' }));
+
+  const worn = ids.filter((id) => s.military.gear[id] && s.military.gear[id].durability < 100);
+  const survivors = res.injuries.length;
+  if (!survivors) {
+    fail('nobody survived the probe fight, so this section proved nothing');
+  } else if (!worn.length) {
+    fail(`${survivors} people came through a fight and not one weapon or plate lost a point of ` +
+      'durability — GEAR_WEAR is dispatched from nowhere and the Armory has nothing to repair');
+  } else if (worn.length !== survivors * 2) {
+    fail(`${survivors} survivors carried ${survivors * 2} pieces through a fight and only ${worn.length} wore`);
+  } else {
+    ok(`a fight wears out what was carried through it (${worn.length} pieces off ${survivors} survivors)`);
+  }
+
+  // And a worn weapon is worth less, which is what the term was for. The
+  // expected figure comes from the resolver's own formula rather than from a
+  // constant this file also reads, so a mutation to the wear curve fails here.
+  const c0 = s.citizens[roster[0]];
+  if (c0 && s.military.gear[c0.gear.weapon]) {
+    const gear = s.military.gear[c0.gear.weapon];
+    const after = unitPower(s, c0);
+    gear.durability = BAL.gear.durabilityMax;
+    const fresh = unitPower(s, c0);
+    if (!(after < fresh)) {
+      fail(`a weapon at ${gear.durability} durability fights exactly as well as one at full — ` +
+        'the wear term is not reading durability');
+    } else {
+      ok(`and worn kit fights worse: ${(100 * (1 - after / fresh)).toFixed(1)}% off unit power`);
+    }
+  }
+}
+{
+  // The Armory, which had never repaired anything, and specifically the suit.
+  const store = newStore(607);
+  const s = store.state;
+  // A staffed, powered Armory.
+  const room = Object.values(s.silo.rooms).find((r) => r.type === 'armory') || (() => {
+    s.silo.rooms.arm = {
+      id: 'arm', type: 'armory', floor: 3, slot: 0, width: 2, level: 1,
+      condition: 100, powered: true, buildingUntilCycle: 0, staff: [], found: false,
+    };
+    return s.silo.rooms.arm;
+  })();
+  room.powered = true;
+  room.buildingUntilCycle = 0;
+  room.staff = [s.citizenIds[0]];
+  s.resources.scrap = 100000;
+
+  s.military.gear.suit9 = { id: 'suit9', item: 'suit_4', durability: 100, integrity: 4, assignedTo: null, loot: false };
+  s.military.gear.gun9 = { id: 'gun9', item: 'mag_rifle', durability: 88, integrity: 100, assignedTo: null, loot: false };
+
+  const acts = militaryCycle(s);
+  const repair = acts.find((a) => a.type === 'GEAR_REPAIR');
+  if (!repair) {
+    fail('a staffed Armory with a rifle at 88 and a suit at 4 scheduled no repairs at all');
+  } else {
+    store.dispatchAll(acts);
+    const suit = s.military.gear.suit9;
+    const gun = s.military.gear.gun9;
+    if (!(suit.integrity > 4)) {
+      fail(`a suit at integrity 4 sat in a staffed Armory and came out at ${suit.integrity} — the repair ` +
+        'queue reads durability only, and a suit\'s durability never moves, so suits rot to 0 and stay there');
+    } else if (!(gun.durability > 88)) {
+      fail(`a rifle at durability 88 came out of the Armory at ${gun.durability}`);
+    } else if (!repair.repairs.some((r) => r.id === 'suit9')) {
+      fail('the suit was repaired but is not in the repair list, which means something else wrote it');
+    } else {
+      ok(`the Armory repairs both axes: suit integrity 4 -> ${suit.integrity.toFixed(1)}, ` +
+        `rifle durability 88 -> ${gun.durability.toFixed(1)}`);
+    }
+  }
+}
+
+// ---- 44. readiness is a fraction, and stays one ----------------------------
+//
+// `readiness` is documented "0-1", drawn as a meter, and printed as a
+// percentage by test/expedition.mjs. Its equipment term was `tier / 4`, which
+// was correct while 4 was the top of the ladder. A tier-5 looted piece scores
+// 1.25, the weighted sum runs to 1.125, and the meter overflows its own track.
+{
+  const store = newStore(808);
+  const s = store.state;
+  s.resources.ammo = 100000;
+  const ids = s.citizenIds.slice(0, 4);
+  let g = 0;
+  for (const id of ids) {
+    const c = s.citizens[id];
+    c.health = 100; c.morale = 100; c.traits = [];
+    c.skills = { ...c.skills, combat: 100 };
+    c.gear = { weapon: null, armor: null, suit: null };
+    for (const [slot, item] of [['weapon', 'rail_carbine'], ['armor', 'compact_cuirass']]) {
+      const gid = 'rd' + ++g;
+      s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+      c.gear[slot] = gid;
+    }
+  }
+  s.military.squads['1'] = {
+    id: '1', name: 'Best', members: ids, leaderId: ids[0], assignment: 'garrison', deployed: false,
+  };
+  s.military.squadIds = ['1'];
+
+  const best = readiness(s, '1');
+  if (!(best <= 1)) {
+    fail(`a squad in the best kit in the game reads readiness ${best.toFixed(3)} — the equipment term ` +
+      'divides tier by 4 and a tier-5 item is worth 1.25 of a full slot');
+  } else if (!(best > 0.9)) {
+    fail(`a squad at combat 100, morale 100, health 100 and full stores in tier-5 kit reads only ` +
+      `${best.toFixed(3)} — the clamp is eating the top of the scale`);
+  } else {
+    ok(`the best-equipped squad in the game reads readiness ${best.toFixed(3)}, which is still a fraction`);
+  }
+}
+
+// ---- 45. every stat on an item decides something ---------------------------
+//
+// Eight stats, each with exactly one read site. A stat that nothing reads is
+// how `durabilityLossPerCombat` spent this project's entire history declared,
+// documented and dead, so each one here is driven to an outcome a player would
+// see rather than checked for existence.
+//
+// `power` is §40's. These are the other seven.
+{
+  // --- dr, through the resolver ------------------------------------------
+  // Two citizens identical but for the plate. The expected ratio comes from
+  // the item table and the measured one from `unitPower`, so a resolver that
+  // kept `1 + tier * armorPerTier` would land wrong: the Slag Plate and the
+  // Breacher Plate are both tier 4 and would come out identical.
+  const store = newStore(41);
+  const s = store.state;
+  const [a, b] = s.citizenIds.slice(0, 2);
+  for (const id of [a, b]) {
+    const c = s.citizens[id];
+    c.health = 100; c.vitality = 100; c.traits = [];
+    c.stats = { ...c.stats, str: 6, agi: 6 };
+    c.skills = { ...c.skills, combat: 20 };
+    c.gear = { weapon: null, armor: null, suit: null };
+  }
+  s.military.gear.a1 = { id: 'a1', item: 'slag_plate', durability: 100, integrity: 100, assignedTo: a, loot: true };
+  s.military.gear.a2 = { id: 'a2', item: 'breacher_plate', durability: 100, integrity: 100, assignedTo: b, loot: false };
+  s.citizens[a].gear.armor = 'a1';
+  s.citizens[b].gear.armor = 'a2';
+  const measured = unitPower(s, s.citizens[b]) / unitPower(s, s.citizens[a]);
+  const wanted = (1 + getItem('breacher_plate').stats.dr) / (1 + getItem('slag_plate').stats.dr);
+  if (Math.abs(measured - wanted) > 1e-12) {
+    fail(`a Breacher Plate is worth ${measured.toFixed(5)}x a Slag Plate in the resolver and ` +
+      `${wanted.toFixed(5)}x on the items — \`unitPower\` is not reading \`stats.dr\`, and those two ` +
+      'are the same tier, so a tier lookup cannot tell them apart at all');
+  } else {
+    ok(`\`unitPower\` reads the item's own dr (two tier-4 plates differ by ${((measured - 1) * 100).toFixed(1)}%)`);
+  }
+
+  // The check above derives what it wants from the same item table it is
+  // testing, so it proves the resolver reads the field and CANNOT detect a
+  // wrong value in it — set both plates to the same `dr` and it passes at a
+  // ratio of 1.0. Mutation-tested; that is exactly what happened.
+  //
+  // So the values get their own assertion, and it is the design claim rather
+  // than a copy of the numbers: within the crafted ladder a higher tier
+  // dominates a lower one, but the *looted* pieces must each be beaten by
+  // something else on at least one axis, or there is no decision in them and
+  // the whole loot tier is a straight upgrade with extra words.
+  const dom = [];
+  const plate = getItem('slag_plate').stats;
+  const breacher = getItem('breacher_plate').stats;
+  const cuirass = getItem('compact_cuirass').stats;
+  if (!(plate.dr < breacher.dr)) dom.push('the Slag Plate turns as many rounds as a Breacher Plate');
+  if (!(plate.soak > breacher.soak)) dom.push('and spreads no more of the ones it does not');
+  if (!(cuirass.dr > breacher.dr)) dom.push('the Compact Cuirass is not the best plate in the game');
+  if (!(cuirass.soak < plate.soak)) dom.push('and it is not beaten by the Slag Plate on wounds either');
+  const gun = getItem('slag_autogun').stats;
+  const mag = getItem('mag_rifle').stats;
+  if (!(gun.power > mag.power)) dom.push('the Slag Autogun does not out-hit the Mag Rifle');
+  if (!(gun.ammo > mag.ammo)) dom.push('and does not pay for it in ammunition');
+  if (!(gun.pierce < mag.pierce)) dom.push('and does not pay for it in pierce either');
+  if (!(getItem('garrison_rifle').stats.ammo < mag.ammo)) dom.push('the Garrison Rifle is not the cheapest tier-4 to feed');
+  if (!(getItem('garrison_rifle').stats.power < mag.power)) dom.push('and is not the weakest');
+  if (dom.length) {
+    fail(`the looted kit is dominated rather than a choice: ${dom.join('; ')} — a loot tier that is ` +
+      'strictly better than the crafted one is not a decision, it is a reward for waiting');
+  } else {
+    ok('every looted piece is beaten by something else on at least one axis (dr/soak, power/ammo/pierce)');
+  }
+}
+{
+  // --- soak, where the player sees it: how hurt people come home ---------
+  //
+  // Pinned on a fight nobody can lose, so the outcome band, the casualty draw
+  // and every rng draw are identical between the two runs and the only thing
+  // left is the plate. The Padded Vest soaks nothing and the Slag Plate soaks
+  // 0.45, so the wounds must come back in that ratio.
+  const wounds = (armour) => {
+    const store = newStore(43);
+    const s = store.state;
+    s.clock.day = 200;
+    s.resources.ammo = 100000;
+    const roster = s.citizenIds.slice(0, 6);
+    let g = 0;
+    for (const id of roster) {
+      const c = s.citizens[id];
+      c.health = 100; c.vitality = 100; c.morale = 90; c.traits = [];
+      c.stats = { ...c.stats, str: 9, agi: 9 };
+      c.skills = { ...c.skills, combat: 95 };
+      c.gear = { weapon: null, armor: null, suit: null };
+      for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', armour]]) {
+        const gid = 'sk' + ++g;
+        s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+        c.gear[slot] = gid;
+      }
+    }
+    const enemy = rollEnemyForce(streamFor(1, 'soak', 'e'), getEnemy('scrappers'), { sizeScale: 0.2 });
+    const res = resolveCombat(s, roster, enemy, { battleId: 'soak-probe' });
+    return {
+      total: res.injuries.reduce((x, i) => x - i.health, 0),
+      cas: res.casualties.length,
+      win: res.outcome.key,
+    };
+  };
+  const bare = wounds('padded_vest');
+  const plated = wounds('slag_plate');
+  const ratio = 1 - getItem('slag_plate').stats.soak;
+  // Both sides of the comparison below read `slag_plate.stats.soak`, so a soak
+  // of 0 would satisfy it trivially at a ratio of 1.0 — mutation-tested, and
+  // it did. The probe therefore refuses to run on a plate that soaks nothing.
+  // What the value *should* be is the non-domination assertion's question.
+  if (!(getItem('slag_plate').stats.soak > 0.2)) {
+    fail(`the Slag Plate soaks ${getItem('slag_plate').stats.soak}, so this probe cannot see anything — ` +
+      'the piece whose whole identity is bringing people home in one piece absorbs nothing');
+  } else if (bare.win !== plated.win || bare.cas !== plated.cas) {
+    fail(`the soak probe did not hold the fight still (${bare.win}/${plated.win}) — it proves nothing`);
+  } else if (!bare.total) {
+    fail('nobody was hurt in the soak probe, so it proves nothing');
+  } else if (Math.abs(plated.total / bare.total - ratio) > 0.03) {
+    fail(`the same fight cost ${bare.total} health in Padded Vests and ${plated.total} in Slag Plates — ` +
+      `a ratio of ${(plated.total / bare.total).toFixed(3)} against the ${ratio.toFixed(2)} the plate's ` +
+      '`soak` promises. Armour is not deciding how hurt people come home');
+  } else {
+    ok(`\`soak\` decides what a fight costs: ${bare.total} health in Padded Vests, ${plated.total} in ` +
+      `Slag Plates, same fight, same outcome (${(plated.total / bare.total).toFixed(2)}x)`);
+  }
+}
+{
+  // --- pierce, which is not the tier ------------------------------------
+  //
+  // The whole reason `pierce` is a stat rather than a rank: the Slag Autogun
+  // is a tier-4 weapon that punches like a tier-3 one, so it out-hits a Mag
+  // Rifle everywhere except in front of the one thing that has to be punched
+  // through. Both weapons are tier 4, so a resolver reading `item.tier` cannot
+  // separate them and this section fails.
+  const blocked = (weapon, minWeaponTier) => {
+    const store = newStore(45);
+    const s = store.state;
+    s.clock.day = 300;
+    s.resources.ammo = 100000;
+    const roster = s.citizenIds.slice(0, 6);
+    let g = 0;
+    for (const id of roster) {
+      const c = s.citizens[id];
+      c.health = 100; c.vitality = 100; c.morale = 80; c.traits = [];
+      c.gear = { weapon: null, armor: null, suit: null };
+      const gid = 'pc' + ++g;
+      s.military.gear[gid] = { id: gid, item: weapon, durability: 100, integrity: 100, assignedTo: id, loot: false };
+      c.gear.weapon = gid;
+    }
+    const enemy = {
+      id: 'wall', name: 'Something Armoured', count: 1, level: 1, modifier: null,
+      power: 40, human: false, displayName: 'Something Armoured',
+      def: { id: 'wall', name: 'Something Armoured', human: false, minWeaponTier },
+    };
+    const res = resolveCombat(s, roster, enemy, { battleId: 'pierce-probe' });
+    return res.log.some((l) => /will go through it/.test(l));
+  };
+  const problems = [];
+  if (blocked('mag_rifle', 4)) problems.push('a Mag Rifle (pierce 4) was stopped by a tier-4 gate');
+  if (!blocked('slag_autogun', 4)) problems.push('a Slag Autogun (pierce 3) went through a tier-4 gate');
+  if (blocked('slag_autogun', 3)) problems.push('a Slag Autogun (pierce 3) was stopped by a tier-3 gate');
+  if (!blocked('service_rifle', 3)) problems.push('a Service Rifle (pierce 2) went through a tier-3 gate');
+  if (problems.length) {
+    fail(`the armour gate is reading weapon tier, not \`pierce\`: ${problems.join('; ')} — the Mag ` +
+      'Rifle and the Slag Autogun are both tier 4 and must not be interchangeable in front of a Hulk');
+  } else {
+    ok('`pierce` and not tier decides what gets through: two tier-4 weapons, only one of them opens a tier-4 gate');
+  }
+}
+{
+  // --- ammo appetite, at the airlock ------------------------------------
+  //
+  // Charged per weapon rather than per head, which is the cost side of the
+  // stat: the hardest-hitting weapon in the game is also the one that can
+  // leave a squad standing at the door. Measured through `canLaunch`, which is
+  // the gate that actually opens.
+  const cost = (weapon) => {
+    const store = newStore(47);
+    const s = store.state;
+    for (const r of Object.values(s.silo.rooms)) { r.powered = true; r.buildingUntilCycle = 0; }
+    s.silo.rooms.al = {
+      id: 'al', type: 'airlock', floor: 1, slot: 0, width: 2, level: 3,
+      condition: 100, powered: true, buildingUntilCycle: 0, staff: [], found: false,
+    };
+    for (const k of Object.keys(s.resources)) s.resources[k] = 100000;
+    const ids = s.citizenIds.slice(0, 6);
+    let g = 0;
+    for (const id of ids) {
+      const c = s.citizens[id];
+      c.health = 100; c.status = 'idle';
+      c.gear = { weapon: null, armor: null, suit: null };
+      for (const [slot, item] of [['weapon', weapon], ['suit', 'suit_4']]) {
+        const gid = 'am' + ++g;
+        s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+        c.gear[slot] = gid;
+      }
+    }
+    s.military.squads['1'] = {
+      id: '1', name: 'Probe', members: ids, leaderId: ids[0], assignment: 'garrison', deployed: false,
+    };
+    s.military.squadIds = ['1'];
+    const check = canLaunch(s, '1', 'deep');
+    return check.ok ? check.cost : null;
+  };
+  const lean = cost('pipe_gun');
+  const hungry = cost('slag_autogun');
+  const base = cost('service_rifle');
+  if (!lean || !hungry || !base) {
+    fail('the appetite probe could not launch, so it proves nothing');
+  } else if (lean.food !== hungry.food || lean.water !== hungry.water) {
+    fail('the appetite stat moved food and water, which are charged per body and must not move');
+  } else if (!(hungry.ammo > base.ammo && base.ammo > lean.ammo)) {
+    fail(`the airlock asks for ${lean.ammo} rounds for Pipe Guns, ${base.ammo} for Service Rifles and ` +
+      `${hungry.ammo} for Slag Autoguns — the supply bill is not reading \`stats.ammo\``);
+  } else {
+    const want = getItem('slag_autogun').stats.ammo / getItem('pipe_gun').stats.ammo;
+    const got = hungry.ammo / lean.ammo;
+    if (Math.abs(got - want) > 0.05) {
+      fail(`autoguns cost ${got.toFixed(2)}x pipe guns to supply and the items say ${want.toFixed(2)}x`);
+    } else {
+      ok(`\`ammo\` is charged per weapon: a deep run wants ${lean.ammo} rounds on Pipe Guns and ` +
+        `${hungry.ammo} on Slag Autoguns (${got.toFixed(2)}x, same six people)`);
+    }
+  }
+}
+{
+  // --- band, shielding and wear, on the suits ---------------------------
+  //
+  // `band` is the launch gate. It is a separate number from the tier because
+  // the Registry Skin is a tier-5 suit and there is no band 5 — under the old
+  // `degradePerHourOutside[tier - 1]` it also indexed off the end of a
+  // four-entry array and fell back to 0.55, the worst value in it, so the best
+  // suit in the game read as the worst.
+  const run = (suit, band, seed) => {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 600;
+    for (const k of Object.keys(s.resources)) s.resources[k] = 100000;
+    s.silo.rooms.al2 = {
+      id: 'al2', type: 'airlock', floor: 1, slot: 0, width: 2, level: 3,
+      condition: 100, powered: true, buildingUntilCycle: 0, staff: [], found: false,
+    };
+    const ids = s.citizenIds.slice(0, 6);
+    let g = 0;
+    for (const id of ids) {
+      const c = s.citizens[id];
+      c.health = 100; c.vitality = 100; c.morale = 80; c.status = 'idle'; c.traits = [];
+      c.stats = { ...c.stats, str: 9, agi: 9 };
+      c.skills = { ...c.skills, combat: 95 };
+      c.gear = { weapon: null, armor: null, suit: null };
+      for (const [slot, item] of [['weapon', 'mag_rifle'], ['armor', 'breacher_plate'], ['suit', suit]]) {
+        const gid = 'su' + ++g;
+        s.military.gear[gid] = { id: gid, item, durability: 100, integrity: 100, assignedTo: id, loot: false };
+        c.gear[slot] = gid;
+      }
+    }
+    s.military.squads['1'] = {
+      id: '1', name: 'Probe', members: ids, leaderId: ids[0], assignment: 'garrison', deployed: false,
+    };
+    s.military.squadIds = ['1'];
+    const gate = canLaunch(s, '1', band);
+    const out = resolveExpedition(s, {
+      id: 9100 + seed, squadId: '1', band, purpose: 'salvage', target: null,
+      launchDay: 600, returnDay: 600, roster: ids, leaderId: ids[0], resolved: false,
+    });
+    const resolve = out.actions.find((x) => x.type === 'EXPEDITION_RESOLVE');
+    return { gate, integrity: resolve.suitIntegrity, dose: resolve.radiation };
+  };
+
+  // (a) the launch gate.
+  //
+  // Stated plainly because it matters to anyone reading this later: on the
+  // shipped band table these three assertions CANNOT tell `stats.band` from
+  // `item.tier`. Every suit's band equals its tier except the Registry Skin's,
+  // which is tier 5 and band 4 — and since the highest band in the game asks
+  // for suitTier 4, `5 >= 4` and `4 >= 4` both admit it. Mutation-tested:
+  // swapping the gate back to `item.tier` leaves all three green.
+  //
+  // What they do pin is the gate's behaviour, which is worth pinning on its
+  // own. The two assertions below them are the ones that are about the field.
+  const gates = {
+    t3: run('suit_3', 'scar', 49).gate,
+    t4: run('suit_4', 'scar', 49).gate,
+    skin: run('registry_skin', 'scar', 49).gate,
+  };
+  if (gates.t3.ok) {
+    fail('a squad in tier-3 suits was allowed onto the Scar — the launch gate is not reading `stats.band`');
+  } else if (!gates.t4.ok || !gates.skin.ok) {
+    fail(`the Scar refused ${!gates.t4.ok ? 'a tier-4 suit' : 'a Registry Skin'}: ` +
+      `"${(gates.t4.ok ? gates.skin : gates.t4).reason}" — a tier-5 suit must open the band it is built for`);
+  } else {
+    ok('`band` gates the airlock: tier-3 suits are refused the Scar, tier-4 and the tier-5 Skin are not');
+  }
+
+  // Why the field exists at all, which is the part a tier can never say.
+  //
+  // A suit's rank and the ground it is rated for are different questions, and
+  // the Registry Skin is the proof: it is the best suit in the game and there
+  // is no band above the Scar for it to open. Under `item.tier` it claims
+  // band 5, which does not exist — the same class of mistake as
+  // `gearTierMult[4]`, an index off the end of a table that happens not to
+  // crash. If somebody ever makes every suit's band equal its tier, the field
+  // is pure duplication and should be deleted rather than left to rot.
+  const topBand = Math.max(...BANDS.map((x) => x.suitTier));
+  const overclaimed = ITEM_LIST.filter((i) => i.kind === 'suit' && i.stats.band > topBand);
+  const differs = ITEM_LIST.filter((i) => i.kind === 'suit' && i.stats.band !== i.tier);
+  if (overclaimed.length) {
+    fail(`${overclaimed.map((i) => `${i.id} (band ${i.stats.band})`).join(', ')} is rated for ground ` +
+      `that does not exist — the deepest band in the game asks for suit tier ${topBand}`);
+  } else if (!differs.length) {
+    fail('every suit\'s `band` is just its `tier`, so the field decides nothing and is duplication');
+  } else {
+    ok(`and \`band\` is not \`tier\`: ${differs.map((i) => `${i.id} is tier ${i.tier}, band ${i.stats.band}`).join('; ')}`);
+  }
+
+  // (b) `wear` and `shielding`, measured on the approach band.
+  //
+  // NOT on the Scar, and the reason is a finding rather than a convenience.
+  // Ten days out floors integrity at 0 for almost everything — measured over
+  // 12 seeds a side, tier-1 suits came home at 0 in 11 runs, tier-2 in 10,
+  // tier-3 in 7, and even tier-4 in 3. That is the exact mirror of the
+  // radiation defect this design already routes around: dose saturates at the
+  // 100 ceiling and integrity saturates at the 0 floor, and a stat cannot
+  // decide anything in a range where every value gives the same answer. The
+  // approach band is six days and nothing floors there, so it is where the
+  // stat is actually legible.
+  const mean = (suit) => {
+    const runs = [];
+    for (let seed = 60; seed < 70; seed++) runs.push(run(suit, 'approach', seed));
+    return {
+      integrity: runs.reduce((a, r) => a + r.integrity, 0) / runs.length,
+      dose: runs.reduce((a, r) => a + r.dose, 0) / runs.length,
+      floored: runs.filter((r) => r.integrity <= 0).length,
+    };
+  };
+  const t3 = mean('suit_3');
+  const t4 = mean('suit_4');
+  const skin = mean('registry_skin');
+
+  if (t3.floored || t4.floored || skin.floored) {
+    fail('the wear probe floored at 0, so it cannot separate the suits and proves nothing');
+  } else if (!(skin.integrity > t4.integrity && t4.integrity > t3.integrity)) {
+    fail(`six days out ends with suits at ${t3.integrity.toFixed(1)} (T3), ${t4.integrity.toFixed(1)} (T4) ` +
+      `and ${skin.integrity.toFixed(1)} (Skin) — a better suit is not surviving the walk any better, ` +
+      'so `stats.wear` is not being read');
+  } else if (Math.abs(skin.dose - t4.dose) > 0.5) {
+    fail(`the Registry Skin came home with ${skin.dose.toFixed(0)} rad against a tier-4 suit's ` +
+      `${t4.dose.toFixed(0)}. Its advantage is meant to be \`wear\`, not \`shielding\` — dose clamps at ` +
+      '100 on every band a tier-4 suit can reach, so a shielding advantage there is a stat nobody can see');
+  } else if (!(t3.dose > t4.dose)) {
+    fail(`a tier-3 suit takes ${t3.dose.toFixed(0)} rad and a tier-4 one ${t4.dose.toFixed(0)} — ` +
+      '`stats.shielding` is not reaching the dose');
+  } else {
+    ok(`\`wear\` is where the tier-5 suit earns its place: six days out ends at ${t3.integrity.toFixed(0)}` +
+      ` / ${t4.integrity.toFixed(0)} / ${skin.integrity.toFixed(0)} integrity, the Skin and the tier-4 ` +
+      `suit at the same ${skin.dose.toFixed(0)} rad (mean of 10 runs each)`);
   }
 }
 

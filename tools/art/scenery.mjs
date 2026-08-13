@@ -153,13 +153,37 @@ export function toxic(t = 0) {
 const INK = PAL.ink;
 
 // Flesh that has stopped being maintained.
-/** Blend two palette tones. Both ends stay on-palette, so the result does. */
+/**
+ * Blend two tones.
+ *
+ * THE OLD DOC HERE WAS WRONG, AND IT SHIPPED A BUG. It said "both ends stay
+ * on-palette, so the result does", which is only true when both ends lie on
+ * the ray of the SAME palette entry. The legality test below is membership of
+ * the triangle (entry, black, bone) for SOME ONE entry, and a straight blend
+ * of two DIFFERENT entries leaves every such triangle — it is a chord between
+ * two of them, and the interior of a chord is outside both.
+ *
+ * That is exactly what happened: SUIT was mix(denim, concrete, 0.55) and
+ * landed at rgb(72,86,103), which is on no entry's ray at all, and the
+ * shambler shipped with 23 off-palette pixels that the self-test correctly
+ * reported and nobody could see by eye.
+ *
+ * So: mix() is for two tones of the same entry, or for a result you have
+ * checked. Anything else wants tone().
+ *
+ * And it now REGISTERS its result, which is the reason the bug survived. The
+ * [palette] audit walks USED — every tone the module asked for — and mix()
+ * was the one door into a colour that never went through reg(), so the audit
+ * reported "every one checked" over a set that excluded the only illegal
+ * colour in the file. A blend that never reaches a pixel now fails the build
+ * too, instead of waiting to be drawn.
+ */
 function mix(a, b, t) {
-  return [
+  return reg([
     Math.round(a[0] + (b[0] - a[0]) * t),
     Math.round(a[1] + (b[1] - a[1]) * t),
     Math.round(a[2] + (b[2] - a[2]) * t),
-  ];
+  ], `mix(${a},${b},${t})`);
 }
 
 const FLESH = tone('skin', -0.34);
@@ -198,8 +222,21 @@ const FIELD_LO = tone('verdigris', -0.58);
  * own people. The dye has gone out of it: desaturated toward the concrete of
  * everything else out there, and darker, so it reads as issue cloth that has
  * been outside for years rather than as somebody's uniform.
+ *
+ * THE MID TONE WAS OFF-PALETTE and had been since it was written: as
+ * mix(denim, concrete, 0.55) it landed on rgb(72,86,103), a chord between two
+ * entries and therefore on neither one's ray, and the shambler shipped with 23
+ * illegal pixels. It is now the nearest legal colour to what was intended,
+ * denimLit darkened, which is rgb(71,85,107) — a move of 4.2 out of 255, below
+ * anything an eye resolves in a 16px sprite, and the sprite is otherwise
+ * pixel-identical.
+ *
+ * The highlight and the shade stay as they were. Both were measured against
+ * the same test and both DO sit inside the denim triangle, so there is no bug
+ * to fix there and no reason to shift art that is already legal — and mix()
+ * now registers, so if either ever drifts out the build says so.
  */
-const SUIT = mix(tone('denim'), tone('concrete'), 0.55);
+const SUIT = tone('denimLit', -0.39);
 const SUIT_HI = mix(tone('denimLit'), tone('lit'), 0.5);
 const SUIT_LO = mix(tone('denimDark'), tone('deep'), 0.55);
 
@@ -428,7 +465,7 @@ function paintMask(v, g, fill, { outline = null, lit = null, ink = null } = {}) 
  * primitive onto a scratch buffer, then lift the opaque pixels into the form.
  * The result is pixel-for-pixel lib's cylinder, screen and box.
  */
-function libDraw(f, ox, oy, w, h, fn) {
+export function libDraw(f, ox, oy, w, h, fn) {
   const px = new Uint8Array(w * h * 4);
   fn(painter(px, w, { x: 0, y: 0, w, h }));
   for (let y = 0; y < h; y++) {
@@ -448,7 +485,7 @@ function libDraw(f, ox, oy, w, h, fn) {
  *
  * Content must stay inside a 1px margin or the keyline has nowhere to go.
  */
-function form(w, h) {
+export function form(w, h) {
   const buf = new Array(w * h).fill(null);
   const inb = (x, y) => x >= 0 && y >= 0 && x < w && y < h;
   const f = {
@@ -2267,7 +2304,7 @@ function fitTriangle(c, b) {
   return { s, t, res };
 }
 
-function legalColour(c) {
+export function legalColour(c) {
   for (const k of Object.keys(PAL)) {
     const f = fitTriangle(c, PAL[k]);
     if (!f) continue;
@@ -2277,7 +2314,7 @@ function legalColour(c) {
 }
 
 /** Toxin-family by hue AND by hull position, so greys cannot false-positive. */
-function toxinish(c) {
+export function toxinish(c) {
   if (!(c[1] > c[0] + 2 && c[0] > c[2] + 8)) return false;
   const f = fitTriangle(c, PAL.toxin);
   return !!f && f.res <= 2.6 && f.s >= 0.15 && f.s <= 1.03 && f.t >= -0.03 && f.s + f.t <= 1.03;
