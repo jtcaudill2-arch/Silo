@@ -38,8 +38,9 @@ import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
+import autopilot from './autopilot.mjs';
 import { directives } from '../src/sim/directives.js';
-import { readEnvironment } from '../src/sim/population.js';
+import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
 import { gearStorageCap } from '../src/sim/military.js';
 import { computeCaps, staffSlots } from '../src/sim/economy.js';
 import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
@@ -2536,6 +2537,126 @@ console.log('');
     fail(`the wipe scheduled ${leaked.dupes} duplicate GEAR_DESTROY actions`);
   } else {
     ok(`a party that never came home leaves its kit out there (${checked} real wipes, no duplicates)`);
+  }
+}
+
+// ---- 38. grief passes ------------------------------------------------------
+//
+// `bereaved` is declared `temporary: true` in data/traits.js, its description
+// ends "It will pass, or it will not", and until now it never passed: nothing
+// in the codebase read that field and nothing ever dispatched the removal the
+// CITIZEN_TRAIT reducer had supported all along. Measured over two 900-day
+// campaigns before the fix, the standing bereaved fraction sat at 24-30% from
+// day 300 onward — a quarter of the silo permanently at 0.85 work output and
+// 1.4 morale swing, from losses taken hundreds of days earlier.
+//
+// Two questions, kept apart on purpose.
+{
+  // (a) The rate, measured where it is rolled.
+  //
+  // Sampling the same citizens for many days without ever applying the
+  // removals turns this into one clean binomial: nobody sheds the trait, so
+  // every day is another independent draw at the configured chance. A
+  // campaign cannot answer this — `bereaved` is re-granted whenever another
+  // partner dies, so what a campaign shows is an equilibrium between grief
+  // arriving and grief lifting, and that moves with the death rate.
+  const store = newStore(4242);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+  new Game(store).runDays(3);
+
+  const marked = s.citizenIds.slice();
+  for (const id of marked) {
+    const c = s.citizens[id];
+    if (!c.traits.includes('bereaved')) c.traits.push('bereaved');
+  }
+
+  const DAYS = 200;
+  const startDay = s.clock.day;
+  let removals = 0;
+  let other = 0;
+  for (let d = 0; d < DAYS; d++) {
+    s.clock.day = startDay + d;
+    for (const a of populationDay(s, {})) {
+      if (a.type !== 'CITIZEN_TRAIT' || a.trait !== 'bereaved') continue;
+      if (a.remove) removals++;
+      else other++;
+    }
+  }
+  const draws = marked.length * DAYS;
+  const rate = removals / draws;
+  const want = BAL.citizens.griefPassChance;
+  // ±3.5 sd on `draws` samples.
+  //
+  // Both sides read `griefPassChance`, so retuning it in balance.js moves the
+  // band with it and this stays green — which is the point: it is a tunable,
+  // and every tunable in this game lives there so it can be tuned. What the
+  // band catches is the plumbing coming adrift from the number. Hardcoding the
+  // roll to half the configured chance lands 15 sd out and fails; deleting the
+  // roll fails at zero.
+  const sd = Math.sqrt(want * (1 - want) / draws);
+  if (other) {
+    fail(`the daily loop granted ${other} bereaved traits it was never asked for`);
+  } else if (!removals) {
+    fail(`${draws} citizen-days of grief and it never once lifted — the roll is not in the daily loop`);
+  } else if (Math.abs(rate - want) > 3.5 * sd) {
+    fail(`grief lifts at ${(100 * rate).toFixed(3)}%/day, not the configured ` +
+      `${(100 * want).toFixed(3)}% (${removals} of ${draws}, ±${(350 * sd).toFixed(3)}pp allowed)`);
+  } else {
+    ok(`grief lifts at the rate it is configured to (${removals} of ${draws} citizen-days, ` +
+      `${(100 * rate).toFixed(3)}% vs ${(100 * want).toFixed(3)}%)`);
+  }
+
+  // And it is slow. A mutation setting the chance to 1 would satisfy nothing
+  // above except by breaking the band, so this is really a statement about
+  // what the number is for: a bereavement is supposed to hang over somebody
+  // for months, and the median here is about 58 days.
+  const halfLife = Math.log(0.5) / Math.log(1 - want);
+  if (halfLife < 20 || halfLife > 200) {
+    fail(`half the mourners are over it in ${halfLife.toFixed(0)} days, which is not a bereavement`);
+  } else {
+    ok(`and slowly: half of them still carry it after ${halfLife.toFixed(0)} days`);
+  }
+}
+{
+  // (b) The wiring, measured where the player would see it.
+  //
+  // (a) proves the roll happens and never applies a single one of its own
+  // actions, so it would survive a store that dropped CITIZEN_TRAIT removals
+  // on the floor. This drives the real day loop and looks at the citizens.
+  const store = newStore(0x1234);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+  const game = new Game(store);
+  // The autopilot is the reference player, and without one the silo starves
+  // long before grief has had time to lift: a bare `runDays(150)` kills every
+  // citizen in the fixture and the section then proves nothing, loudly.
+  const play = (n) => {
+    for (let d = 0; d < n; d++) {
+      game.runDays(1);
+      s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+      for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+    }
+  };
+  play(30);
+
+  const marked = new Set();
+  for (const id of s.citizenIds) {
+    const c = s.citizens[id];
+    if (!c.traits.includes('bereaved')) c.traits.push('bereaved');
+    marked.add(id);
+  }
+  play(120);
+
+  const alive = [...marked].filter((id) => s.citizens[id]?.status !== 'dead');
+  const shed = alive.filter((id) => !s.citizens[id].traits.includes('bereaved')).length;
+  if (!alive.length) {
+    fail('the fixture silo died, so this section proved nothing');
+  } else if (!shed) {
+    fail(`${alive.length} mourners went through 120 days of the real day loop and every one ` +
+      'of them is still bereaved — the action is raised and never applied');
+  } else {
+    ok(`and it reaches the citizen: ${shed} of ${alive.length} shed it over 120 days of real play`);
   }
 }
 

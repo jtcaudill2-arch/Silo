@@ -552,6 +552,12 @@ export const BAL = {
     schoolMinAge: 6,
     schoolMaxAge: 17,
     workingAgeMin: 16,
+    // The chance each day that grief lifts. At 0.012 the median is about
+    // fifty-eight days and the tail runs past two hundred, which is what
+    // "it will pass, or it will not" should feel like — and it stops the
+    // trait accreting across the whole silo, which is what it did when
+    // nothing removed it at all.
+    griefPassChance: 0.012,
     workingAgeMax: 999,
 
     vitality: {

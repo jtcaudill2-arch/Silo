@@ -192,6 +192,29 @@ export function simulateDay(state, ctx) {
     p.age = newAge;
     p.vitality = vitalityForAge(newAge, c.traits);
 
+    // ---- grief -----------------------------------------------------------
+    //
+    // "It will pass, or it will not" is what the trait's own description says,
+    // and until now it never passed. `bereaved` is declared `temporary: true`
+    // in data/traits.js and nothing in the codebase reads that field; the
+    // trait is granted in CITIZEN_TRAIT's neighbour at reducers.js:410 and
+    // never removed, though the reducer has supported removal all along and
+    // nothing ever dispatched it.
+    //
+    // Measured on a 900-day campaign before the fix: 24 of 56 citizens
+    // bereaved on day 150 — 43% of a young silo permanently at 0.85 work
+    // output and 1.4 morale swing, from a loss they took a hundred days
+    // earlier. It settles to 111 of 1308 late on, but the early game is
+    // exactly when a silo cannot absorb it.
+    //
+    // A daily chance rather than a timer, because that is what the sentence
+    // describes and because it needs no new field on the citizen and no
+    // migration: grief lifts on its own schedule, and for the unlucky it
+    // takes a long time.
+    if (c.traits.includes('bereaved') && rng.chance(C.griefPassChance)) {
+      actions.push({ type: 'CITIZEN_TRAIT', id, trait: 'bereaved', remove: true });
+    }
+
     // ---- radiation -------------------------------------------------------
     let rad = c.radiation;
     if (rad > 0 && env.clinicLevel > 0 && env.meds > 0) {
