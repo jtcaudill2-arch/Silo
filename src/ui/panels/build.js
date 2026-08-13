@@ -125,7 +125,7 @@ function excavationSection(state, shell) {
         el(
           'div.excavate-main',
           el('div.excavate-title', 'Every floor is open'),
-          el('div.excavate-sub', 'Ninety-two down to bedrock.')
+          el('div.excavate-sub', `${BAL.silo.totalFloors} down to bedrock.`)
         )
       )
     );

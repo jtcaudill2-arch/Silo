@@ -131,7 +131,7 @@ export class DepthGauge {
 
     // ---- where the thing being placed could go ----------------------------
     //
-    // Ninety-two floors do not fit on a phone screen and fourteen barely do,
+    // A hundred and forty-four floors do not fit on a phone screen and fourteen barely do,
     // so "which floors will take this" was a question you could only answer by
     // dragging. The rail already knows the whole silo at once; while a
     // building is being placed it says which floors have room, and marks the

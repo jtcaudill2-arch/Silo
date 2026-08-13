@@ -4751,6 +4751,57 @@ console.log('');
   else ok(`the interface draws from the art's own palette: ${Object.keys(TOKENS).length} tokens matched to PAL, no off-palette colour in the stylesheet`);
 }
 
+// ---- 59. the game says how big it is, correctly -----------------------------
+//
+// The silo became 144 floors and six user-facing strings went on saying
+// ninety-two — including the PWA manifest, which is the text on the icon a
+// player installs to their phone home screen, and the meta description, which
+// is what a link preview shows.
+//
+// This had already been caught once. `newgame.js` reads the opening log's
+// floor count off `BAL.silo.totalFloors` and carries a comment saying the
+// sentence "has been wrong twice", and five other copies of the same number
+// survived that fix untouched. A number written out by hand in six places is
+// a number that will be wrong in five of them.
+{
+  const problems = [];
+  const n = BAL.silo.totalFloors;
+
+  // Nowhere may still carry the old figure, in digits or in words.
+  const FILES = ['../src/ui/settings.js', '../src/ui/panels/build.js', '../src/render/depthgauge.js',
+    '../src/core/newgame.js', '../src/ui/briefing.js'];
+  for (const rel of FILES) {
+    let src;
+    try { src = readSource(rel); } catch { continue; }
+    // The one legitimate mention is newgame.js's comment explaining the bug.
+    const hits = [...src.matchAll(/[Nn]inety-two/g)].length;
+    const excused = /has been wrong twice/.test(src) ? 1 : 0;
+    if (hits > excused) problems.push(`${rel.replace('../', '')} still says ninety-two floors`);
+  }
+
+  // The two static files cannot read a constant, so they are checked against
+  // it instead — these are the strings that end up on a home screen and in a
+  // link preview, which is the worst possible place for a stale number.
+  const WORDS = { 92: 'ninety-two', 144: 'a hundred and forty-four' };
+  const want = WORDS[n];
+  for (const rel of ['../manifest.webmanifest', '../index.html']) {
+    const src = readSource(rel).toLowerCase();
+    if (!want) continue;
+    if (!src.includes(want)) {
+      problems.push(`${rel.replace('../', '')} does not state the silo's ${n} floors`);
+    }
+  }
+
+  // And the sentence every new player reads first must come off the constants.
+  const ng = readSource('../src/core/newgame.js');
+  if (!/\$\{BAL\.silo\.totalFloors\} floors/.test(ng)) {
+    problems.push('the opening log no longer reads its floor count off BAL.silo.totalFloors');
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else ok(`the silo says it is ${n} floors deep everywhere it says anything, including the install card`);
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }

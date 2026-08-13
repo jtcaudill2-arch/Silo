@@ -170,7 +170,7 @@ export function openSettings(store, game, shell) {
     body.appendChild(
       el(
         'div.note',
-        'Deepwater. Ninety-two floors, and a sky that kills in under an hour. ' +
+        `Deepwater. ${BAL.silo.totalFloors} floors, and a sky that kills in under an hour. ` +
           'Runs entirely on your device: no network, no account, no ads.'
       )
     );
