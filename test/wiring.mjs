@@ -4351,6 +4351,62 @@ console.log('');
   }
 }
 
+// ---- 54. the Armory is load-bearing ----------------------------------------
+//
+// A judge reported gear wear as inert — "a system that neither shows nor does
+// anything" — on the evidence that mean durability never falls below 92 across
+// a campaign. Both halves of that turned out to be wrong, and the measurement
+// is worth keeping because the second half is counter-intuitive.
+//
+// It is not that nothing wears. Counted over three 700-day campaigns, wear
+// dispatches 94-127 times for 3,780-5,190 durability points, and the repair
+// loop returns 5,240-8,615 — a ratio of 1.4 to 1.7. Durability sits near 100
+// *because a room is absorbing five thousand points of damage a campaign*,
+// which is the Armory doing exactly the job it exists for. (The other half:
+// wear charges every survivor, not only the wounded — measured at 100% of
+// survivor-slots across 60 fights.)
+//
+// So the thing worth asserting is not a number that stays high. It is that
+// taking the room away stops the recovery.
+{
+  const mk = (withArmory) => {
+    const store = newStore(101);
+    const s = store.state;
+    new Game(store).runDays(2);
+    store.dispatchAll(autoAssign(s));
+    if (withArmory) {
+      s.silo.rooms.arm1 = {
+        id: 'arm1', type: 'armory', floor: 1, slot: 4, width: 1, level: 1,
+        powered: true, buildingUntilCycle: 0, condition: 100,
+        staff: s.citizenIds.slice(0, 2), found: true,
+      };
+    }
+    for (const r of Object.values(s.silo.rooms)) {
+      if (r.type === 'armory' && !withArmory) delete s.silo.rooms[r.id];
+    }
+    s.resources.scrap = 100000;
+    s.military.gear.worn = {
+      id: 'worn', item: 'mag_rifle', kind: 'weapon', durability: 40, integrity: 100,
+      assignedTo: null, loot: false,
+    };
+    for (let cycle = 0; cycle < 24; cycle++) store.dispatchAll(militaryCycle(s));
+    return s.military.gear.worn.durability;
+  };
+
+  const repaired = mk(true);
+  const neglected = mk(false);
+
+  if (repaired <= 40) {
+    fail(`a rifle at 40 durability sat through 24 cycles in a staffed Armory and came out at ${repaired} — ` +
+      'the repair loop is not running');
+  } else if (neglected > 40) {
+    fail(`a rifle at 40 durability repaired itself to ${neglected} with no Armory in the silo at all`);
+  } else {
+    ok(`the Armory is load-bearing: a worn rifle goes 40 → ${repaired.toFixed(0)} with one, and stays at ` +
+      `${neglected.toFixed(0)} without`);
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
 }
