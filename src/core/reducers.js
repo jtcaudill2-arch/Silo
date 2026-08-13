@@ -363,6 +363,28 @@ const citizenReducers = {
       if (room) room.staff = room.staff.filter((x) => x !== c.id);
       c.job = null;
     }
+    // Their kit goes back on the rack.
+    //
+    // It did not: CITIZEN_DIE never touched `c.gear`, so every piece a dead
+    // citizen was holding kept `assignedTo` pointing at a corpse. Since
+    // `unassignedGear` — which is what `equipBest` and the whole armoury UI
+    // draw from — filters on exactly that field, the gear was not destroyed,
+    // it was stranded: still in `state.military.gear`, still counted against
+    // storage, and issuable to nobody, for ever. A silo that lost four
+    // soldiers lost four rifles it could see in its own inventory.
+    //
+    // Equipment outlives its owner. Somebody alive picks it up, which for a
+    // death inside the silo is automatic — `equipBest` finds it on the next
+    // pass — and for a death outside is decided by whether the party made it
+    // home at all; see `strandGear` in sim/expedition.js.
+    for (const slot of ['weapon', 'armor', 'suit']) {
+      const gid = c.gear?.[slot];
+      if (!gid) continue;
+      const g = state.military.gear[gid];
+      if (g) g.assignedTo = null;
+      c.gear[slot] = null;
+    }
+
     // Free the squad slot.
     if (c.squadId != null) {
       const sq = state.military.squads[c.squadId];

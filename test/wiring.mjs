@@ -58,7 +58,7 @@ import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resol
 import { resolve as resolveCombat, unitPower } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
 import { playerPower, simulateDay as worldDay } from '../src/sim/world.js';
-import { formSquad } from '../src/sim/military.js';
+import { formSquad, unassignedGear, equipBest } from '../src/sim/military.js';
 import { placeRoom } from '../src/core/newgame.js';
 import * as raid from '../src/sim/raid.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
@@ -2412,6 +2412,101 @@ console.log('');
   const kids = s2.citizenIds.filter((i) => citizenRole(s2.citizens[i]) === 'child').length;
   if (!kids) fail('no citizen in a real silo was drawn as a child');
   else ok(`and a real silo is full of them: ${kids} of ${s2.citizenIds.length}`);
+}
+
+// ---- 37. equipment outlives its owner --------------------------------------
+//
+// CITIZEN_DIE never touched `c.gear`, so every piece a dead citizen held kept
+// `assignedTo` pointing at a corpse. `unassignedGear` — which is what
+// `equipBest` and the armoury draw from — filters on exactly that field, so
+// the kit was not destroyed, it was stranded: still in `state.military.gear`,
+// still counted against storage, issuable to nobody, for ever. A silo that
+// lost four soldiers lost four rifles it could still see in its inventory.
+{
+  const store = newStore(77);
+  const s = store.state;
+  new Game(store).runDays(3);
+  store.dispatchAll(autoAssign(s));
+
+  const victim = s.citizens[s.citizenIds[0]];
+  s.military.gear.g1 = { id: 'g1', item: 'service_rifle', kind: 'weapon', durability: 100, assignedTo: victim.id };
+  victim.gear = { weapon: 'g1', armor: null, suit: null };
+
+  if (unassignedGear(s, 'weapon').length) fail('the fixture started with a free rifle, so it proves nothing');
+  store.dispatch({ type: 'CITIZEN_DIE', id: victim.id, cause: 'a test', text: 'a test death' });
+
+  const free = unassignedGear(s, 'weapon');
+  if (!free.some((g) => g.id === 'g1')) {
+    fail("a dead citizen's rifle did not come back to the rack — it is still assigned to a corpse and issuable to nobody");
+  } else if (s.military.gear.g1.assignedTo !== null) {
+    fail(`the rifle is on the rack but still assigned to ${s.military.gear.g1.assignedTo}`);
+  } else {
+    ok('a dead citizen\'s kit goes back on the rack, where somebody alive can draw it');
+  }
+
+  // And somebody alive actually draws it, which is the point rather than a
+  // bookkeeping detail.
+  const heir = s.citizens[s.citizenIds.find((i) => !s.citizens[i].gear?.weapon)];
+  const acts = equipBest(s, heir.id);
+  if (!acts.some((a) => a.type === 'GEAR_ASSIGN' && a.gearId === 'g1')) {
+    fail('the rifle was free and equipBest did not offer it to anybody');
+  } else {
+    ok('and the next person to be equipped is offered it');
+  }
+}
+{
+  // Nobody alive, nobody to pick it up. The rule the player is given is that
+  // gear survives a death; the corollary that makes it a decision rather than
+  // a freebie is that a party wiped out four days into the waste does not post
+  // its suits home.
+  //
+  // Driven through the real resolver on a real wipe. What guarantees it is
+  // `outcome.gearLost` on the defeat and rout bands, not anything written for
+  // the purpose: a winning outcome caps casualties at 0.35 of the party and
+  // `round(1 * 0.35)` is zero, so a win cannot kill the last person standing
+  // and a total wipe therefore always ends on an outcome that destroys kit.
+  // A helper to strand it separately was written, measured as unreachable
+  // across 400 seeds, and removed.
+  let checked = 0;
+  let leaked = null;
+  for (let seed = 1; seed <= 6 && !leaked; seed++) {
+    const store = newStore(seed);
+    const s = store.state;
+    s.clock.day = 200;
+    s.resources.ammo = 0;
+    const roster = s.citizenIds.slice(0, BAL.military.squadMin);
+    const suits = [];
+    let g = 0;
+    for (const cid of roster) {
+      const id = 's' + ++g;
+      suits.push(id);
+      s.military.gear[id] = { id, item: 'suit_1', kind: 'suit', durability: 100, assignedTo: cid };
+      s.citizens[cid].gear = { weapon: null, armor: null, suit: id };
+      s.citizens[cid].health = 12;
+    }
+    const out = resolveExpedition(s, {
+      id: 900 + seed, squadId: 1, band: 'scar', purpose: 'salvage', target: null,
+      launchDay: 200, returnDay: 200, roster, leaderId: roster[0], resolved: false,
+    });
+    const died = out.actions.filter((a) => a.type === 'CITIZEN_DIE').length;
+    if (died < roster.length) continue;   // not a wipe; try another seed
+    checked++;
+    const destroyed = new Set(out.actions.filter((a) => a.type === 'GEAR_DESTROY').map((a) => a.id));
+    const survivedTheWipe = suits.filter((id) => !destroyed.has(id));
+    if (survivedTheWipe.length) leaked = { seed, n: survivedTheWipe.length };
+    // And it says it once.
+    const all = out.actions.filter((a) => a.type === 'GEAR_DESTROY').map((a) => a.id);
+    if (all.length !== new Set(all).size) leaked = { seed, dupes: all.length - new Set(all).size };
+  }
+  if (!checked) {
+    fail('no seed produced a total wipe, so this section proved nothing');
+  } else if (leaked?.n) {
+    fail(`${leaked.n} suits came home from a party that did not — a squad annihilated in the Scar posted its kit back by telegram`);
+  } else if (leaked?.dupes) {
+    fail(`the wipe scheduled ${leaked.dupes} duplicate GEAR_DESTROY actions`);
+  } else {
+    ok(`a party that never came home leaves its kit out there (${checked} real wipes, no duplicates)`);
+  }
 }
 
 function readSource(rel) {

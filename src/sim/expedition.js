@@ -289,6 +289,22 @@ export function resolveExpedition(state, expedition) {
           }
           if (!roster.length) {
             journal.push('There was nobody left to carry anything home.');
+            // Their kit does not come home either, and nothing here has to
+            // arrange that. CITIZEN_DIE hands a dead citizen's gear back to
+            // the rack — right for a death in a corridor, wrong for one four
+            // days into the waste — but a total wipe always ends on a defeat
+            // or a rout, and both carry `outcome.gearLost`, which destroys
+            // the casualties' kit already.
+            //
+            // That is arithmetic rather than luck: a winning outcome caps
+            // casualties at 0.35 of the party, and `round(1 * 0.35)` is zero,
+            // so a win can never kill the last person standing. Measured over
+            // 400 seeds — 287 total wipes, and `gearLost` covered the kit in
+            // every one of them.
+            //
+            // A `strandGear` helper was written for this and taken back out.
+            // It was unreachable, and the mutation said so: deleting the call
+            // changed nothing any test could see.
             day = dayCount; // abort the run
           }
         }
