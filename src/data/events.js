@@ -116,6 +116,188 @@ export const CRISES = {
     advice:
       'Order below 25 for three days is where a rising starts. You have levers; all of them cost something.',
   },
+
+  // -------------------------------------------------------------------------
+  // Everything above fires inside the first hundred game days, and until now
+  // there was nothing after it. Measured over six campaigns: four scripted
+  // crises per hundred days from day 0 to 100, one from 100 to 200, and zero
+  // for the remaining five hundred. Expeditions collapse over the same
+  // stretch, from 16.8 a hundred days to 2.5. Days 200 to 300 were the
+  // emptiest part of the game and it ran to day 700.
+  //
+  // These eight cover day 150 to day 750, at twelve real minutes a game day.
+  // Each one leans on a system the player already has, so it is a demand on
+  // the silo they have built rather than a new rule arriving late; and each
+  // carries `requires`, so a crisis about the deep does not fire at a silo
+  // that has never been there.
+  // -------------------------------------------------------------------------
+
+  bearing_failure: {
+    id: 'bearing_failure',
+    name: 'Generator fault',
+    atMinutes: 1800, // ~day 150
+    headline: 'Number two generator is making a noise',
+    text:
+      'A bearing, maintenance thinks, and not one they carry. It has been getting louder ' +
+      'for two shifts and it is now loud enough that the floor below has stopped ' +
+      'pretending not to hear it. They can keep it turning. They cannot keep it turning ' +
+      'and quiet, and they would like it in writing which of those you want.',
+    requires: (s) => Object.values(s.silo.rooms).some((r) => r.type === 'generator_hall'),
+    resolve: (s) => {
+      const halls = Object.values(s.silo.rooms).filter((r) => r.type === 'generator_hall');
+      const worst = halls.sort((a, b) => a.condition - b.condition)[0];
+      const actions = [{ type: 'RESOURCE_DELTA', deltas: { parts: -Math.min(24, s.resources.parts || 0) } }];
+      if (worst) {
+        actions.push({ type: 'ROOM_PATCH', id: worst.id, patch: { condition: Math.max(12, worst.condition - 40) } });
+      }
+      actions.push({ type: 'ORDER_DELTA', amount: -3, reason: 'the generator' });
+      return actions;
+    },
+    advice: 'A Maintenance Bay repairs faster than a room degrades. Without one this is a countdown.',
+  },
+
+  sealed_stair: {
+    id: 'sealed_stair',
+    name: 'The sealed stair',
+    atMinutes: 2400, // ~day 200 — the middle of the hole
+    headline: 'The stairwell does not stop where the plans say it stops',
+    text:
+      'A survey crew chasing a draft found a bulkhead behind the stair on the lowest floor ' +
+      'you have opened. It is not on any drawing you hold. It is welded from the far side, ' +
+      'and the air coming past the seal is colder than the silo and carries no dust at all, ' +
+      'which means it is coming from somewhere with nothing in it to disturb.',
+    requires: (s) => (s.silo.floors || []).filter((f) => f.excavated).length >= 12,
+    resolve: (s) => [
+      { type: 'ORDER_DELTA', amount: 4, reason: 'something to talk about' },
+      { type: 'MORALE_ALL', amount: 2 },
+    ],
+    advice:
+      'Whatever is behind it is further down than you have dug. That is the only direction ' +
+      'this silo has ever had.',
+  },
+
+  aquifer_drop: {
+    id: 'aquifer_drop',
+    name: 'The water table',
+    atMinutes: 3000, // ~day 250
+    headline: 'The reclaimers are pulling air',
+    text:
+      'Intake pressure has been falling for eleven days and nobody flagged it because it ' +
+      'fell slowly. The table under the silo is lower than it was. Reclamation will hold ' +
+      'the standing population; it will not hold the one you are on course for.',
+    requires: (s) => s.citizenIds.length >= 70,
+    resolve: (s) => [
+      { type: 'RESOURCE_DELTA', deltas: { water: -Math.round((s.resources.water || 0) * 0.35) } },
+      { type: 'ORDER_DELTA', amount: -4, reason: 'the water' },
+    ],
+    advice: 'Water is the one shortage that kills faster than it warns. Build ahead of the headcount, not behind it.',
+  },
+
+  hollowing: {
+    id: 'hollowing',
+    name: 'A silo goes quiet',
+    atMinutes: 3840, // ~day 320
+    headline: 'Silo Seventeen has stopped answering',
+    text:
+      'Nine days of scheduled traffic missed. The operator has been calling on the hour ' +
+      'because she knew the man on the other end. This morning the carrier was up and ' +
+      'nobody was on it, which is worse than the carrier being down.',
+    requires: (s) => (s.world.radioTier || 0) > 0,
+    resolve: (s) => [
+      {
+        type: 'WORLD_EVENT_QUEUE',
+        event: { kind: 'refugees', fromSilo: 17, day: s.clock.day, count: 9 },
+      },
+      { type: 'ORDER_DELTA', amount: -3, reason: 'Silo 17' },
+    ],
+    advice: 'They walked. Air capacity decides how many of them you can take, and that was decided months ago.',
+  },
+
+  deep_contamination: {
+    id: 'deep_contamination',
+    name: 'Contamination',
+    atMinutes: 4800, // ~day 400
+    headline: 'The dosimeter on the deep stair is climbing',
+    text:
+      'Slowly, and only below the mid floors, and only since the digging reached the shale. ' +
+      'Nobody has been made sick yet. The reading is the kind that does not make anybody ' +
+      'sick for a long time and then makes everybody sick at once.',
+    requires: (s) => (s.silo.floors || []).filter((f) => f.excavated).length >= 40,
+    resolve: (s) => {
+      const actions = [{ type: 'RESOURCE_DELTA', deltas: { filters: -Math.min(30, s.resources.filters || 0) } }];
+      actions.push({ type: 'ORDER_DELTA', amount: -4, reason: 'the readings on the deep stair' });
+      return actions;
+    },
+    advice: 'A Chem Lab makes filter media and nothing else does. This is the point where that stops being optional.',
+  },
+
+  tithe_due: {
+    id: 'tithe_due',
+    name: 'The tithe',
+    atMinutes: 5760, // ~day 480
+    headline: 'The Anvil has sent a number',
+    text:
+      'Not a demand this time, an invoice. Tonnages, a delivery window, and a line at the ' +
+      'bottom noting what they assess your garrison at — which is close enough to correct ' +
+      'that somebody has been counting. Marshal Sayen adds, in her own hand: "You have ' +
+      'been reasonable so far."',
+    requires: (s) => !!s.world.silos[5],
+    resolve: (s) => [
+      { type: 'SILO_PATCH', siloId: 5, patch: { known: true, contact: 'radio' } },
+      {
+        type: 'SILO_MEMORY',
+        siloId: 5,
+        entry: { day: s.clock.day, kind: 'threatened', weight: -6, text: 'The Anvil put a number on us.' },
+      },
+      { type: 'ORDER_DELTA', amount: -5, reason: 'the Anvil’s tithe' },
+    ],
+    advice:
+      'A squad standing at your own door is worth more against this than one out in the ' +
+      'waste. So is a neighbour who owes you something.',
+  },
+
+  the_question: {
+    id: 'the_question',
+    name: 'The question',
+    atMinutes: 6720, // ~day 560
+    headline: 'Somebody has asked, out loud, what the surface is like',
+    text:
+      'A schoolteacher on floor six, in a lesson, to a room of eleven-year-olds. She was ' +
+      'not agitating. She was answering a question honestly, which is that she does not ' +
+      'know and neither does anybody else, and that the readings the silo publishes come ' +
+      'from a machine nobody living has seen. Three parents have complained. Two more have ' +
+      'asked whether she is right.',
+    requires: (s) => s.stats.expeditionsReturned > 0,
+    resolve: (s) => [
+      { type: 'ORDER_DELTA', amount: -6, reason: 'the question' },
+      { type: 'DISSENT_SET', value: (s.order.dissentPressure || 0) + 2 },
+      { type: 'MORALE_ALL', amount: -1 },
+    ],
+    advice:
+      'The Origin Record is the only thing in this game that answers her. Everything else ' +
+      'is a way of not being asked again.',
+  },
+
+  floor_ninety_one: {
+    id: 'floor_ninety_one',
+    name: 'Floor ninety-one',
+    atMinutes: 7800, // ~day 650
+    headline: 'There is a machine down there that is still running',
+    text:
+      'A dig crew on the deep stair reports power draw from a sealed bay on ninety-one that ' +
+      'is not on your grid and never has been. Whatever is in there has its own supply, has ' +
+      'had it for a very long time, and is doing something often enough to show up on a ' +
+      'meter. The crew would like to know whether to open it. They would also like it noted ' +
+      'that they asked.',
+    requires: (s) => (s.silo.floors || []).filter((f) => f.excavated).length >= 70,
+    resolve: (s) => [
+      { type: 'ORDER_DELTA', amount: 3, reason: 'something worth knowing' },
+      { type: 'MORALE_ALL', amount: 2 },
+    ],
+    advice:
+      'Nothing in the silo publishes a number it did not get from somewhere. This is where ' +
+      'the dosimeter readings come from.',
+  },
 };
 
 export const CRISIS_LIST = Object.values(CRISES).sort((a, b) => a.atMinutes - b.atMinutes);

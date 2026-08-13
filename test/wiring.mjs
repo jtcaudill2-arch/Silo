@@ -70,6 +70,7 @@ import { ammoFactor } from '../src/sim/combat.js';
 import { squadCap } from '../src/sim/military.js';
 import { caretakerDay } from '../src/sim/caretaker.js';
 import { runCatchup } from '../src/core/catchup.js';
+import { CRISIS_LIST } from '../src/data/events.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -4634,6 +4635,66 @@ console.log('');
   else {
     ok(`coming back leads with what finished and what is waiting (${report.waiting.length} decisions ` +
       `pending, ${report.finished.length} things done)`);
+  }
+}
+
+// ---- 57. the game keeps happening ------------------------------------------
+//
+// Every scripted crisis in the game fired inside the first hundred game days
+// and then nothing happened for the remaining six hundred. Measured over six
+// campaigns before this: four crises per hundred days from day 0 to 100, one
+// from 100 to 200, and zero thereafter — while expeditions over the same
+// stretch collapsed from 16.8 a hundred days to 2.5. Days 200 to 300 were the
+// emptiest part of a game that runs to day 700, which is exactly the stretch
+// where somebody puts it down.
+//
+// This asserts the shape rather than the eight new entries, so filling the
+// hole and then quietly re-opening it fails here.
+{
+  const perDay = (c) => c.atMinutes / (BAL.time.TICK_MS * TIME.ticksPerDay / 60000);
+  const days = CRISIS_LIST.map(perDay).sort((a, b) => a - b);
+  const last = days[days.length - 1];
+
+  // No hundred-day window from the start to the last crisis may be empty.
+  const gaps = [];
+  for (let from = 0; from + 100 <= last; from += 100) {
+    const n = days.filter((d) => d >= from && d < from + 100).length;
+    if (!n) gaps.push(`d${from}-${from + 99}`);
+  }
+
+  // And they have to reach the part of the game people actually play to. The
+  // measured campaign length is 630-850 days.
+  const problems = [];
+  if (gaps.length) {
+    problems.push(`no scripted crisis fires in ${gaps.join(', ')} — that is the stretch a player puts it down`);
+  }
+  if (last < 500) {
+    problems.push(`the last scripted crisis is on day ${Math.round(last)}, and campaigns run past 700`);
+  }
+
+  // Every one has to be reachable: a crisis whose `requires` never holds is a
+  // hole that measures as content.
+  const store = newStore(311);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  const seen = new Set();
+  for (let d = 0; d < 700; d++) {
+    if (s.meta.gameOver) break;
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+    for (const id of Object.keys(s.flags.crises || {})) seen.add(id);
+  }
+  const dark = CRISIS_LIST.filter((c) => perDay(c) < 650 && !seen.has(c.id)).map((c) => c.id);
+  if (dark.length) {
+    problems.push(`${dark.join(', ')} never fired in a 700-day campaign — scheduled content nothing reaches`);
+  }
+
+  if (problems.length) fail(problems.join('; '));
+  else {
+    ok(`the crises keep coming: ${CRISIS_LIST.length} of them from day ${Math.round(days[0])} to ` +
+      `${Math.round(last)}, no empty hundred-day window, ${seen.size} fired in one campaign`);
   }
 }
 
