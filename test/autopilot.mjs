@@ -29,6 +29,8 @@ import {
 import { canLaunch, launch, launchConquest, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun } from '../src/sim/conquest.js';
 import { PLAYER_SILO_ID } from '../src/data/silos.js';
+import { canTake } from '../src/sim/doctrine.js';
+import { NODE_LIST as DOCTRINE_NODES } from '../src/data/doctrine.js';
 
 /**
  * Research order: unblock the economy, then climb the suit line, then finish.
@@ -114,6 +116,22 @@ export function autopilot(state) {
     const f = state.flows?.[k];
     return f ? f.in - f.out : 0;
   };
+
+  // ---- 0. doctrine: spend commendations as soon as they will buy anything
+  //
+  // Without this the reference player earns the whole currency and never
+  // spends a point of it, so every campaign measurement runs with the talent
+  // tree switched off — which is how a feature ends up shipping unexercised.
+  // The rule is deliberately dumb: cheapest affordable node, ties broken by
+  // table order. A thinking player picks a doctrine and commits to it; this
+  // one just refuses to leave the tree unopened, which is the weaker claim
+  // and therefore the safer thing to assert a campaign against.
+  if (state.doctrine) {
+    const buyable = DOCTRINE_NODES
+      .filter((n) => canTake(state, n.id))
+      .sort((a, b) => a.cost - b.cost)[0];
+    if (buyable) actions.push({ type: 'DOCTRINE_TAKE', id: buyable.id });
+  }
 
   // ---- 1. research: always be researching something -------------------
   if (!state.research.active) {
