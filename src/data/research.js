@@ -268,7 +268,14 @@ export const RESEARCH = {
   ballistic_armor_1: N({
     id: 'ballistic_armor_1', branch: 'metallurgy', name: 'Plate Armour',
     cost: 260, requires: ['firearms_1'],
-    effects: { armorTier: 1 },
+    // armorTier 2, not 1. This node is named "Plate Armour", its description
+    // is the Plate Harness's description, and the Plate Harness lists it as
+    // the thing that unlocks it — and it granted tier 1, which is the Padded
+    // Vest, which needs no research at all. Researching Plate Armour gave you
+    // nothing. The same off-by-one ran up the whole ladder: with all 48 nodes
+    // complete the Breacher Plate was uncraftable, so a tier-4 armour with a
+    // cost, a name and a description was content no player could ever reach.
+    effects: { armorTier: 2 },
     desc: 'Salvaged plate on a webbing harness. Heavy, and worth it.',
   }),
   firearms_2: N({
@@ -287,7 +294,7 @@ export const RESEARCH = {
     id: 'firearms_3', branch: 'metallurgy', name: 'Firearms III',
     cost: 900, minCycles: 32, requires: ['firearms_2', 'ballistic_armor_1'],
     artifacts: { alloy_ingot: 2 },
-    effects: { weaponTier: 3, armorTier: 2 },
+    effects: { weaponTier: 3, armorTier: 3 },
     desc: 'Needs an alloy your foundry cannot make. Somebody out there still can.',
   }),
   // Charges are explosives. `firearms_3` was on this list too, and it was
@@ -342,7 +349,7 @@ export const RESEARCH = {
     id: 'firearms_4', branch: 'metallurgy', name: 'Firearms IV',
     cost: 1900, minCycles: 48, requires: ['firearms_3', 'breaching_charges'],
     artifacts: { optics_array: 2, alloy_ingot: 3 },
-    effects: { weaponTier: 4, armorTier: 3 },
+    effects: { weaponTier: 4, armorTier: 4 },
     desc: 'Everything the Anvil has, and a little of what the Registry has.',
   }),
 

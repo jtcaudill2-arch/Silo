@@ -41,10 +41,11 @@ import { autoAssign } from '../src/sim/jobs.js';
 import autopilot from './autopilot.mjs';
 import { directives } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
-import { gearStorageCap } from '../src/sim/military.js';
+import { gearStorageCap, craftableItems } from '../src/sim/military.js';
 import { computeCaps, staffSlots } from '../src/sim/economy.js';
 import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
-import { RESEARCH_LIST } from '../src/data/research.js';
+import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
+import { ITEM_LIST } from '../src/data/items.js';
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { streamFor } from '../src/core/rng.js';
@@ -2657,6 +2658,58 @@ console.log('');
       'of them is still bereaved — the action is raised and never applied');
   } else {
     ok(`and it reaches the citizen: ${shed} of ${alive.length} shed it over 120 days of real play`);
+  }
+}
+
+// ---- 39. everything with a price can be built ------------------------------
+//
+// The Breacher Plate had a name, a description, a cost of 52 alloy and 30
+// parts, and an `unlock` of `firearms_4` — and completing all 48 research
+// nodes did not make it craftable. `craftableItems` gates on two things, the
+// item's own `unlock` id and the tier its branch grants, and the two had come
+// apart: the node called "Plate Armour", whose description is word for word
+// the Plate Harness's, granted `armorTier: 1`, which is the Padded Vest, which
+// needs no research at all. So researching Plate Armour gave the player
+// nothing, and every armour above it arrived one node late until the top of
+// the ladder fell off the end entirely.
+//
+// This asserts the general property rather than the three numbers: an item
+// that names an unlock must be buildable once that unlock and everything it
+// requires are done. Nothing in the game may cost resources it can never be
+// bought with.
+{
+  const store = newStore(9);
+  const s = store.state;
+
+  const closure = (id, seen = new Set()) => {
+    if (!id || seen.has(id)) return seen;
+    seen.add(id);
+    for (const req of RESEARCH[id]?.requires || []) closure(req, seen);
+    return seen;
+  };
+
+  const unreachable = [];
+  const late = [];
+  for (const item of ITEM_LIST) {
+    if (!item.craft) continue;              // loot-only kit is not built
+    s.research.completed = [...closure(item.unlock)];
+    if (!craftableItems(s).some((i) => i.id === item.id)) {
+      (item.unlock ? late : unreachable).push(`${item.id} (T${item.tier}, ${item.unlock || 'no unlock'})`);
+    }
+  }
+  s.research.completed = RESEARCH_LIST.map((n) => n.id);
+  const withWholeTree = craftableItems(s);
+  const dead = ITEM_LIST.filter((i) => i.craft && !withWholeTree.some((c) => c.id === i.id));
+
+  if (dead.length) {
+    fail(`${dead.map((i) => i.id).join(', ')} cannot be built with every research node in the game ` +
+      'completed — it is priced content no player can reach');
+  } else if (late.length) {
+    fail(`${late.join(', ')} names an unlock that does not actually unlock it`);
+  } else if (unreachable.length) {
+    fail(`${unreachable.join(', ')} has no unlock and still cannot be built`);
+  } else {
+    ok(`all ${ITEM_LIST.filter((i) => i.craft).length} priced items are buildable, each by the node it names`);
   }
 }
 
