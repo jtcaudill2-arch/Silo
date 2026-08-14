@@ -33,7 +33,7 @@ import { readySquads } from './military.js';
 import { canLaunch } from './expedition.js';
 import { canLaunchRun, breachPierce } from './conquest.js';
 import { raiderBandFor, defenders as raidDefenders, forecast as raidForecast } from './raid.js';
-import { employableCitizens, openSlots } from './jobs.js';
+import { employableCitizens, openSlots, reassignmentAvailable } from './jobs.js';
 import { getResearch } from '../data/research.js';
 import { canStart, isComplete } from './research.js';
 
@@ -784,7 +784,20 @@ export function directives(state) {
   // 72 for ever: above digging, above the surface chain, and impossible to
   // carry out. Measured, a silo sat on that order with thirty-seven people
   // idle and its Foundry and Suit Bay uncrewed, and never reached the surface.
-  const empty = spare
+  //
+  // And not only when somebody is spare, which is where this went wrong in the
+  // more expensive direction. A silo whose crew has *drifted* — everybody
+  // posted, the top of the priority list holding all of them, and the rooms
+  // that feed it standing dark — has nobody unassigned by definition, so the
+  // one order that names the one button that fixes it went quiet at exactly
+  // the moment it decided the campaign. Measured on seed 0xfeed: three
+  // Recycling Plants at 0 of 8 from day 160, generation at a third of what its
+  // roster implied because nothing was making fuel, and seventy-seven people
+  // starved on day 274. `reassignmentAvailable` asks the question the button
+  // will answer, so the order is offered exactly when pressing it does
+  // something.
+  const drifted = !spare && reassignmentAvailable(state);
+  const empty = spare || drifted
     ? Object.values(state.silo.rooms).filter((r) => {
         const def = getRoom(r.type);
         return def?.staff && r.staff.length === 0 && r.buildingUntilCycle === 0 && inService(r);
@@ -800,7 +813,11 @@ export function directives(state) {
       // cross-section there. "Crew 4 empty rooms" with no floor on it is a
       // search task, and the silo is a hundred and forty-four floors deep.
       roomId: empty[0].id,
-      why: 'A room with nobody in it produces nothing at all. Auto-assign on the Residents panel will fill them.',
+      why: drifted
+        ? `Nobody is unassigned, so these have to be crewed out of somewhere else. ` +
+          `The ${def?.name || empty[0].type} is producing nothing while rooms the silo ranks ` +
+          'lower are fully staffed — auto-assign on the Residents panel will move people across.'
+        : 'A room with nobody in it produces nothing at all. Auto-assign on the Residents panel will fill them.',
       panel: 'population',
       weight: 72,
     });

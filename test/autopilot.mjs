@@ -496,7 +496,25 @@ export function autopilot(state) {
       const donor = Object.values(state.silo.rooms)
         .filter((r) => rank(r) > rank(shortRoom) && !SPARE_LAST.has(r.type) && r.staff.some((id) => id != null))
         .sort((a, b) => rank(b) - rank(a))[0];
-      if (donor && shortRoom) {
+      // Only into a post that exists, and only into one `autoAssign` has not
+      // already spoken for.
+      //
+      // The UI will not offer the assign button for a full room
+      // (`r.staff.length < slots` in ui/roomView.js) and this did not check at
+      // all — but the capacity check alone is not enough, because both halves
+      // of this batch are built against the same pre-dispatch state.
+      // `autoAssign` above fills the water plant's last post and this fills it
+      // again, so a four-post plant ended up holding five mechanics from day
+      // 26 on. Nothing a player can do reaches that state, so every
+      // measurement taken through it was of a silo nobody can build.
+      const shortDef = shortRoom ? getRoom(shortRoom.type) : null;
+      const claimed = actions.filter(
+        (a) => a.type === 'CITIZEN_ASSIGN' && a.roomId === shortRoom?.id
+      ).length;
+      const room = shortRoom && shortDef
+        ? staffSlots(shortDef, shortRoom) - shortRoom.staff.filter((id) => id != null).length - claimed
+        : 0;
+      if (donor && shortRoom && room > 0) {
         const who = donor.staff.filter((id) => id != null && state.citizens[id]?.status === 'working')[0];
         if (who) actions.push({ type: 'CITIZEN_ASSIGN', citizenId: who, roomId: shortRoom.id });
       }

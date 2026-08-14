@@ -187,7 +187,26 @@ function promoteOne(state, post, pending) {
     const room = state.silo.rooms[id];
     if (room.id === post.slot.roomId) continue;
     const def = getRoom(room.type);
-    if (!def?.staff || def.staff.skill !== skill) continue;
+    // Any skill, not only a matching one.
+    //
+    // Requiring the donor to use the same skill as the dark room is what left
+    // the failure that kills silos. Measured on seed 0xfeed: by day 200 the top
+    // four ranks — the water plant, the bays and the generator halls — held all
+    // 25 working adults between them, and all three Recycling Plants stood at 0
+    // of 8. Recycling is the only source of fuel above the Deeps, and
+    // economy.js scales a room's output by its worst-supplied input, so four
+    // generator halls at 9 of 14 crew made 27 power against 79 of demand. The
+    // silo shed rooms from the bottom of the power list, the hydroponics went
+    // dark, and seventy-seven people starved on day 274 with three thousand
+    // food in the tanks the day the lights went out.
+    //
+    // Nothing could relieve it. The plants want engineers, every engineering
+    // room in the silo was already dark, and the only crewed room ranked below
+    // recycling was the Chem Lab — two medics this rule was not allowed to
+    // touch. A medic running a salvage press is worth a fraction of an
+    // engineer; a salvage press with nobody in it is worth nothing at all, and
+    // `workFactor` already prices the difference.
+    if (!def?.staff) continue;
     if (!inService(room)) continue;
     const crew = live(room);
     // Never strip the source: it would just move the dark room somewhere else.
@@ -207,6 +226,22 @@ function promoteOne(state, post, pending) {
 
   if (!bestCitizen) return [];
   return [{ type: 'CITIZEN_ASSIGN', citizenId: bestCitizen.id, roomId: post.slot.roomId }];
+}
+
+/**
+ * Would pressing auto-assign change anything?
+ *
+ * Asked by the standing order that tells a player to press it, which used to
+ * fire only when somebody was unassigned — exactly backwards for the failure
+ * above, since a silo whose crew has drifted has nobody spare by definition.
+ * The one order naming the one button that fixes it went quiet at the moment it
+ * decided the campaign.
+ *
+ * It runs the real thing rather than a copy of its reasoning, so the order and
+ * the button can never disagree about whether there is anything to do.
+ */
+export function reassignmentAvailable(state) {
+  return autoAssign(state).length > 0;
 }
 
 function compareRoomIds(a, b) {

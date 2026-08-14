@@ -37,7 +37,7 @@ import { Store } from '../src/core/store.js';
 import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
-import { autoAssign, manageSchool } from '../src/sim/jobs.js';
+import { autoAssign, manageSchool, reassignmentAvailable } from '../src/sim/jobs.js';
 import autopilot from './autopilot.mjs';
 import { directives } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
@@ -268,8 +268,19 @@ console.log('');
 {
   const store = newStore(77);
   const s = store.state;
-  // Two rooms wanting the same skill: one the silo ranks higher, standing dark,
-  // and one it ranks lower with people to spare. Nobody unassigned anywhere.
+  // Two rooms: one the silo ranks higher, standing dark, and one it ranks lower
+  // with people to spare. Nobody unassigned anywhere.
+  //
+  // Two rooms *only*. `createNewGame` does not crew the silo — main.js calls
+  // `autoAssign` right after it — so the opening's own five rooms sit in this
+  // fixture with empty rosters, and four of them (the water plant at rank 0,
+  // the bays, the generator hall) outrank the Foundry. This section read as a
+  // test of the transfer and was really a test of the transfer's *skill*
+  // restriction: the only reason the Foundry won the one move on offer was
+  // that the donor held engineers and nothing else in the silo did. Relax that
+  // restriction — which is what a drifted silo needs, see the note in jobs.js
+  // — and a dark water plant correctly takes the move instead, and this failed.
+  s.silo.rooms = {};
   const mk = (type, floor, staff) => {
     const id = String(s.silo.nextRoomId++);
     s.silo.rooms[id] = {
@@ -284,8 +295,8 @@ console.log('');
     fail('fixture problem: not enough engineers in the opening silo to test the transfer');
   } else {
     for (const id of s.citizenIds) if (!workers.includes(id)) s.citizens[id].job = { roomId: 'parked' };
-    const dark = mk('foundry', 3, []);          // rank 9
-    mk('deep_mine', 4, workers);                 // rank 22, holding both engineers
+    const dark = mk('foundry', 3, []);          // rank 8
+    mk('deep_mine', 4, workers);                 // rank 21, holding both engineers
 
     const actions = autoAssign(s);
     const moved = actions.some((a) => a.type === 'CITIZEN_ASSIGN' && a.roomId === dark);
@@ -313,6 +324,11 @@ console.log('');
   const mk = (seed) => {
     const store = newStore(seed);
     const s = store.state;
+    // The opening's own rooms are uncrewed at this point and several of them
+    // outrank a Foundry — see the note in section 4. Both cases below are about
+    // what the transfer refuses to do, so the silo has to hold only the rooms
+    // they name, or a dark water plant answers the question instead.
+    s.silo.rooms = {};
     const place = (type, floor, staff) => {
       const id = String(s.silo.nextRoomId++);
       s.silo.rooms[id] = {
@@ -330,8 +346,8 @@ console.log('');
     const { s, place } = mk(77);
     const eng = s.citizenIds.filter((id) => (s.citizens[id].skills.engineering || 0) > 0).slice(0, 3);
     for (const id of s.citizenIds) if (!eng.includes(id)) s.citizens[id].job = { roomId: 'parked' };
-    const partly = place('foundry', 3, [eng[0]]);       // rank 9, one of its posts filled
-    place('deep_mine', 4, [eng[1], eng[2]]);            // rank 22, two to spare
+    const partly = place('foundry', 3, [eng[0]]);       // rank 8, one of its posts filled
+    place('deep_mine', 4, [eng[1], eng[2]]);            // rank 21, two to spare
     const moved = autoAssign(s).some((a) => a.type === 'CITIZEN_ASSIGN' && a.roomId === partly);
     if (moved) fail('a transfer fired into a room that was already running — that is the churn rule gone');
     else ok('no transfer into a room that already has crew');
@@ -5740,6 +5756,80 @@ const ERRAND_ROOM = {
         'state auto-assign picks people up from');
     } else {
       ok('and a save with a staffed Schoolhouse hands its teachers back to the silo, twice over');
+    }
+  }
+}
+
+// ---- 68. a silo whose crew has drifted is told, and can act on it -----------
+//
+// The failure this closes kills silos and reads as a food problem. `autoAssign`
+// only ever hires the unassigned, so the priority list governs who is taken on
+// and never who is already posted; sixty years of deaths and building leave a
+// crew distributed by historical accident. Measured on seed 0xfeed: by day 200
+// the top four ranks held all 25 working adults between them and all three
+// Recycling Plants stood at 0 of 8. Recycling is the only source of fuel above
+// the Deeps, so four generator halls at 9 of 14 crew made 27 power against 79
+// of demand, the silo shed rooms from the bottom of the power list, the
+// hydroponics went dark, and seventy-seven people starved on day 274 with three
+// thousand food in the tanks the day the lights went out.
+//
+// Two things had to be true to make that unreachable, and neither was: the
+// transfer has to be *allowed* to move somebody, and the silo has to *say* so.
+{
+  const store = newStore(0xD41F);
+  const s = store.state;
+  s.silo.rooms = {};
+  const place = (type, floor, staff) => {
+    const id = String(s.silo.nextRoomId++);
+    s.silo.rooms[id] = {
+      id, type, floor, slot: 0, width: 2, level: 1, condition: 100,
+      staff, powered: true, found: false, buildingUntilCycle: 0, upgradingUntilCycle: 0,
+    };
+    for (const cid of staff) s.citizens[cid].job = { roomId: id };
+    return id;
+  };
+
+  // Everybody posted — that is the whole point, a drifted silo has nobody
+  // spare — and the only crewed room is one the silo ranks well below the dark
+  // one, wanting a different skill.
+  const medics = s.citizenIds
+    .filter((id) => s.citizens[id].age >= BAL.citizens.workingAgeMin && s.citizens[id].status !== 'dead')
+    .slice(0, 2);
+  for (const id of s.citizenIds) if (!medics.includes(id)) s.citizens[id].job = { roomId: 'parked' };
+  const dark = place('recycling', 3, []);
+  const lab = place('chem_lab', 4, medics);
+
+  const acts = autoAssign(s);
+  const relit = acts.some((a) => a.type === 'CITIZEN_ASSIGN' && a.roomId === dark);
+  const offered = reassignmentAvailable(s);
+
+  // And the order that names the button. It used to be gated on somebody being
+  // unassigned, which is exactly backwards: a silo dying of a bad distribution
+  // has nobody spare by definition, so the one order naming the one control
+  // that fixes it went quiet at the moment it decided the campaign.
+  const order = (directives(s) || []).find((d) => d.id === 'staff');
+
+  if (!relit) {
+    fail('a dark Recycling Plant drew nobody, because the only room ranked below it wanted a ' +
+      'different skill — this is the state seed 0xfeed starved in, and nothing can reach it');
+  } else if (!offered) {
+    fail('autoAssign would move somebody and `reassignmentAvailable` says it would not — the ' +
+      'standing order and the button it names disagree');
+  } else if (!order) {
+    fail('a silo with a dark room and nobody spare raises no order at all, so the player is never ' +
+      'told the one control that would fix it');
+  } else if (!/somewhere else|move people across/i.test(order.why)) {
+    fail(`the order does not say the crew has to come out of another room: "${order.why}"`);
+  } else {
+    store.dispatchAll(acts);
+    if (!s.silo.rooms[dark].staff.length) {
+      fail('the transfer was proposed and the Recycling Plant is still dark');
+    } else if (!s.silo.rooms[lab].staff.length) {
+      fail('the transfer emptied the Chem Lab to fill the Recycling Plant — it just moved the ' +
+        'dark room');
+    } else {
+      ok('a drifted silo relights its fuel supply out of a lower-ranked room of a different ' +
+        `trade, and says so: "${order.text}"`);
     }
   }
 }
