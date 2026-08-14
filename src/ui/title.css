@@ -84,19 +84,33 @@
    line on this screen carries its own shadow rather than trusting the wash. */
 .title-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--sodium);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
+/* DEEPWATER is nine characters and Silkscreen draws every one of them at
+   exactly 0.75em plus a design pixel of tracking — 0.875em a letter, 7.875em
+   for the word, with no kerning and no condensed cut to fall back on. The old
+   clamp(46px, 15vw, 68px) was tuned for Saira, which sets the same nine
+   letters in about half the width; at 412px it asked for 61.8px, wanted
+   487px, and put the R of DEEPWATER off the side of the phone. Caught on the
+   first screenshot of the title after the swap.
+
+   So the size is stated rather than computed, at the two widths that matter,
+   and both are multiples of 4 so the word stays on the device grid: 40px
+   needs 315px of the 368 a 412px phone has after the plate's padding, and
+   32px needs 252px of the 276 a 320px phone has. line-height 1 rather than
+   0.92 — a bitmap face has no overshoot to absorb a negative leading, and
+   0.92 clipped the top row of pixels off every letter. */
 .title-word {
   margin: 6px 0 0;
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: clamp(46px, 15vw, 68px);
-  line-height: 0.92;
-  letter-spacing: 0.1em;
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: 0.125em;
   color: var(--bone);
   /* The name is a stencil on a bulkhead, not a logo: it sits on the metal. */
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 2px 12px rgba(0, 0, 0, 0.85);
@@ -109,8 +123,8 @@
 }
 .title-sub {
   font-family: var(--font-body);
-  font-size: 13.5px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--bone-dim);
   max-width: 22em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.8);
@@ -123,7 +137,7 @@
   top: calc(env(safe-area-inset-top) + 14px);
   right: 16px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 14px;
   letter-spacing: 0.14em;
   color: var(--bone-faint);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
@@ -172,18 +186,18 @@
 
 .title-btn-label {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: 0.08em;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0;
   text-transform: uppercase;
-  line-height: 1.1;
+  line-height: 18px;
 }
 .title-btn-sub {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--bone-faint);
-  line-height: 1.2;
+  line-height: 16px;
 }
 .title-btn-sub:empty { display: none; }
 
@@ -204,8 +218,9 @@
   border-color: transparent;
   background-color: rgba(0, 0, 0, 0.35);
 }
+/* One step down the Silkscreen scale, not one pixel. */
 .title-btn.ghost .title-btn-label {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--bone-faint);
 }
 .title-btn.ghost:active { background-color: rgba(0, 0, 0, 0.6); }
@@ -222,24 +237,32 @@
 }
 .title-confirm-q {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 400;
   font-size: 16px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   color: var(--bone);
 }
 .title-confirm-a {
   margin-top: 3px;
   font-family: var(--font-body);
-  font-size: 12.5px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--bone-dim);
 }
 
+/* Anything wider than a small phone gets the big cut. 40px x 0.875em x 9
+   letters is 315px, inside the 368 a 412px screen leaves after the plate. */
+@media (min-width: 380px) {
+  .title-word { font-size: 40px; }
+}
+
 /* Short screens: the name gives up its top margin before the menu gives up
-   any of its height. A control you cannot reach is worse than a small name. */
+   any of its height. A control you cannot reach is worse than a small name.
+   32px is already the small cut, so on a short screen the word simply stops
+   growing rather than shrinking below its design size again. */
 @media (max-height: 700px) {
   .title-plate { padding-top: calc(env(safe-area-inset-top) + 22px); }
-  .title-word { font-size: clamp(38px, 12vw, 52px); }
+  .title-word { font-size: 32px; }
   .title-rule { margin: 10px 0 8px; }
   .title-btn { min-height: 46px; }
 }

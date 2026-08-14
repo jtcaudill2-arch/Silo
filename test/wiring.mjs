@@ -4580,7 +4580,7 @@ console.log('');
     if (!Array.isArray(report.waiting)) problems.push('the report has no `waiting` list');
     // The two pending things planted above must both be named.
     const where = (report.waiting || []).map((w) => w.where);
-    if (!where.includes('Research')) problems.push('idle labs were not reported as waiting');
+    if (!where.includes('Labs')) problems.push('idle labs were not reported as waiting');
     if (!where.includes('Doctrine')) problems.push('40 unspent commendations were not reported as waiting');
     // Every entry says where to go and what about.
     for (const w of report.waiting || []) {

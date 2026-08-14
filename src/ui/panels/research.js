@@ -18,7 +18,12 @@ let branch = 'sustenance';
 export const researchPanel = {
   id: 'research',
   title: 'Research',
-  nav: 'Research',
+  // The bar label, not the panel's name. Silkscreen has one cut and a fixed
+  // six-pixel advance, so RESEARCH measures 46px in a 43px button at nine
+  // panels and loses half its H. "Labs" is what the game calls this room in
+  // prose anyway ("the labs are idle"); the panel is still Research
+  // everywhere it has the width to say so.
+  nav: 'Labs',
   glyph: '⌬',
   subtitle: (s) => `${Math.floor(s.research.points)} RP`,
 

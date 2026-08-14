@@ -25,8 +25,15 @@
   --verdigris-dim: rgba(78, 140, 122, 0.18);
   --rust-dim: rgba(163, 75, 42, 0.2);
   --toxin-dim: rgba(143, 179, 58, 0.18);
-  --bone-dim: rgba(217, 210, 196, 0.6);
-  --bone-faint: rgba(217, 210, 196, 0.32);
+  --bone-dim: rgba(217, 210, 196, 0.66);
+  /* 0.42, up from 0.32. Same bone, more of it. A vector face at 32% still has
+     a solid black core down the middle of every stem because the rasteriser
+     antialiases outward from it; a bitmap face at 32% is 32% of a flat block
+     and there is nothing darker anywhere in the letter. Every secondary line
+     in the game is drawn in this — room descriptions, roster subtitles, the
+     reason under a standing order — and at the old value they were the one
+     part of the screen that got harder to read rather than easier. */
+  --bone-faint: rgba(217, 210, 196, 0.42);
   --hairline: rgba(217, 210, 196, 0.12);
 
   /* ---- chrome tones, straight off tools/art/lib.mjs PAL ----
@@ -41,14 +48,70 @@
   --steel: #6e7679;
   --steel-lit: #8a9295;
 
-  /* ---- type ---- */
-  --font-display: 'Saira Condensed', 'Oswald', 'Roboto Condensed',
-                  ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
-  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system,
-               'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono',
-               Menlo, Consolas, monospace;
+  /* ---- type ----------------------------------------------------------------
+     Three bitmap faces, one job each, and a size discipline that is not
+     optional. A pixel face is a picture of a grid: draw it at a size that is
+     not a whole multiple of that grid and the rasteriser has to invent
+     half-pixels, which is what makes generated pixel type look like a
+     photograph of pixel type.
 
+     SILKSCREEN — the label face. Measured, not assumed: every outline edge in
+     it lands on an exact 1/8 em, so its design size is 8px and it is dead
+     sharp at whole multiples of that. On a 2x phone one design pixel is two
+     device pixels at font-size 8, so it is also sharp at every multiple of
+     FOUR CSS px. Verified on a 5x zoom of a real screenshot: 8/12/16px have
+     no grey pixel anywhere in them, 10/14px are visibly smeared. So there is
+     one rule and no exceptions to it: nothing in these three stylesheets may
+     set Silkscreen to a size that is not 8, 12, 16, 20 or 40. One design pixel
+     of tracking is 0.125em at any of them, which is why that number appears
+     everywhere below in place of the 0.08/0.1/0.14em Saira was tuned with —
+     tracking that is not a whole design pixel moves every letter after the
+     first one off the grid, which undoes the size discipline a character at
+     a time.
+
+     PIXELIFY SANS — the only one of the three with real lowercase and enough
+     x-height to carry a sentence, so it takes all the prose. It is a pixel-
+     STYLE face rather than a bitmap one: its cells are ~1/11 em with a
+     sub-pixel gutter, so unlike Silkscreen it has no size at which it lands
+     on the device grid (swept 8–32px in 0.25px steps: the best it ever gets
+     is 14% grey against Silkscreen's 1%). It is always a shade soft. It is
+     still the right face for body copy, and sizes here are integers only —
+     the old 11.5/12.5/13.5px were the worst of both worlds.
+
+     VT323 — the terminal face, which is what the numbers in this game are.
+     Also curve-based and never exactly on-grid, but 0.4em advance against
+     IBM Plex Mono's 0.6em means every counter can be sized UP by a quarter
+     and still take less width than it used to: the cap height goes from
+     8.8px to 9.0px in the resource strip while the tile gets narrower.
+
+     The old stack stays behind each of them. If a woff2 is missing the game
+     still ships, in Saira/Plex, rather than in Times New Roman.
+
+     ---- WHAT THIS COST, MEASURED --------------------------------------------
+     Characters per line in the real containers on a 412px phone, and cap and
+     x-height in CSS px, old face against new:
+
+       room / item description   72 -> 61 ch   x-height 6.0 -> 5.5
+       return-report line        74 -> 63 ch   x-height 6.5 -> 6.0
+       handover paragraph        66 -> 56 ch   x-height 7.3 -> 6.8
+       standing order            66 -> 56 ch   x-height 7.3 -> 6.8
+       navbar label              12 ->  8 ch   cap      5.8 -> 5.0
+       counter value              same         cap      8.8 -> 9.0
+       panel title               21 -> 13 ch   cap     10.4 -> 10.0
+
+     Prose is the part that pays: about 15% fewer characters a line, and a
+     slightly smaller x-height on top of that, so a three-line item description
+     is now a four-line one. Sizes went UP a step everywhere to keep the loss
+     to 15% rather than 25%, which is why the panels are taller than they were.
+     The numbers went the other way and the labels came out even — a bitmap
+     face at its design size is sharper than a hinted vector face at 8.5px,
+     which is most of what a label is for. */
+  --font-display: 'Silkscreen', 'Saira Condensed', 'Oswald',
+                  ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-body: 'Pixelify Sans', 'IBM Plex Sans', ui-sans-serif, system-ui,
+               -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'VT323', 'IBM Plex Mono', ui-monospace, 'SF Mono',
+               Menlo, Consolas, monospace;
   /* ---- metrics ---- */
   --topbar-h: 46px;
   --navbar-h: 54px;
@@ -63,13 +126,14 @@
    THE PIXEL CHROME
 
    The panels are HTML and the game behind them is a strict-palette pixel
-   canvas, and for a long time the two did not read as one thing. The decision
-   was: pixel frame, readable type. Body copy stays IBM Plex at 13.5px — there
-   is a great deal of prose here and it is read on a 412px phone, so a bitmap
-   face would cost a third of the words on every screen. Everything else comes
-   from the art pipeline: 9-slice steel frames round the panels and the
-   buttons, sprite icons on the navbar and the counters, and the palette the
-   sprites are already drawn from.
+   canvas, and for a long time the two did not read as one thing. The frame
+   went first: 9-slice steel round the panels and the buttons, sprite icons on
+   the navbar and the counters, and the palette the sprites are already drawn
+   from. Type held out longest — the note that used to sit here said body copy
+   stays IBM Plex "because a bitmap face would cost a third of the words on
+   every screen", which was a guess. Measured, it costs 15% (see the table in
+   the type block above), and the interface reads as one program now. All
+   three faces are bitmap or bitmap-styled; nothing on screen is Plex.
 
    The art below is GENERATED by tools/art/ui.mjs, which draws it with the same
    library, palette and keyline rules as every room and every citizen, packs it
@@ -131,7 +195,44 @@
 /* ---- UISPRITES:END ---- */
 
 /* Fonts are loaded from /assets/fonts when present. If the files are absent
-   the browser falls through to the stacks above — the game still ships. */
+   the browser falls through to the stacks above — the game still ships.
+
+   font-display: block, not swap, for the three pixel faces. swap paints the
+   first frame in the fallback and then reflows, and a reflow between two faces
+   with metrics this different is not a subtle one — the resource strip changes
+   width and the navbar labels change length. These files are precached by the
+   service worker and served from disk, so the block period is a frame. */
+/* `font-weight: 100 900` on a single-cut face is not a lie about the file, it
+   is the switch that stops the browser inventing the weights the file does not
+   have. Ask Silkscreen for 600 with `font-weight: 400` declared here and Blink
+   synthesises the bold by drawing every glyph twice a fraction of a pixel
+   apart — which on a bitmap face is a smear across the exact grid this whole
+   pass exists to land on. With a range, every weight resolves to this one
+   file and nothing is faked. Same for VT323. */
+@font-face {
+  font-family: 'Silkscreen';
+  src: local('Silkscreen'), url('../../assets/fonts/Silkscreen-Regular.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: local('Pixelify Sans'), url('../../assets/fonts/PixelifySans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: local('Pixelify Sans SemiBold'), url('../../assets/fonts/PixelifySans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: block;
+}
+@font-face {
+  font-family: 'VT323';
+  src: local('VT323'), url('../../assets/fonts/VT323-Regular.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
 @font-face {
   font-family: 'Saira Condensed';
   src: local('Saira Condensed SemiBold'), url('../../assets/fonts/SairaCondensed-SemiBold.woff2') format('woff2');
@@ -168,8 +269,41 @@ html, body {
   color: var(--bone);
   font-family: var(--font-body);
   font-size: 14px;
-  line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  /* SemiBold is the DEFAULT here, and the light cut is the exception, which is
+     the opposite of how a stylesheet usually reads. The reason is what this
+     interface is mostly made of: not paragraphs but captions — the reason
+     under a standing order, the line under a room's name, the cost of a piece
+     of kit — set small and in --bone-faint. Pixelify Sans at 12px and 42%
+     bone in the Regular cut is a one-device-pixel stroke with nothing behind
+     it, and side by side at 3x the SemiBold is plainly easier to read for
+     about 2% more width. Above 13px, and at full contrast, that reverses —
+     the heavy cut starts to fill in its own counters — so the primary copy
+     asks for 400 back, in one list, below. */
+  font-weight: 600;
+  /* Never smooth a bitmap face. This is the same rule the sprites get from
+     `image-rendering: pixelated`, said to the text rasteriser.
+
+     Honest note, because it was measured rather than assumed: on Chromium/
+     Linux this pair is INERT. A size sweep with the declaration and without it
+     came back byte-identical, and a 5x zoom of the result shows Skia's own
+     greyscale (and, with LCD text on, its orange/blue subpixel fringes) still
+     there. Blink only consults -webkit-font-smoothing on the CoreText path.
+     It is kept because it does work in Safari — which is where an installed
+     iOS PWA actually runs — and because it costs nothing. What carries
+     crispness everywhere else is the size discipline in the type block above:
+     put the design pixel on a whole device pixel and there is nothing left
+     for the rasteriser to feather. */
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  /* No ligatures, anywhere, ever. Pixelify Sans ships an `fl` that is a single
+     solid glyph, and at 14px on a dark panel it reads as a capital A: the
+     build panel said "Excavate Aoor 46" and "Digging Aoor 46 needs 92 scrap",
+     which is the sort of thing that survives a whole review because the eye
+     supplies the word it expected. Caught on a 3x crop of the real panel.
+     A bitmap face has no business forming ligatures in the first place. */
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'clig' 0, 'dlig' 0;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
@@ -182,7 +316,7 @@ html, body {
 
 button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: none; cursor: pointer; padding: 0; }
-h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+h1, h2, h3, h4 { margin: 0; font-weight: 400; }
 ul, ol { margin: 0; padding: 0; list-style: none; }
 
 :focus-visible {
@@ -190,18 +324,36 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   outline-offset: 2px;
 }
 
-/* Numerics are always tabular so counters don't jitter as they tick. */
+/* Numerics are always tabular so counters don't jitter as they tick.
+   `liga 0` is repeated here rather than inherited: font-feature-settings is a
+   single value, so any element that sets `tnum` throws away the ligature kill
+   set on <body> along with it. */
 .num, .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
+  font-feature-settings: 'tnum' 1, 'liga' 0, 'clig' 0;
 }
 
 .hdr {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
+}
+
+/* ---- the light cut ---------------------------------------------------------
+   Everything that is a line of prose rather than a caption: 14px and up, and
+   at full or near-full contrast. The counterpart to `font-weight: 600` on
+   <body> above — see the note there for why the default runs the other way.
+   .title-sub and .tut-copy live in the other two stylesheets; neither sets a
+   weight of its own, so naming them here reaches them. */
+.directive-text, .row-title, .priority-name, .excavate-title, .build-name,
+.node-name, .roster-search, .roster-name, .report-headline, .ending-prose,
+.briefing-para, .crisis-text, .gear-name, .risk-verdict, .silo-name,
+.offer-headline, .policy-name, .conquest-name, .trait-name, .band-name,
+.transmission-text, .suspect-name, .diplo-label, .why-name, .memory-text,
+.log-text, .alert-text, .title-sub, .tut-copy {
+  font-weight: 400;
 }
 
 .sr-only {
@@ -217,11 +369,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .boot-inner { text-align: center; padding: 24px; }
 .boot-mark {
-  font-family: var(--font-display); font-weight: 600; font-size: 44px;
-  letter-spacing: 0.18em; color: var(--sodium);
+  font-family: var(--font-display); font-weight: 400; font-size: 44px;
+  letter-spacing: 0.125em; color: var(--sodium);
 }
 .boot-sub {
-  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.42em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.25em;
   color: var(--bone-faint); margin-top: 2px;
 }
 .boot-bar {
@@ -237,7 +389,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   100% { transform: translateX(250%); }
 }
 .boot-status {
-  font-family: var(--font-mono); font-size: 11px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 14px; color: var(--bone-faint);
   letter-spacing: 0.04em;
 }
 .boot.error .boot-mark { color: var(--rust); }
@@ -305,8 +457,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .sky-caption {
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 26px 12px 6px;
-  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.16em;
-  text-transform: uppercase; color: var(--bone-dim); line-height: 1.2;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
+  text-transform: uppercase; color: var(--bone-dim); line-height: 10px;
   /* The ruins are dark and the caption sat on top of them. A deeper, taller
      scrim gives the type its own ground without hiding the horizon. */
   background: linear-gradient(to top,
@@ -344,7 +496,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   border-image-repeat: repeat;
   image-rendering: pixelated; border-radius: 0;
   background: var(--sodium-dim); color: var(--sodium);
-  font-family: var(--font-display); font-size: 11.5px; letter-spacing: 0.08em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; cursor: pointer; white-space: nowrap;
 }
 /* It takes the same plate as every other button — it is the one control the
@@ -379,29 +531,29 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .changeline.good { border-left-color: var(--verdigris); }
 .changeline-eyebrow {
   flex: 0 0 auto; white-space: nowrap;
-  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.14em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
 .changeline-text {
   flex: 1 1 auto; min-width: 0;
-  font-size: 11.5px; line-height: 1.32; color: var(--bone-dim);
+  font-size: 12px; line-height: 17px; color: var(--bone-dim);
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden;
 }
 .changeline-more {
-  flex: 0 0 auto; font-size: 10px; color: var(--sodium);
+  flex: 0 0 auto; font-size: 11px; color: var(--sodium);
   border: 1px solid var(--sodium-line); border-radius: 9px; padding: 0 6px;
 }
 .directive-eyebrow {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium);
 }
 .directive-text {
-  font-size: 14px; color: var(--bone); line-height: 1.35;
+  font-size: 15px; color: var(--bone); line-height: 21px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .directive-why {
-  font-size: 11.5px; color: var(--bone-faint); line-height: 1.4;
+  font-size: 12px; color: var(--bone-faint); line-height: 18px;
   /* Three lines, not one. The reason is the half that teaches — clamping it
      to a single line cut every order off mid-sentence ("Past it, rooms shut
      down from the …"), which is worse than not explaining at all. Two was
@@ -426,24 +578,28 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   border-bottom: 1px solid var(--hairline);
   min-height: 0; min-width: 0;
 }
+/* 62 rather than 66. The bar's width budget is fixed and the counters next
+   door are the tight part of it, so every pixel the clock does not need goes
+   to them: "SHIFT 1/8" is 45px of Silkscreen at 8px and the padding is 16, so
+   61 is the widest this can ever be asked to draw. */
 .clock {
   display: flex; flex-direction: column; justify-content: center;
-  padding: 0 8px; min-width: 66px;
+  padding: 0 8px; min-width: 62px;
   border-right: 1px solid var(--hairline);
   text-align: left;
 }
 .clock-date {
-  font-family: var(--font-mono); font-size: 12px; color: var(--bone);
-  font-variant-numeric: tabular-nums; line-height: 1.15;
+  font-family: var(--font-mono); font-size: 15px; color: var(--bone);
+  font-variant-numeric: tabular-nums; line-height: 17px;
 }
 .clock-shift {
-  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.12em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   color: var(--bone-faint);
 }
 .speed-btn {
-  min-width: 46px; padding: 0 8px;
+  min-width: 38px; padding: 0 6px;
   border-left: 1px solid var(--hairline);
-  font-family: var(--font-mono); font-size: 12px; color: var(--sodium);
+  font-family: var(--font-mono); font-size: 18px; color: var(--sodium);
 }
 .speed-btn.paused { color: var(--rust); }
 
@@ -475,12 +631,23 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    whole margin already spent. The glyph row is what sets a tile's width now
    (24 + gap + label beats the number underneath in all four), so the gap came
    down to 3 and the side padding to 4, which is 6px a tile and buys the 20 the
-   glyph needed. Measured after the change: 234 of 238. */
+   glyph needed. Measured after the change: 234 of 238.
+
+   The pixel type took that margin straight back. Silkscreen has no condensed
+   cut and cannot be tracked negative without the letters touching, so WATER
+   went from 24.7px to 29px and every five-letter tile grew by four. The four
+   pixels came back from three places rather than one, because there was no
+   single place with four to give: the gap to 2, the side padding to 3, and
+   the clock and the speed control down to what their own new type actually
+   measures (62 and 38 from 66 and 46), which widens the strip itself by 12.
+   The number underneath went the other way — VT323 is a 0.4em face against
+   IBM Plex Mono's 0.6em, so the value row is NARROWER at 16px than it was at
+   12.5, and taller. Measured after all of it: see the run in mobile.mjs §3c. */
 .res {
   display: grid; align-content: center;
   grid-template-columns: var(--ui-res-size) auto;
-  grid-template-rows: auto auto; column-gap: 3px;
-  padding: 0 4px; min-width: 56px; flex: 0 0 auto;
+  grid-template-rows: auto auto; column-gap: 2px;
+  padding: 0 3px; min-width: 52px; flex: 0 0 auto;
   border-right: 1px solid var(--hairline);
   height: 100%; text-align: left; position: relative;
 }
@@ -497,14 +664,15 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
      of the generated block so no two neighbours tick together. */
   animation: ui-idle-2 2.4s steps(2) infinite;
 }
-/* Tracked at 0.08em rather than 0.11em. On a five-letter label that is 1.3px,
-   and 1.3px a tile is the difference between the first morning's strip having
-   four pixels of slack and having seven. The label is 8.5px condensed caps
-   either way. */
+/* Silkscreen at its design size, with NO tracking at all — the one place in
+   the game where that is true. The face already carries a design pixel of side
+   bearing, and WATER is 29px of it against Saira's 24.7px; a second pixel a
+   letter would be 5px a tile and 20px across the opening four, which is more
+   than the whole margin the strip has. This label may not grow. */
 .res-label {
   grid-column: 2; grid-row: 1; align-self: end; padding-bottom: 1px;
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.08em;
-  color: var(--bone-faint); line-height: 1.1;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0;
+  color: var(--bone-faint); line-height: 10px;
 }
 .res-row { grid-column: 1 / 3; grid-row: 2; display: flex; align-items: baseline; gap: 4px; }
 
@@ -517,11 +685,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   to { background-position-x: calc(-1 * var(--ui-nav-sheet-w)); }
 }
 .res-val {
-  font-family: var(--font-mono); font-size: 12.5px; color: var(--bone);
-  font-variant-numeric: tabular-nums; line-height: 1.2;
+  font-family: var(--font-mono); font-size: 16px; color: var(--bone);
+  font-variant-numeric: tabular-nums; line-height: 19px;
 }
 .res-delta {
-  font-family: var(--font-mono); font-size: 9.5px;
+  font-family: var(--font-mono); font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .res-delta.up { color: var(--verdigris); }
@@ -564,7 +732,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .canvas-wrap canvas { display: block; width: 100%; height: 100%; }
 .canvas-hint {
   position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
-  font-family: var(--font-mono); font-size: 10px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 12px; color: var(--bone-faint);
   pointer-events: none; opacity: 0; transition: opacity .3s;
   background: var(--concrete-deeper); padding: 3px 8px; border-radius: var(--radius);
 }
@@ -583,7 +751,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .crew-readout {
   position: absolute; left: 8px; bottom: 8px; z-index: 4;
   display: flex; align-items: center; gap: 8px;
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em;
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em;
   color: var(--bone-faint); background: color-mix(in srgb, var(--concrete-deeper) 88%, transparent);
   border: 1px solid var(--hairline); border-radius: var(--radius);
   /* 30px minimum because it is a real tap target — it opens the People panel
@@ -616,7 +784,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    it is the only thing in the rail that is not itself a piece of news. */
 .alert-stack {
   pointer-events: auto;
-  font-family: var(--font-display); font-size: 9.5px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase;
   color: var(--bone-faint);
   background: var(--concrete-deeper);
@@ -632,25 +800,25 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   width: 100%; text-align: left; min-height: 34px;
   background: var(--concrete-deeper); border-left: 3px solid var(--sodium);
   padding: 6px 9px; border-radius: var(--radius);
-  font-size: 12px; color: inherit; pointer-events: auto; cursor: pointer;
+  font-size: 13px; color: inherit; pointer-events: auto; cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 .alert-rail .alert:active { background: var(--concrete-deep); }
 .alert-head { display: flex; align-items: center; gap: 6px; width: 100%; }
 .alert-text { flex: 1 1 auto; min-width: 0; }
 .alert-where {
-  flex: 0 0 auto; font-family: var(--font-mono); font-size: 9.5px;
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 12px;
   color: var(--sodium); border: 1px solid var(--sodium-line);
   border-radius: 8px; padding: 0 5px;
 }
 .alert-more { flex: 0 0 auto; font-family: var(--font-mono); color: var(--bone-faint); }
 .alert-why {
-  font-size: 11px; line-height: 1.4; color: var(--bone-faint); width: 100%;
+  font-size: 12px; line-height: 18px; color: var(--bone-faint); width: 100%;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   overflow: hidden;
 }
 .alert-rail .alert.open .alert-more { color: var(--sodium); }
-.alert-rail .alert .glyph { font-family: var(--font-mono); font-size: 12px; }
+.alert-rail .alert .glyph { font-family: var(--font-mono); font-size: 15px; }
 .alert-rail .alert.warn { border-left-color: var(--rust); }
 .alert-rail .alert.bad { border-left-color: var(--rust); }
 .alert-rail .alert.rad { border-left-color: var(--toxin); }
@@ -663,7 +831,18 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    Log were simply gone — three primary panels, with nothing on screen to
    suggest they existed. `flex: 1 1 0` shares the width instead of demanding
    56px a button; at nine panels that is 43px each, still above the 30px floor,
-   with every label whole (the widest is 37px). */
+   with every label whole (the widest is 37px).
+
+   Silkscreen made that 37px into 46px and there is no dial to turn it back
+   with: the face has one cut, no condensed alternate, and its advance is a
+   fixed six design pixels — track it negative by even one and the letters
+   touch, because the sixth pixel IS the gap. So the side padding went to zero,
+   which gives a label the whole 43px of its button, and the one word that
+   still did not fit got shorter: the Research panel's NAV label is "Labs".
+   Its title, its report chip and everything it says about itself are still
+   Research; the eight-character version simply cannot be drawn in a 43px slot
+   in a bitmap face, and half an H is worse than a shorter word.
+   Measured at 390px with all nine unlocked: widest label 40px (SURFACE). */
 .navbar {
   display: flex; min-width: 0; background: var(--concrete-deeper);
   border-top: 1px solid var(--hairline);
@@ -672,7 +851,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .nav-btn {
   flex: 1 1 0; min-width: 0; min-height: var(--tap);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; padding: 4px 2px; position: relative;
+  gap: 2px; padding: 4px 0; position: relative;
   color: var(--bone-faint);
 }
 .nav-btn .nav-label {
@@ -698,7 +877,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   animation: ui-idle-3 1.5s steps(3) infinite;
 }
 .nav-btn .nav-label {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.09em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0;
   text-transform: uppercase;
 }
 /* Active used to be carried entirely by the glyph turning sodium, and the
@@ -716,7 +895,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   position: absolute; top: 3px; right: 10%;
   min-width: 14px; height: 14px; padding: 0 3px;
   border-radius: 7px; background: var(--rust); color: var(--bone);
-  font-family: var(--font-mono); font-size: 9px; line-height: 14px; text-align: center;
+  font-family: var(--font-mono); font-size: 11px; line-height: 14px; text-align: center;
 }
 .nav-btn[disabled] { opacity: .35; cursor: not-allowed; }
 /* A panel that arrived while the player was watching, and has not been
@@ -751,16 +930,16 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   background: var(--concrete-deeper); flex: 0 0 auto;
 }
 .panel-title {
-  font-family: var(--font-display); font-size: 15px; letter-spacing: 0.09em;
+  font-family: var(--font-display); font-size: 16px; letter-spacing: 0;
   text-transform: uppercase; color: var(--bone);
 }
 .panel-sub {
-  font-family: var(--font-mono); font-size: 11px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 14px; color: var(--bone-faint);
   margin-left: auto;
 }
 .panel-close {
   margin-left: 8px; width: 30px; height: 30px; display: grid; place-items: center;
-  font-family: var(--font-mono); font-size: 16px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 20px; color: var(--bone-faint);
 }
 .panel-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
 .panel-foot {
@@ -775,9 +954,16 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   flex: 0 0 auto;
 }
 .tabs::-webkit-scrollbar { display: none; }
+/* 8px of side padding, down from 12. The strip is allowed to scroll and does
+   so honestly, but the Log's six tabs used to sit inside 320px of the 396 the
+   panel has and Silkscreen pushed the last one — ENDS — off the right edge,
+   where nothing on screen says it exists. Four pixels a side across six tabs
+   is the 48 that buys it back: measured after, 369 of 396 with ENDS whole.
+   The label itself did not shrink — Silkscreen at 12px has the same 7.5px cap
+   as the Saira 11px it replaces. */
 .tab {
-  padding: 8px 12px; min-height: 36px; white-space: nowrap;
-  font-family: var(--font-display); font-size: 11px; letter-spacing: 0.08em;
+  padding: 8px 8px; min-height: 36px; white-space: nowrap;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--bone-faint);
   border-bottom: 2px solid transparent;
 }
@@ -785,7 +971,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* -------------------------------------------------------------- pieces --- */
 .section-label {
-  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.13em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
   padding: 12px 12px 5px;
 }
@@ -798,10 +984,10 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .row:last-child { border-bottom: none; }
 .row.tappable:active { background: var(--sodium-dim); }
 .row-main { flex: 1; min-width: 0; }
-.row-title { font-size: 13.5px; color: var(--bone); }
-.row-sub { font-size: 11.5px; color: var(--bone-faint); }
+.row-title { font-size: 14px; color: var(--bone); }
+.row-sub { font-size: 12px; color: var(--bone-faint); }
 .row-value {
-  font-family: var(--font-mono); font-size: 13px; color: var(--bone);
+  font-family: var(--font-mono); font-size: 16px; color: var(--bone);
   font-variant-numeric: tabular-nums; flex: 0 0 auto; text-align: right;
 }
 .row-chevron { color: var(--bone-faint); font-family: var(--font-mono); }
@@ -820,7 +1006,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   image-rendering: pixelated;
   border-radius: 0;
   background: var(--steel-dark); color: var(--bone);
-  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.07em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase;
 }
 /* Pressed: the bevel inverts and the face loses a shade. Both, not one — a
@@ -847,13 +1033,17 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   background: var(--concrete); color: var(--bone);
 }
 .btn.wide { width: 100%; }
-.btn.sm { min-height: 30px; padding: 0 4px; font-size: 10.5px; }
+/* 8px, not 11 — the small button drops a whole step rather than a fraction
+   of one. Silkscreen is sharp at 8 and at 12 and smeared at everything
+   between, so "a bit smaller than the big button" is not a size this face
+   offers. GARRISON at 8px is 48px of label in a 72px button. */
+.btn.sm { min-height: 30px; padding: 0 4px; font-size: 8px; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 7px; border-radius: 10px;
   background: var(--concrete); color: var(--bone-dim);
-  font-family: var(--font-mono); font-size: 10.5px;
+  font-family: var(--font-mono); font-size: 13px;
 }
 .chip.good { background: var(--verdigris-dim); color: var(--verdigris); }
 .chip.bad { background: var(--rust-dim); color: var(--rust); }
@@ -870,7 +1060,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .meter.rad > i { background: var(--toxin); }
 
 .empty {
-  padding: 34px 20px; text-align: center; color: var(--bone-faint); font-size: 12.5px;
+  padding: 34px 20px; text-align: center; color: var(--bone-faint); font-size: 13px;
 }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px; }
@@ -881,11 +1071,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   border-radius: var(--radius); padding: 8px 10px;
 }
 .stat-tile .k {
-  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.11em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
 .stat-tile .v {
-  font-family: var(--font-mono); font-size: 17px; color: var(--bone);
+  font-family: var(--font-mono); font-size: 21px; color: var(--bone);
   font-variant-numeric: tabular-nums;
 }
 .stat-tile .v.good { color: var(--verdigris); }
@@ -931,7 +1121,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .toast {
   background: var(--concrete-deeper); border: 1px solid var(--concrete-lit);
   border-left: 3px solid var(--sodium);
-  padding: 7px 12px; border-radius: var(--radius); font-size: 12.5px;
+  padding: 7px 12px; border-radius: var(--radius); font-size: 13px;
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);
   animation: toastin .18s ease-out;
 }
@@ -943,7 +1133,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 /* ------------------------------------------------------------- log ----- */
 .log-entry {
   display: flex; gap: 9px; padding: 7px 12px; align-items: flex-start;
-  border-bottom: 1px solid var(--hairline); font-size: 12.5px;
+  border-bottom: 1px solid var(--hairline); font-size: 13px;
   min-height: 34px; width: 100%; text-align: left; color: inherit;
 }
 /* An entry that names a floor is a button that goes there. */
@@ -951,11 +1141,11 @@ button.log-entry { cursor: pointer; }
 button.log-entry:active { background: var(--sodium-dim); }
 .log-where {
   flex: 0 0 auto; align-self: center;
-  font-family: var(--font-mono); font-size: 9.5px; color: var(--sodium);
+  font-family: var(--font-mono); font-size: 12px; color: var(--sodium);
   border: 1px solid var(--sodium-line); border-radius: 8px; padding: 0 5px;
 }
 .log-when {
-  font-family: var(--font-mono); font-size: 10.5px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 13px; color: var(--bone-faint);
   flex: 0 0 52px; padding-top: 1px;
 }
 .log-text { flex: 1; min-width: 0; }
@@ -982,14 +1172,14 @@ button.log-entry:active { background: var(--sodium-dim); }
 .grip {
   flex: 0 0 auto; width: 26px; height: 34px;
   display: grid; place-items: center; cursor: grab;
-  color: var(--bone-faint); font-family: var(--font-mono); font-size: 15px;
+  color: var(--bone-faint); font-family: var(--font-mono); font-size: 19px;
 }
 .grip:active { cursor: grabbing; }
 .priority-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.priority-name { font-size: 13px; }
-.priority-sub { font-size: 11px; color: var(--bone-faint); }
+.priority-name { font-size: 14px; }
+.priority-sub { font-size: 12px; color: var(--bone-faint); }
 .priority-draw {
-  flex: 0 0 auto; font-size: 12.5px; color: var(--bone-dim);
+  flex: 0 0 auto; font-size: 13px; color: var(--bone-dim);
   font-variant-numeric: tabular-nums;
 }
 .cutline {
@@ -997,7 +1187,7 @@ button.log-entry:active { background: var(--sodium-dim); }
   background: var(--rust-dim);
 }
 .cutline-label {
-  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.13em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   color: var(--rust); white-space: nowrap;
 }
 .cutline-rule { flex: 1; height: 1px; background: var(--rust); }
@@ -1011,11 +1201,11 @@ button.log-entry:active { background: var(--sodium-dim); }
   padding: 0 12px 8px;
 }
 .why-head {
-  padding: 9px 0 7px; font-size: 12px; line-height: 1.45; color: var(--bone-dim);
+  padding: 9px 0 7px; font-size: 13px; line-height: 19px; color: var(--bone-dim);
 }
 .why-head .k { color: var(--bone-faint); }
 .why-group {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.13em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint); padding: 7px 0 3px;
 }
 .why-line {
@@ -1027,15 +1217,15 @@ button.log-entry:active { background: var(--sodium-dim); }
 button.why-line { cursor: pointer; }
 button.why-line:active { background: var(--sodium-dim); }
 .why-main { flex: 1 1 auto; min-width: 0; }
-.why-name { font-size: 12.5px; }
-.why-sub { font-size: 10.5px; color: var(--bone-faint); }
+.why-name { font-size: 13px; }
+.why-sub { font-size: 11px; color: var(--bone-faint); }
 .why-rate {
-  flex: 0 0 auto; font-family: var(--font-mono); font-size: 12px;
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 15px;
   font-variant-numeric: tabular-nums; color: var(--bone-dim);
 }
 .why-rate.up { color: var(--verdigris); }
 .why-rate.down { color: var(--rust); }
-.why-none { font-size: 11.5px; color: var(--bone-faint); padding: 4px 0 6px; }
+.why-none { font-size: 12px; color: var(--bone-faint); padding: 4px 0 6px; }
 
 .flow-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -1047,15 +1237,15 @@ button.why-line:active { background: var(--sodium-dim); }
   border-radius: var(--radius); padding: 5px 7px;
 }
 .flow-k {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
-.flow-v { font-size: 13px; font-variant-numeric: tabular-nums; }
+.flow-v { font-size: 14px; font-variant-numeric: tabular-nums; }
 .flow-v.up { color: var(--verdigris); }
 .flow-v.down { color: var(--rust); }
 
 .note {
-  padding: 10px 12px; font-size: 12px; color: var(--bone-faint);
+  padding: 10px 12px; font-size: 13px; color: var(--bone-faint);
   border-top: 1px solid var(--hairline);
 }
 .note.warn { color: var(--sodium); background: var(--sodium-dim); border-top: none; }
@@ -1070,9 +1260,9 @@ button.why-line:active { background: var(--sodium-dim); }
   background: var(--concrete-deeper); border-bottom: 1px solid var(--hairline);
 }
 .excavate-main { flex: 1; min-width: 0; }
-.excavate-title { font-size: 13.5px; }
-.excavate-sub { font-size: 11.5px; color: var(--bone-faint); }
-.excavate-warn { font-size: 11.5px; color: var(--sodium); margin-top: 2px; }
+.excavate-title { font-size: 14px; }
+.excavate-sub { font-size: 12px; color: var(--bone-faint); }
+.excavate-warn { font-size: 12px; color: var(--sodium); margin-top: 2px; }
 
 .floor-strip-wrap { border-bottom: 1px solid var(--hairline); }
 .floor-strip {
@@ -1087,8 +1277,8 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .floor-pip.active { border-color: var(--sodium); color: var(--sodium); }
 .floor-pip.full { opacity: .5; }
-.floor-n { font-size: 13px; line-height: 1.1; }
-.floor-free { font-size: 9px; color: var(--bone-faint); }
+.floor-n { font-size: 14px; line-height: 15px; }
+.floor-free { font-size: 10px; color: var(--bone-faint); }
 
 .bay-row { display: flex; gap: 3px; padding: 4px 12px 10px; }
 .bay {
@@ -1101,10 +1291,10 @@ button.why-line:active { background: var(--sodium-dim); }
 .bay.empty { background: var(--concrete-deeper); color: var(--bone-faint); }
 .bay.dark { opacity: .5; }
 .bay-name {
-  font-size: 8.5px; text-align: center; line-height: 1.1;
+  font-size: 10px; text-align: center; line-height: 1.1;
   overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
-.bay-lvl { font-size: 9px; color: var(--bone-faint); }
+.bay-lvl { font-size: 10px; color: var(--bone-faint); }
 
 .build-row {
   display: flex; align-items: flex-start; gap: 10px; width: 100%;
@@ -1113,10 +1303,10 @@ button.why-line:active { background: var(--sodium-dim); }
 .build-row.locked { opacity: .5; }
 .build-row:not(.locked):active { background: var(--sodium-dim); }
 .build-main { flex: 1; min-width: 0; }
-.build-name { font-size: 13.5px; }
-.build-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.build-name { font-size: 14px; }
+.build-desc { font-size: 12px; color: var(--bone-faint); margin-top: 1px; }
 .build-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.build-why { font-size: 11.5px; color: var(--sodium); margin-top: 4px; }
+.build-why { font-size: 12px; color: var(--sodium); margin-top: 4px; }
 .build-row .row-chevron { padding-top: 2px; }
 
 /* ── Placing ─────────────────────────────────────────────────────────────
@@ -1142,21 +1332,38 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .placing-main { flex: 1; min-width: 0; }
 .placing-eyebrow {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.16em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium);
 }
+/* ---- the display face is UNICASE ------------------------------------------
+   Silkscreen has lowercase glyphs and they are drawn at cap height and to the
+   same widths as the capitals: "Ansel Keel" comes out as ANSEL KEEL, verified
+   on a 4x crop of the citizen card. Most display roles already asked for
+   uppercase and are unaffected. These five did not — they carry proper nouns,
+   a person, a room, a squad, a destination, a research node — and they are
+   uppercase now whether or not this rule exists.
+
+   The rule exists so that it is a decision rather than an accident, and so the
+   fallback stack does not quietly disagree: if the woff2 is missing and Saira
+   takes over, these headings still read the way they were designed to. Case is
+   not lost information here — the roster row, the log line and the card's own
+   subtitle all set the same name in Pixelify, which has real lowercase. */
+.card-name, .squad-name, .band-name, .active-title, .placing-name {
+  text-transform: uppercase;
+}
+
 .placing-name {
-  font-family: var(--font-display); font-size: 16px; letter-spacing: 0.05em;
+  font-family: var(--font-display); font-size: 16px; letter-spacing: 0;
   color: var(--bone);
 }
 .placing-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.placing-hint { padding: 5px 11px; font-size: 11.5px; color: var(--bone-faint); }
+.placing-hint { padding: 5px 11px; font-size: 12px; color: var(--bone-faint); }
 .placing-list {
   max-height: 104px; overflow-y: auto; -webkit-overflow-scrolling: touch;
   border-top: 1px solid var(--hairline);
 }
 .placing-list .row { min-height: 36px; padding: 5px 11px; }
-.placing-list .row-title { font-size: 12.5px; }
+.placing-list .row-title { font-size: 13px; }
 
 /* ------------------------------------------------------------ research --- */
 .active-research {
@@ -1166,11 +1373,11 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .active-research.idle { color: var(--bone-faint); }
 .active-eyebrow {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.14em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium);
 }
-.active-title { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.05em; }
-.active-sub { font-size: 11.5px; color: var(--bone-faint); }
+.active-title { font-family: var(--font-display); font-size: 16px; letter-spacing: 0; }
+.active-sub { font-size: 12px; color: var(--bone-faint); }
 .active-research .meter { width: 100%; }
 
 .node-row {
@@ -1181,15 +1388,15 @@ button.why-line:active { background: var(--sodium-dim); }
 .node-row.done { opacity: .6; border-left: 2px solid var(--verdigris); }
 .node-row.active { border-left: 2px solid var(--sodium); background: var(--sodium-dim); }
 .node-main { flex: 1; min-width: 0; }
-.node-name { font-size: 13.5px; }
+.node-name { font-size: 14px; }
 .node-tick { color: var(--verdigris); }
-.node-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.node-desc { font-size: 12px; color: var(--bone-faint); margin-top: 1px; }
 .node-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.node-why { font-size: 11.5px; color: var(--sodium); margin-top: 4px; }
+.node-why { font-size: 12px; color: var(--sodium); margin-top: 4px; }
 .node-why.rad { color: var(--toxin); }
 
 .effect-list { display: flex; flex-direction: column; gap: 4px; }
-.effect { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.effect { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
 .effect-k { color: var(--bone-faint); }
 
 .artifact-grid {
@@ -1201,9 +1408,9 @@ button.why-line:active { background: var(--sodium-dim); }
   border-left: 2px solid var(--toxin);
   border-radius: var(--radius); padding: 6px 8px;
 }
-.artifact-n { font-size: 15px; color: var(--bone); }
-.artifact-name { font-size: 12px; }
-.artifact-desc { font-size: 10.5px; color: var(--bone-faint); }
+.artifact-n { font-size: 16px; color: var(--bone); }
+.artifact-name { font-size: 13px; }
+.artifact-desc { font-size: 11px; color: var(--bone-faint); }
 
 /* ------------------------------------------------------------- roster --- */
 .roster-head { flex: 0 0 auto; background: var(--concrete-deeper); border-bottom: 1px solid var(--hairline); }
@@ -1216,10 +1423,10 @@ button.why-line:active { background: var(--sodium-dim); }
   display: flex; flex-direction: column;
 }
 .roster-stat .k {
-  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
-.roster-stat .v { font-size: 16px; font-variant-numeric: tabular-nums; }
+.roster-stat .v { font-size: 17px; font-variant-numeric: tabular-nums; }
 .roster-stat .v.good { color: var(--verdigris); }
 .roster-stat .v.warn { color: var(--sodium); }
 
@@ -1227,7 +1434,7 @@ button.why-line:active { background: var(--sodium-dim); }
 .roster-search {
   flex: 1; min-width: 0; min-height: 32px; padding: 0 9px;
   background: var(--concrete-deep); border: 1px solid var(--hairline);
-  border-radius: var(--radius); color: var(--bone); font-size: 13px;
+  border-radius: var(--radius); color: var(--bone); font-size: 14px;
 }
 .roster-search::placeholder { color: var(--bone-faint); }
 
@@ -1238,7 +1445,7 @@ button.why-line:active { background: var(--sodium-dim); }
 .chip-row::-webkit-scrollbar { display: none; }
 .chip-row .chip { flex: 0 0 auto; min-height: 26px; padding: 0 9px; }
 .chip-label {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.12em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint); flex: 0 0 auto;
 }
 
@@ -1253,18 +1460,18 @@ button.why-line:active { background: var(--sodium-dim); }
 .roster-row:active { background: var(--sodium-dim); }
 .roster-main { flex: 1; min-width: 0; }
 .roster-name {
-  font-size: 13.5px; color: var(--bone);
+  font-size: 14px; color: var(--bone);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .roster-sub {
-  font-size: 11.5px; color: var(--bone-faint);
+  font-size: 12px; color: var(--bone-faint);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .roster-flags { display: flex; gap: 4px; margin-top: 2px; }
-.roster-flags .chip { font-size: 9px; padding: 1px 5px; }
+.roster-flags .chip { font-size: 10px; padding: 1px 5px; }
 .roster-right { flex: 0 0 auto; text-align: right; }
-.roster-age { font-size: 14px; color: var(--bone); font-variant-numeric: tabular-nums; }
-.roster-skill { font-size: 10px; color: var(--bone-faint); }
+.roster-age { font-size: 15px; color: var(--bone); font-variant-numeric: tabular-nums; }
+.roster-skill { font-size: 11px; color: var(--bone-faint); }
 
 .portrait-sm { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
 .portrait-lg { width: 64px; height: 64px; flex: 0 0 auto; image-rendering: pixelated; }
@@ -1272,22 +1479,22 @@ button.why-line:active { background: var(--sodium-dim); }
 /* -------------------------------------------------------- citizen card --- */
 .card-head { display: flex; gap: 12px; padding: 4px 0 12px; align-items: flex-start; }
 .card-head-main { flex: 1; min-width: 0; }
-.card-name { font-family: var(--font-display); font-size: 19px; letter-spacing: 0.05em; }
-.card-sub { font-size: 12.5px; color: var(--bone-faint); margin-top: 1px; }
+.card-name { font-family: var(--font-display); font-size: 16px; letter-spacing: 0; }
+.card-sub { font-size: 13px; color: var(--bone-faint); margin-top: 1px; }
 .card-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
 
 .vitals { display: flex; flex-direction: column; gap: 6px; }
 .vital { display: flex; align-items: center; gap: 9px; }
-.vital-k { flex: 0 0 74px; font-size: 11.5px; color: var(--bone-faint); }
+.vital-k { flex: 0 0 74px; font-size: 12px; color: var(--bone-faint); }
 .vital .meter { flex: 1; }
-.vital-v { flex: 0 0 30px; text-align: right; font-size: 12px; }
+.vital-v { flex: 0 0 30px; text-align: right; font-size: 13px; }
 
 .skill-grid { display: flex; flex-direction: column; gap: 5px; padding: 0 0 4px; }
 .skill-row { display: flex; align-items: center; gap: 9px; }
 .skill-row.best .skill-k { color: var(--sodium); }
-.skill-k { flex: 0 0 84px; font-size: 11.5px; color: var(--bone-faint); }
+.skill-k { flex: 0 0 84px; font-size: 12px; color: var(--bone-faint); }
 .skill-row .meter { flex: 1; }
-.skill-v { flex: 0 0 26px; text-align: right; font-size: 12px; }
+.skill-v { flex: 0 0 26px; text-align: right; font-size: 13px; }
 
 .stat-row-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
 .stat-pip {
@@ -1296,9 +1503,9 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .stat-pip .k {
   display: block; font-family: var(--font-display); font-size: 8px;
-  letter-spacing: 0.08em; color: var(--bone-faint);
+  letter-spacing: 0; color: var(--bone-faint);
 }
-.stat-pip .v { font-size: 15px; }
+.stat-pip .v { font-size: 16px; }
 
 .trait-list { display: flex; flex-direction: column; gap: 6px; }
 .trait {
@@ -1306,14 +1513,14 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .trait.good { border-left-color: var(--verdigris); }
 .trait.bad { border-left-color: var(--rust); }
-.trait-name { font-size: 12.5px; }
-.trait-desc { font-size: 11.5px; color: var(--bone-faint); }
+.trait-name { font-size: 13px; }
+.trait-desc { font-size: 12px; color: var(--bone-faint); }
 
 .hist-line {
-  display: flex; gap: 9px; padding: 4px 0; font-size: 12px;
+  display: flex; gap: 9px; padding: 4px 0; font-size: 13px;
   border-bottom: 1px solid var(--hairline);
 }
-.hist-day { color: var(--bone-faint); font-size: 10px; flex: 0 0 44px; }
+.hist-day { color: var(--bone-faint); font-size: 11px; flex: 0 0 44px; }
 
 .row.bond-good .row-value { color: var(--verdigris); }
 .row.bond-bad .row-value { color: var(--rust); }
@@ -1343,14 +1550,22 @@ button.why-line:active { background: var(--sodium-dim); }
   border-bottom: 1px solid var(--hairline); background: var(--concrete-deeper);
 }
 .report-eyebrow {
-  font-family: var(--font-display); font-size: 9.5px; letter-spacing: 0.16em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium);
 }
+/* 20px, not 24. Silkscreen is a 0.75em face with no condensed cut, so the
+   headline the handover opens with — "To whoever has the desk", 23 characters
+   — measured 483px against the 380px this column has, and ran straight off
+   the right edge of the phone with the R of DESK half drawn. Caught on the
+   screenshot, not in the numbers. 20px fits 21 characters a line and the two
+   longest titles in the game ("Everything here is wearing out") wrap onto a
+   second line, which is what the line-height and the wrap rule below are for. */
 .report-title {
-  font-family: var(--font-display); font-size: 24px; letter-spacing: 0.06em;
+  font-family: var(--font-display); font-size: 20px; letter-spacing: 0;
   text-transform: uppercase; color: var(--bone); margin-top: 2px;
+  line-height: 26px; overflow-wrap: break-word;
 }
-.report-headline { font-size: 13.5px; color: var(--bone-dim); margin-top: 6px; }
+.report-headline { font-size: 14px; color: var(--bone-dim); margin-top: 6px; }
 
 .report-body { overflow-y: auto; min-height: 0; padding-bottom: 16px; }
 
@@ -1360,16 +1575,16 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .report-stat { background: var(--concrete-deep); padding: 10px 8px; text-align: center; }
 .report-stat .k {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
-.report-stat .v { font-size: 19px; color: var(--bone); font-variant-numeric: tabular-nums; }
-.report-stat .d { font-size: 11px; color: var(--bone-faint); font-variant-numeric: tabular-nums; }
+.report-stat .v { font-size: 20px; color: var(--bone); font-variant-numeric: tabular-nums; }
+.report-stat .d { font-size: 12px; color: var(--bone-faint); font-variant-numeric: tabular-nums; }
 .report-stat .d.up { color: var(--verdigris); }
 .report-stat .d.down { color: var(--rust); }
 
 .report-section {
-  font-family: var(--font-display); font-size: 10.5px; letter-spacing: 0.14em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
   padding: 16px 16px 6px;
 }
@@ -1385,25 +1600,25 @@ button.why-line:active { background: var(--sodium-dim); }
   background: var(--concrete-deeper); border: 1px solid var(--hairline);
   border-radius: var(--radius); padding: 5px 8px;
 }
-.report-res-cell .k { font-size: 11.5px; color: var(--bone-faint); }
-.report-res-cell .v { font-size: 13px; font-variant-numeric: tabular-nums; }
+.report-res-cell .k { font-size: 12px; color: var(--bone-faint); }
+.report-res-cell .v { font-size: 14px; font-variant-numeric: tabular-nums; }
 .report-res-cell .v.up { color: var(--verdigris); }
 .report-res-cell .v.down { color: var(--rust); }
 
 .report-tally { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 16px 8px; }
 
 .report-line {
-  display: flex; gap: 9px; padding: 6px 16px; font-size: 12.5px;
+  display: flex; gap: 9px; padding: 6px 16px; font-size: 13px;
   border-left: 2px solid transparent;
 }
-.report-line .report-day { color: var(--bone-faint); font-size: 10.5px; flex: 0 0 24px; padding-top: 1px; }
+.report-line .report-day { color: var(--bone-faint); font-size: 11px; flex: 0 0 24px; padding-top: 1px; }
 .report-line.death { border-left-color: var(--rust); }
 .report-line.birth { border-left-color: var(--verdigris); }
 .report-line.rad { border-left-color: var(--toxin); }
 .report-line.alert { border-left-color: var(--sodium); }
 .report-line.radio { border-left-color: var(--concrete-lit); }
 
-.report-note { padding: 10px 16px; font-size: 12.5px; color: var(--bone-faint); }
+.report-note { padding: 10px 16px; font-size: 13px; color: var(--bone-faint); }
 
 .report-foot {
   padding: 12px 16px; border-top: 1px solid var(--hairline);
@@ -1422,7 +1637,7 @@ button.why-line:active { background: var(--sodium-dim); }
 .ending-lost .report-title { color: var(--rust); }
 
 .ending-prose {
-  padding: 14px 16px 0; font-size: 13.5px; line-height: 1.62;
+  padding: 14px 16px 0; font-size: 14px; line-height: 22px;
   color: var(--bone-dim); max-width: 62ch;
 }
 .ending-prose:first-child { padding-top: 18px; color: var(--bone); }
@@ -1435,16 +1650,16 @@ button.why-line:active { background: var(--sodium-dim); }
   gap: 8px; margin-bottom: 6px;
 }
 .ending-row-head .k {
-  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.08em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--bone);
 }
-.ending-row-head .v { font-size: 12px; color: var(--bone-faint); }
-.ending-row-detail { margin-top: 6px; font-size: 12px; color: var(--bone-faint); line-height: 1.5; }
+.ending-row-head .v { font-size: 13px; color: var(--bone-faint); }
+.ending-row-detail { margin-top: 6px; font-size: 13px; color: var(--bone-faint); line-height: 19px; }
 
 /* ── The handover ────────────────────────────────────────────────────── */
 .briefing .report-head { border-bottom-color: var(--sodium); }
 .briefing-para {
-  padding: 14px 18px 0; font-size: 14px; line-height: 1.68;
+  padding: 14px 18px 0; font-size: 15px; line-height: 24px;
   color: var(--bone-dim); max-width: 64ch;
 }
 .briefing-para:first-child { padding-top: 20px; color: var(--bone); }
@@ -1459,13 +1674,13 @@ button.why-line:active { background: var(--sodium-dim); }
 
 /* ── Scripted crises ─────────────────────────────────────────────────── */
 .crisis-headline {
-  font-family: var(--font-display); font-size: 14px; letter-spacing: 0.05em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--sodium); margin-bottom: 10px;
 }
-.crisis-text { font-size: 13.5px; line-height: 1.62; color: var(--bone-dim); }
+.crisis-text { font-size: 14px; line-height: 22px; color: var(--bone-dim); }
 .crisis-advice {
   margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hairline);
-  font-size: 12.5px; line-height: 1.55; color: var(--bone-faint);
+  font-size: 13px; line-height: 19px; color: var(--bone-faint);
 }
 
 /* ------------------------------------------------------- accessibility --- */
@@ -1491,7 +1706,7 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 
 @media (min-width: 760px) {
   :root { --gauge-w: 44px; --navbar-h: 58px; }
-  body { font-size: 14.5px; }
+  body { font-size: 15px; }
 }
 
 /* ------------------------------------------------------------ military --- */
@@ -1500,12 +1715,12 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   display: flex; flex-direction: column; gap: 7px;
 }
 .squad-head { display: flex; align-items: center; gap: 8px; }
-.squad-name { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.06em; flex: 1; }
-.squad-count { font-size: 12px; color: var(--bone-faint); }
+.squad-name { font-family: var(--font-display); font-size: 16px; letter-spacing: 0; flex: 1; }
+.squad-count { font-size: 13px; color: var(--bone-faint); }
 .squad-ready { display: flex; align-items: center; gap: 8px; }
-.squad-ready-k { font-size: 11px; color: var(--bone-faint); flex: 0 0 68px; }
+.squad-ready-k { font-size: 12px; color: var(--bone-faint); flex: 0 0 68px; }
 .squad-ready .meter { flex: 1; }
-.squad-ready-v { font-size: 12px; flex: 0 0 34px; text-align: right; }
+.squad-ready-v { font-size: 13px; flex: 0 0 34px; text-align: right; }
 .squad-members { display: flex; flex-wrap: wrap; gap: 5px; }
 .squad-member {
   display: flex; flex-direction: column; align-items: center; gap: 1px;
@@ -1513,13 +1728,13 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   border-radius: var(--radius); background: var(--concrete-deeper);
 }
 .squad-member-name {
-  font-size: 9px; max-width: 100%; overflow: hidden;
+  font-size: 10px; max-width: 100%; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
-.squad-member-gear { font-size: 8.5px; color: var(--bone-faint); letter-spacing: 0.08em; }
+.squad-member-gear { font-size: 10px; color: var(--bone-faint); letter-spacing: 0.08em; }
 .squad-add {
   width: 46px; min-height: 52px; border: 1px dashed var(--concrete-lit);
-  border-radius: var(--radius); color: var(--bone-faint); font-size: 18px;
+  border-radius: var(--radius); color: var(--bone-faint); font-size: 19px;
 }
 .squad-actions { display: flex; flex-wrap: wrap; gap: 5px; }
 
@@ -1539,10 +1754,10 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
    there is nothing here to buy. */
 .gear-found { cursor: default; }
 .gear-main { flex: 1; min-width: 0; }
-.gear-name { font-size: 13px; display: flex; align-items: center; gap: 5px; }
-.gear-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.gear-name { font-size: 14px; display: flex; align-items: center; gap: 5px; }
+.gear-desc { font-size: 12px; color: var(--bone-faint); margin-top: 1px; }
 .gear-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.gear-why { font-size: 11.5px; color: var(--sodium); margin-top: 3px; }
+.gear-why { font-size: 12px; color: var(--sodium); margin-top: 3px; }
 
 /* ------------------------------------------------------------- airlock --- */
 .band-row {
@@ -1551,19 +1766,19 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 }
 .band-row.locked { opacity: .55; }
 .band-main { flex: 1; min-width: 0; }
-.band-name { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.06em; }
+.band-name { font-family: var(--font-display); font-size: 12px; letter-spacing: 0; }
 .band-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.band-why { font-size: 11.5px; color: var(--sodium); margin-top: 5px; }
+.band-why { font-size: 12px; color: var(--sodium); margin-top: 5px; }
 
 .risk { padding: 4px 0 8px; display: flex; flex-direction: column; gap: 9px; }
-.risk-verdict { font-size: 13.5px; color: var(--bone); }
+.risk-verdict { font-size: 14px; color: var(--bone); }
 .risk-bar { display: flex; flex-direction: column; gap: 4px; }
 .risk-k {
-  font-family: var(--font-display); font-size: 8.5px; letter-spacing: 0.12em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
 .risk-range { display: flex; align-items: center; gap: 7px; }
-.risk-lo, .risk-hi { font-size: 11px; color: var(--bone-faint); flex: 0 0 auto; }
+.risk-lo, .risk-hi { font-size: 12px; color: var(--bone-faint); flex: 0 0 auto; }
 .risk-track {
   position: relative; flex: 1; height: 8px;
   background: var(--concrete); border-radius: 2px; overflow: hidden;
@@ -1573,22 +1788,22 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   position: absolute; top: -2px; bottom: -2px; width: 1px;
   background: var(--bone); opacity: .6;
 }
-.risk-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--bone-faint); }
+.risk-lines { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--bone-faint); }
 
 .decon {
   background: var(--toxin-dim); border-left: 3px solid var(--toxin);
   padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
 }
 .decon-title {
-  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--toxin);
 }
-.decon-sub { font-size: 12.5px; color: var(--bone-dim); }
+.decon-sub { font-size: 13px; color: var(--bone-dim); }
 .decon-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-.journal-line { font-size: 12.5px; padding: 3px 0; }
+.journal-line { font-size: 13px; padding: 3px 0; }
 .journal-day {
-  font-family: var(--font-display); font-size: 9.5px; letter-spacing: 0.14em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium); padding: 10px 0 3px;
 }
 
@@ -1600,37 +1815,37 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 .silo-row.collapsed { opacity: .5; }
 .silo-row.war { border-left: 2px solid var(--rust); }
 .silo-n {
-  flex: 0 0 26px; text-align: center; font-size: 13px; color: var(--bone-faint);
+  flex: 0 0 26px; text-align: center; font-size: 14px; color: var(--bone-faint);
 }
 .silo-main { flex: 1; min-width: 0; }
-.silo-name { font-size: 13.5px; }
+.silo-name { font-size: 14px; }
 .silo-you { color: var(--sodium); }
-.silo-sub { font-size: 11.5px; color: var(--bone-faint); }
+.silo-sub { font-size: 12px; color: var(--bone-faint); }
 .silo-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .silo-right { flex: 0 0 auto; text-align: right; }
-.silo-rep { font-size: 14px; font-variant-numeric: tabular-nums; }
+.silo-rep { font-size: 15px; font-variant-numeric: tabular-nums; }
 .silo-rep.good { color: var(--verdigris); }
 .silo-rep.bad { color: var(--rust); }
 .silo-rep-k {
-  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   color: var(--bone-faint); text-transform: uppercase;
 }
 
 .power-bars { display: flex; flex-direction: column; gap: 5px; }
 .power-bar { display: flex; align-items: center; gap: 9px; }
-.power-k { flex: 0 0 84px; font-size: 11.5px; color: var(--bone-faint); }
+.power-k { flex: 0 0 84px; font-size: 12px; color: var(--bone-faint); }
 .power-bar .meter { flex: 1; }
-.power-v { flex: 0 0 26px; text-align: right; font-size: 12px; }
+.power-v { flex: 0 0 26px; text-align: right; font-size: 13px; }
 
 .memory {
   display: flex; gap: 8px; align-items: baseline;
-  padding: 4px 0; border-bottom: 1px solid var(--hairline); font-size: 12px;
+  padding: 4px 0; border-bottom: 1px solid var(--hairline); font-size: 13px;
 }
 .memory.good { border-left: 2px solid var(--verdigris); padding-left: 8px; }
 .memory.bad { border-left: 2px solid var(--rust); padding-left: 8px; }
-.memory-day { flex: 0 0 34px; font-size: 10px; color: var(--bone-faint); }
+.memory-day { flex: 0 0 34px; font-size: 11px; color: var(--bone-faint); }
 .memory-text { flex: 1; min-width: 0; }
-.memory-w { flex: 0 0 34px; text-align: right; font-size: 11px; color: var(--bone-faint); }
+.memory-w { flex: 0 0 34px; text-align: right; font-size: 12px; color: var(--bone-faint); }
 
 .diplo-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -1644,15 +1859,15 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 }
 .diplo-btn.hostile { border-color: var(--rust); }
 .diplo-btn[disabled] { opacity: .4; }
-.diplo-label { font-size: 12.5px; }
-.diplo-odds { font-size: 9.5px; color: var(--bone-faint); }
+.diplo-label { font-size: 13px; }
+.diplo-odds { font-size: 11px; color: var(--bone-faint); }
 .diplo-odds.good { color: var(--verdigris); }
 .diplo-odds.bad { color: var(--rust); }
 
 .stepper { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
-.stepper-k { flex: 1; font-size: 12.5px; }
-.stepper-v { flex: 0 0 40px; text-align: center; font-size: 13px; }
-.stepper-max { flex: 0 0 44px; font-size: 10px; color: var(--bone-faint); }
+.stepper-k { flex: 1; font-size: 13px; }
+.stepper-v { flex: 0 0 40px; text-align: center; font-size: 14px; }
+.stepper-max { flex: 0 0 44px; font-size: 11px; color: var(--bone-faint); }
 .stepper .btn { min-width: 32px; padding: 0; }
 
 .offer-verdict {
@@ -1661,42 +1876,42 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 }
 .offer-verdict.good { border-left-color: var(--verdigris); }
 .offer-verdict.bad { border-left-color: var(--rust); }
-.offer-headline { font-size: 13px; }
+.offer-headline { font-size: 14px; }
 .offer-terms { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
-.offer-term { font-size: 10.5px; color: var(--bone-faint); }
+.offer-term { font-size: 11px; color: var(--bone-faint); }
 .offer-term.up { color: var(--verdigris); }
 .offer-term.down { color: var(--rust); }
-.offer-score { font-size: 10.5px; color: var(--bone-faint); margin-top: 4px; }
+.offer-score { font-size: 11px; color: var(--bone-faint); margin-top: 4px; }
 
 .conquest-stage {
   border-left: 2px solid var(--concrete); padding: 5px 0 5px 9px; margin-bottom: 5px;
 }
 .conquest-stage.done { border-left-color: var(--verdigris); opacity: .6; }
 .conquest-stage.current { border-left-color: var(--sodium); }
-.conquest-name { font-size: 12.5px; }
-.conquest-desc { font-size: 11.5px; color: var(--bone-faint); }
-.conquest-why { font-size: 11.5px; color: var(--sodium); margin-top: 2px; }
+.conquest-name { font-size: 13px; }
+.conquest-desc { font-size: 12px; color: var(--bone-faint); }
+.conquest-why { font-size: 12px; color: var(--sodium); margin-top: 2px; }
 
 .transmission { padding: 8px 12px; border-bottom: 1px solid var(--hairline); }
 .transmission.war { border-left: 2px solid var(--rust); }
 .transmission.collapse { border-left: 2px solid var(--concrete-lit); }
 .transmission-head { display: flex; justify-content: space-between; gap: 8px; }
 .transmission-from {
-  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.1em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--sodium);
 }
-.transmission-day { font-size: 10px; color: var(--bone-faint); }
-.transmission-text { font-size: 12.5px; margin-top: 2px; }
+.transmission-day { font-size: 11px; color: var(--bone-faint); }
+.transmission-text { font-size: 13px; margin-top: 2px; }
 
 .call-to-arms {
   background: var(--sodium-dim); border-left: 3px solid var(--sodium);
   padding: 11px 12px; display: flex; flex-direction: column; gap: 7px;
 }
 .call-title {
-  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.07em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--sodium);
 }
-.call-sub { font-size: 12.5px; color: var(--bone-dim); }
+.call-sub { font-size: 13px; color: var(--bone-dim); }
 .call-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* --------------------------------------------------------------- order --- */
@@ -1704,16 +1919,16 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   display: flex; align-items: center; gap: 14px; padding: 12px;
   background: var(--concrete-deeper); border-bottom: 1px solid var(--hairline);
 }
-.order-value { font-size: 38px; line-height: 1; color: var(--bone); flex: 0 0 auto; }
+.order-value { font-size: 40px; line-height: 1; color: var(--bone); flex: 0 0 auto; }
 .order-value.good { color: var(--verdigris); }
 .order-value.warn { color: var(--sodium); }
 .order-value.bad { color: var(--rust); }
 .order-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .order-label {
-  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.14em;
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint);
 }
-.order-prose { font-size: 12.5px; color: var(--bone-dim); }
+.order-prose { font-size: 13px; color: var(--bone-dim); }
 
 .policy {
   display: flex; align-items: flex-start; gap: 10px; width: 100%;
@@ -1722,23 +1937,23 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 .policy.active { background: var(--sodium-dim); border-left: 2px solid var(--sodium); }
 .policy.locked { opacity: .5; }
 .policy-switch {
-  flex: 0 0 18px; font-family: var(--font-mono); font-size: 15px;
+  flex: 0 0 18px; font-family: var(--font-mono); font-size: 19px;
   color: var(--bone-faint); padding-top: 1px;
 }
 .policy.active .policy-switch { color: var(--sodium); }
 .policy-main { flex: 1; min-width: 0; }
-.policy-name { font-size: 13.5px; }
-.policy-desc { font-size: 11.5px; color: var(--bone-faint); margin-top: 1px; }
+.policy-name { font-size: 14px; }
+.policy-desc { font-size: 12px; color: var(--bone-faint); margin-top: 1px; }
 .policy-trade { display: flex; flex-direction: column; gap: 1px; margin-top: 5px; }
-.policy-benefit { font-size: 11.5px; color: var(--verdigris); }
-.policy-cost { font-size: 11.5px; color: var(--rust); }
-.policy-why { font-size: 11.5px; color: var(--sodium); margin-top: 4px; }
+.policy-benefit { font-size: 12px; color: var(--verdigris); }
+.policy-cost { font-size: 12px; color: var(--rust); }
+.policy-why { font-size: 12px; color: var(--sodium); margin-top: 4px; }
 
 .crime {
   display: flex; gap: 9px; padding: 6px 12px;
-  border-bottom: 1px solid var(--hairline); font-size: 12.5px;
+  border-bottom: 1px solid var(--hairline); font-size: 13px;
 }
-.crime-day { flex: 0 0 32px; font-size: 10.5px; color: var(--bone-faint); }
+.crime-day { flex: 0 0 32px; font-size: 11px; color: var(--bone-faint); }
 .crime-text { flex: 1; }
 
 .investigation {
@@ -1746,14 +1961,14 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   padding: 11px 12px; display: flex; flex-direction: column; gap: 7px;
 }
 .inv-title {
-  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.07em;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--rust);
 }
-.inv-sub { font-size: 12.5px; color: var(--bone-dim); }
+.inv-sub { font-size: 13px; color: var(--bone-dim); }
 .suspect { display: flex; align-items: center; gap: 8px; }
 .suspect-main { flex: 1; min-width: 0; }
-.suspect-name { font-size: 12.5px; }
-.suspect-ev { flex: 0 0 30px; text-align: right; font-size: 12px; color: var(--bone-faint); }
+.suspect-name { font-size: 13px; }
+.suspect-ev { flex: 0 0 30px; text-align: right; font-size: 13px; color: var(--bone-faint); }
 .inv-foot { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
 /* ------------------------------------------------------------ settings --- */
@@ -1772,18 +1987,34 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   background: var(--sodium); cursor: pointer;
 }
 
-/* Larger-text mode. Nothing may drop below 13px in either mode. */
+/* Larger-text mode. Nothing may drop below 13px in either mode.
+   The pixel faces make this cheaper than it was: the secondary copy steps 12
+   -> 14 and the labels step 8 -> 12, which is the next size UP the Silkscreen
+   scale rather than a percentage of the last one, so large-text mode is the
+   only mode in the game where every label is sharp at 3 device pixels a stem
+   instead of 2. Sizes here are still whole steps for that reason — a 112%
+   root scale on its own would put every 8px label at 8.96 and smear it. */
 html.large-text { font-size: 112%; }
-html.large-text body { font-size: 15.5px; }
+html.large-text body { font-size: 16px; }
 html.large-text .row-sub,
 html.large-text .build-desc,
 html.large-text .node-desc,
-html.large-text .policy-desc { font-size: 13px; }
+html.large-text .policy-desc { font-size: 14px; }
+/* The section headers step up. The navbar label and the resource label do NOT,
+   and cannot: both are pinned by a width the phone does not have — SURFACE is
+   40px of the 43 its button owns and WATER is 29px of a tile the opening four
+   have to fit four of. A 12px Silkscreen label would be half again as wide and
+   clipped in both places, which is not "larger text", it is less text. */
+html.large-text .section-label { font-size: 12px; }
 
+/* The cog is a system glyph, not a game glyph — no pixel face has one, so it
+   is drawn by whatever the platform has and the family here is a fallback
+   chain rather than a choice. 36px because the counters next door need the
+   width more than this does, and it is still over the 30px tap floor. */
 .settings-btn {
-  min-width: 40px; padding: 0 8px;
+  min-width: 36px; padding: 0 6px;
   border-left: 1px solid var(--hairline);
-  font-family: var(--font-mono); font-size: 14px; color: var(--bone-faint);
+  font-family: var(--font-mono); font-size: 18px; color: var(--bone-faint);
 }
 
 /* ---- doctrine pairs -------------------------------------------------------
@@ -1800,7 +2031,7 @@ html.large-text .policy-desc { font-size: 13px; }
 }
 .doctrine-or {
   text-align: center;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--bone-faint);
@@ -1815,7 +2046,7 @@ html.large-text .policy-desc { font-size: 13px; }
 .report-where {
   display: inline-block;
   min-width: 62px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sodium);

@@ -112,7 +112,10 @@ function pendingDecisions(state) {
   }
 
   if (!state.research?.active) {
-    push('Research', 'The labs are idle. Nothing is being researched.');
+    // "Labs", not "Research", because this is wayfinding: it has to name the
+    // button the player is going to look for, and the bar says LABS. The panel
+    // is still titled Research wherever it has the width to say so.
+    push('Labs', 'The labs are idle. Nothing is being researched.');
   }
 
   const idleSquads = (state.military?.squadIds || []).filter((id) => {
