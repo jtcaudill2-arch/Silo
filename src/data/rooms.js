@@ -393,7 +393,20 @@ export const ROOMS = {
     category: 'civic',
     width: 2,
     consumes: { power: 3, food: 0.4 },
-    staff: { skill: 'admin', slotsPerLevel: [1, 2, 2, 3, 3] },
+    // No roster, like the Residences and the Suit Bay. Nothing about school
+    // reads one: `manageSchool` in sim/jobs.js puts every child into class if
+    // any room providing school is `powered`, and the 2.2x growth in
+    // population.js is charged to the child's status, not to a teacher. So the
+    // slots this used to carry — one admin per bay, two bays — were two people
+    // standing in a room producing nothing, and `autoAssign` filled them
+    // forever because `openSlots` could see them.
+    //
+    // That was not free. Measured on seed 42 at five actions a day, against the
+    // same silo with the Schoolhouse never built: generation 65 against 87 from
+    // day 140 on, three hydroponics bays dark by day 240, and everybody starved
+    // on day 283 with the tanks empty and 47 power against 122 of demand. Two
+    // hands off the generator plant is a hall's worth of output, and the room
+    // was taking them to do nothing at all.
     buildCost: { scrap: 140, parts: 10 },
     provides: { school: true },
     tierGate: 'mids',

@@ -37,7 +37,7 @@ import { Store } from '../src/core/store.js';
 import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
-import { autoAssign } from '../src/sim/jobs.js';
+import { autoAssign, manageSchool } from '../src/sim/jobs.js';
 import autopilot from './autopilot.mjs';
 import { directives } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
@@ -4966,6 +4966,7 @@ console.log('');
     ['conquest', /conquer|silo can be taken|or take one/i],
     ['policies', /polic|verdict|sheriff/i],
     ['excavation', /excavat|dig/i],
+    ['the schoolhouse', /schoolhouse|school/i],
   ];
   const silent = SYSTEMS.filter(([, re]) => !re.test(taught)).map(([name]) => name);
   if (silent.length) {
@@ -5552,6 +5553,145 @@ const ERRAND_ROOM = {
   s.settings.reducedMotion = false;
   if (calm.seen) fail(`${calm.seen} people are still on the stair with reduced motion on`);
   else ok('and reduced motion clears it, the way it stops everything else that moves');
+}
+
+// ---- 67. the best return in the game, said out loud -------------------------
+//
+// A schooled child gains 1.19 skill points a day and an adult at a post gains
+// 0.11 — measured over sixty days of a day-150 silo. School is eleven times
+// on-the-job learning, because it carries a 2.2x multiplier and a worker only
+// ever grows the one skill their post uses, halved once it passes 70.
+//
+// A silo with no Schoolhouse has children who learn nothing at all for eleven
+// years, and the only place that appeared was the catalogue line — which you
+// read after you have already decided to look. Nothing in the standing orders,
+// the tutorial or the unlocks had ever named it.
+{
+  const store = newStore(0x5C40);
+  const s = store.state;
+  const C = BAL.citizens;
+
+  // A child, and no school.
+  const kid = s.citizens[s.citizenIds[0]];
+  kid.age = C.schoolMinAge + 2;
+  kid.status = 'idle';
+
+  // Nowhere to put one yet: a fresh silo has six floors and a Schoolhouse is
+  // `tierGate: 'mids'`. An order the bay refuses is the thing directives.js
+  // exists to avoid, and without this half of the check the guard can be
+  // deleted and nothing notices — measured before it went in, an obedient silo
+  // was told to build a Schoolhouse on 21 consecutive days and answered every
+  // time with "Schoolhouse needs the mids opened first".
+  const tooEarly = (directives(s) || []).some((d) => d.id === 'schoolhouse');
+
+  // Now open the Mids, which is the whole of what it was waiting for.
+  s.research.completed.push('deep_excavation_1');
+  s.silo.floors[20].excavated = true;
+  const asked = (directives(s) || []).find((d) => d.id === 'schoolhouse');
+
+  // The fixture school goes in unconditionally, before anything is asserted.
+  // It used to be built inside the `else` of the check above, which meant a
+  // mutation that deleted the order left `test_school` undefined and the
+  // graduation block below threw — a crash rather than a failure, with no
+  // message, and it read as a surviving mutation when it was nothing of the
+  // kind.
+  const donor = Object.values(s.silo.rooms)[0];
+  s.silo.rooms.test_school = {
+    ...donor, id: 'test_school', type: 'schoolhouse',
+    powered: true, buildingUntilCycle: 0, staff: [],
+  };
+  const stillAsked = (directives(s) || []).some((d) => d.id === 'schoolhouse');
+
+  if (!asked) {
+    fail('a silo with children and no Schoolhouse raises no order about it — eleven years of ' +
+      'the best return in the game, mentioned nowhere');
+  } else if (asked.room !== 'schoolhouse') {
+    fail('the school order does not name the room it wants, so tapping it builds nothing');
+  } else if (stillAsked) {
+    fail('the school order keeps firing at a silo that already has one');
+  } else if (tooEarly) {
+    fail('the school order fires at a silo with nowhere to put one — the Mids are not open, so ' +
+      'every bay in the game refuses it and the order cannot be carried out');
+  } else if (getRoom('schoolhouse').staff) {
+    fail('the Schoolhouse asks for a crew nothing reads: manageSchool and population.js both go ' +
+      'by whether it is powered, so every post on it is somebody producing nothing');
+  } else {
+    ok(`children with nowhere to learn raise an order once there is somewhere: "${asked.text}"`);
+  }
+
+  // Graduating says so, and a power cut does not.
+  {
+    const grad = s.citizens[s.citizenIds[1]];
+    grad.age = C.schoolMaxAge + 1;
+    grad.status = 'school';
+    const out = manageSchool(s);
+    const said = out.filter((a) => a.type === 'LOG').map((a) => a.entry);
+    const moved = out.some((a) => a.type === 'CITIZEN_STATUS' && a.id === grad.id);
+
+    // Now the same citizen, still a child, with the school unpowered.
+    grad.age = C.schoolMinAge + 1;
+    s.silo.rooms.test_school.powered = false;
+    const dark = manageSchool(s).filter((a) => a.type === 'LOG');
+    s.silo.rooms.test_school.powered = true;
+
+    if (!moved) {
+      fail('a citizen past the school-leaving age is never graduated');
+    } else if (!said.length) {
+      fail('finishing school is not written down anywhere — twelve years of the best multiplier ' +
+        'in the game and the log says nothing');
+    } else if (!/finished school/i.test(said[0].text)) {
+      fail(`the graduation line does not say what happened: "${said[0].text}"`);
+    } else if (said[0].kind !== 'good') {
+      fail(`a graduation is logged as "${said[0].kind}", which catchup.js does not bucket under ` +
+        '"Finished while you were out" — so a player who was away never sees it');
+    } else if (dark.length) {
+      fail('a child pulled out of class by a power cut is logged as having graduated');
+    } else {
+      ok(`and finishing it is written down: "${said[0].text}" — filed where the return report ` +
+        'reads it, and a brownout is not a graduation');
+    }
+  }
+
+  // And a save that already has a staffed one gives those people back.
+  //
+  // Dropping the roster from the definition is only half of it. A save carries
+  // the assignment on both sides — the room's roster and the citizen's `job` —
+  // and with no slots on the definition `openSlots` stops seeing the room, so
+  // `autoAssign` never touches anyone standing in it. Without step 19 an old
+  // teacher keeps a job in a room with no posts for the rest of the campaign:
+  // off the labour market, doing nothing, and invisible to the one routine
+  // that would have moved them.
+  {
+    const old = newStore(0x5C41).state;
+    const donor2 = Object.values(old.silo.rooms)[0];
+    const teacher = old.citizens[old.citizenIds[2]];
+    old.silo.rooms.old_school = {
+      ...donor2, id: 'old_school', type: 'schoolhouse',
+      powered: true, buildingUntilCycle: 0, staff: [teacher.id],
+    };
+    teacher.job = { roomId: 'old_school' };
+    teacher.status = 'working';
+
+    const migrated = MIGRATIONS[19](old) || old;
+    const stranded = migrated.citizens[teacher.id].job?.roomId === 'old_school';
+    const roster = migrated.silo.rooms.old_school.staff.length;
+
+    // Twice, because a migration has to be safe to re-run.
+    MIGRATIONS[19](migrated);
+
+    if (stranded) {
+      fail('a teacher from an older save keeps a job in a Schoolhouse that has no posts — ' +
+        'auto-assign cannot see them, so they never work again');
+    } else if (roster) {
+      fail(`the migrated Schoolhouse still lists ${roster} on its roster, so the room and the ` +
+        'citizen disagree about who works there');
+    } else if (migrated.citizens[teacher.id].status !== 'idle') {
+      fail(`a freed teacher is left at "${migrated.citizens[teacher.id].status}", which is not a ` +
+        'state auto-assign picks people up from');
+    } else {
+      ok('and a save with a staffed Schoolhouse hands its teachers back to the silo, twice over');
+    }
+  }
 }
 
 /** Working or standing watch — the same line economy.js and sprites.js draw. */

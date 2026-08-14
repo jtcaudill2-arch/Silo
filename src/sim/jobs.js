@@ -228,6 +228,31 @@ export function manageSchool(state) {
     if (!c || c.status === 'dead') continue;
     if (c.status === 'school' && (c.age >= C.schoolMaxAge || !hasSchool)) {
       actions.push({ type: 'CITIZEN_STATUS', id, status: 'idle' });
+      // A graduation is worth a line, and only when it *is* one.
+      //
+      // This branch also fires when the Schoolhouse stops — a brownout, a
+      // collapse, somebody stripping it out — and a child pulled out of class
+      // by a power cut has not finished anything. Age is what tells the two
+      // apart.
+      //
+      // `kind: 'good'` on purpose: catchup.js buckets that under "Finished
+      // while you were out", so a player coming back after a weekend reads who
+      // came out of school alongside the research that landed. Twelve years of
+      // a 2.2x multiplier is the best return in the game and it was the one
+      // thing the silo never mentioned.
+      if (c.age >= C.schoolMaxAge) {
+        const top = topSkill(c);
+        actions.push({
+          type: 'LOG',
+          entry: {
+            kind: 'good',
+            text:
+              `${c.firstName} ${c.lastName} finished school at ${Math.floor(c.age)}. ` +
+              `Best subject ${top.skill} at ${Math.round(top.value)}.`,
+            data: { citizenId: id, skill: top.skill, value: Math.round(top.value) },
+          },
+        });
+      }
     } else if (
       hasSchool &&
       c.status === 'idle' &&

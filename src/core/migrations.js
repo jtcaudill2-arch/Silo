@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -276,6 +276,40 @@ export const MIGRATIONS = {
     state.doctrine.earned ??= 0;
     state.doctrine.taken ??= [];
     state.doctrine.frontier ??= 0;
+    return state;
+  },
+
+  // 19 -> 20: the Schoolhouse gave up its roster. Nothing about school ever
+  // read one — `manageSchool` teaches off `powered` and the 2.2x growth is
+  // charged to the child's status — so the posts were people producing
+  // nothing, and `autoAssign` kept them filled.
+  //
+  // Dropping `staff` from the room definition is not enough on its own,
+  // because a save carries the assignment on both sides: the room's roster and
+  // the citizen's `job`. With no slots on the definition, `openSlots` stops
+  // seeing the room and `autoAssign` never touches anyone standing in it, so a
+  // teacher from an older save would keep a job in a room with no posts for
+  // the rest of the campaign — off the labour market, doing nothing, and
+  // invisible to the one routine that would have moved them.
+  //
+  // Both sides, then, and only for schoolhouses. Anyone freed goes back to
+  // `idle` with no job, which is the state `autoAssign` picks people up from
+  // on its next pass. Safe to re-run: a room with an empty roster and citizens
+  // with no schoolhouse job are what it leaves behind.
+  19: (state) => {
+    const schools = new Set();
+    for (const room of Object.values(state.silo?.rooms || {})) {
+      if (room?.type !== 'schoolhouse') continue;
+      schools.add(room.id);
+      room.staff = [];
+    }
+    if (schools.size) {
+      for (const c of Object.values(state.citizens || {})) {
+        if (!c || !schools.has(c.job?.roomId)) continue;
+        c.job = null;
+        if (c.status === 'working') c.status = 'idle';
+      }
+    }
     return state;
   },
 };

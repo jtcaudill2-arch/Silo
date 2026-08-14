@@ -291,15 +291,27 @@ export function directives(state) {
   // complement is how this gate first went wrong: it left a silo with two spare
   // hands, a full treasury and every single order filtered out.
   //
-  // And some rooms are exempt entirely, because their value is a *ceiling*
-  // rather than a throughput and a ceiling still stands with nobody under it.
-  // Bunks are bunks whether the lights are on or not (population.js counts
-  // housing regardless), a depot raises the stockpile cap out of its own walls,
-  // and economy.js pays an uncrewed filtration bay 55% of its air capacity —
-  // which matters more than it sounds, because air capacity is the hard ceiling
-  // on population and population is what the silo is short of. Gating
-  // filtration on spare hands is a deadlock with the key locked inside it: no
-  // air, so no births, so no hands, so no air.
+  // And some rooms are exempt entirely, because what they give the silo does
+  // not come out of the crew. Usually that is a *ceiling*, and a ceiling still
+  // stands with nobody under it: bunks are bunks whether the lights are on or
+  // not (population.js counts housing regardless), a depot raises the stockpile
+  // cap out of its own walls, and economy.js pays an uncrewed filtration bay
+  // 55% of its air capacity — which matters more than it sounds, because air
+  // capacity is the hard ceiling on population and population is what the silo
+  // is short of. Gating filtration on spare hands is a deadlock with the key
+  // locked inside it: no air, so no births, so no hands, so no air.
+  //
+  // The Schoolhouse reaches the same exemption by a different road and it is
+  // worth saying which, because the first attempt at it was wrong. School is
+  // not a ceiling; it is simply not staffed. Nothing about it reads a roster —
+  // `manageSchool` asks whether a room providing school is `powered` — so the
+  // room now carries no slots at all (see data/rooms.js) and `crewed` clears it
+  // on `!def.staff` before this list is consulted. Exempting it *here* while it
+  // still had slots was the wrong fix and it killed a silo: the order started
+  // firing at silos with no spare hands, `autoAssign` put two of them in a room
+  // that produces nothing, and seed 42 starved on day 283 with its hydroponics
+  // dark. An order to build a room the silo cannot staff is exactly what this
+  // gate is for; the answer was to stop the room needing staff.
   const spare = employableCitizens(state).filter((c) => !c.job).length;
   const PASSIVE = ['airCapacity', 'housing', 'depot', 'cap'];
   const crewed = (type) => {
@@ -941,6 +953,56 @@ export function directives(state) {
     });
   }
 
+  // ---- children learning nothing -------------------------------------------
+  //
+  // The Schoolhouse is the best return in the game and nothing had ever
+  // mentioned it. Measured on a day-150 silo over sixty days: a child in class
+  // gains 1.19 skill points a day and an adult at a post gains 0.11 — school
+  // is eleven times on-the-job learning, because it carries a 2.2x multiplier
+  // and a worker only ever grows the one skill their post uses, halved once it
+  // passes 70.
+  //
+  // A silo with no Schoolhouse has children who learn *nothing at all* for
+  // eleven years, and the only place that fact appeared was the catalogue
+  // line — which you read after deciding to look. 140 scrap and 10 parts,
+  // against a compounding return on every child born from here on.
+  {
+    const C = BAL.citizens;
+    const kids = state.citizenIds.filter((id) => {
+      const c = state.citizens[id];
+      return c && c.status !== 'dead' && c.age >= C.schoolMinAge && c.age < C.schoolMaxAge;
+    }).length;
+    // Placeable, like every other order in this band. The Schoolhouse is
+    // `tierGate: 'mids'`, so a silo still in the Uppers is told to build a room
+    // the bay rejects: measured before this guard, 21 consecutive days of
+    // "Build a Schoolhouse" answered with "Schoolhouse needs the mids opened
+    // first". The order that fixes that is already on the list — it is
+    // "Excavate the next floor" — and this one waits for it.
+    if (kids > 0 && !has(state, 'schoolhouse') && placeable(state, 'schoolhouse')) {
+      add({
+        id: 'schoolhouse',
+        text: 'Build a Schoolhouse',
+        room: 'schoolhouse',
+        why:
+          `${kids} child${kids === 1 ? '' : 'ren'} in the silo and nowhere to teach ${kids === 1 ? 'them' : 'them'}. ` +
+          'A schooled child learns about eleven times as fast as an adult picks things up at a ' +
+          'post, and they carry it into whatever job they take at ' + C.schoolMaxAge + '.',
+        panel: 'build',
+        // 46: above digging (30) and restoring a seized room (40), below the
+        // surface chain (51-55) and everything that keeps the lights on.
+        //
+        // It was 58 for one run and test/obedient.mjs failed it in the way
+        // that check exists for — an obedient player holding scrap for a
+        // Recycling Plant on day 15 had the savings spent on a Schoolhouse
+        // instead, and the held target went seven days further away. School is
+        // the best *return* in the game and it is not the most *urgent* thing
+        // in it: eleven times nothing is still nothing if the silo starves
+        // while the children study.
+        weight: 46,
+      });
+    }
+  }
+
   // ---- a door nothing here will open ---------------------------------------
   //
   // The breach stage now asks what the party is carrying, and a gate the
@@ -1274,6 +1336,18 @@ export function directives(state) {
   // and without it "save up" is just the odd-numbered half of a treadmill. If
   // it cannot, saving is not a plan and the real problem is income, so a
   // salvage plant it can afford today becomes the order instead.
+  //
+  // Both answers reserve the treasury, so neither is honest about a goal that
+  // will not still be the goal on the next check-in — a growth order can reach
+  // the top of this list in the gaps between the orders that outrank it (while
+  // the room one of them named is still in the bay, say), and a plan made in a
+  // gap is spent the moment the gap closes. The guard against that is not here:
+  // it is that every order in the growth band checks `placeable` before it is
+  // raised at all, and `canBuild` counts the price. A growth order the silo
+  // cannot pay for is never offered, so it never becomes a blocked goal.
+  // Measured over sixteen 400-day campaigns, the only goal under the surface
+  // chain that ever reaches this branch is `more_labs`, where "Save up for a
+  // Laboratory" is exactly the right thing to say.
   if (goal?.blocked && goal.room) {
     const days = daysToAfford(state, goal.room);
     const savable = days !== null && days <= D.holdHorizonDays;
