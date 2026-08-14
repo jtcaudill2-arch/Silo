@@ -5317,6 +5317,56 @@ console.log('');
   } else {
     ok('and salvage is a route to it: a looted Rail-Carbine opens the same door');
   }
+
+  // The gate has to be answerable by the benches on the day the ladder opens.
+  //
+  // This is the check the pierce requirement shipped without, and it is the one
+  // that matters: a gear gate is only a decision if the silo can decide to meet
+  // it. The Breaching Carbine was the only craftable weapon that clears 2.5
+  // pierce and it sat behind Firearms III — 900 points, Ballistic Armour and
+  // **two alloy ingots off the wasteland** — while the charges that put a squad
+  // at the door need none of those. So a player reached the door on schedule
+  // and then waited on a die roll, in exactly the place `breaching_charges` was
+  // re-parented off `firearms_3` to stop that happening.
+  //
+  // Measured on seed 0xbeef before the carbine moved: every time both squads
+  // were home with a door open the party averaged 2.0 to 2.3 pierce and nothing
+  // on the bench or the rack could do better; seven ladders reached the
+  // undermine stage and were abandoned, and the campaign took no silo in 689
+  // days with 45 of 48 research nodes finished.
+  //
+  // Research closure, not the whole tree: the question is what a silo that has
+  // just earned the charges can make, not what one that has finished everything
+  // can.
+  {
+    const bench = newStore(0x51E7);
+    const bs = bench.state;
+    const closure = (id, seen = new Set()) => {
+      if (!id || seen.has(id)) return seen;
+      seen.add(id);
+      for (const req of RESEARCH[id]?.requires || []) closure(req, seen);
+      return seen;
+    };
+    bs.research.completed = [...closure('breaching_charges')];
+    const opens = craftableItems(bs)
+      .filter((i) => i.kind === 'weapon' && (i.stats?.pierce || 0) >= BAL.conquest.breachPierce)
+      .sort((a, b) => (b.stats.pierce || 0) - (a.stats.pierce || 0));
+    const best = craftableItems(bs)
+      .filter((i) => i.kind === 'weapon')
+      .sort((a, b) => (b.stats?.pierce || 0) - (a.stats?.pierce || 0))[0];
+
+    if (!opens.length) {
+      fail(
+        `a silo that has just researched Breaching Charges cannot build anything that opens a ` +
+        `door: the best weapon on its benches is ${best?.name || 'nothing'} at ` +
+        `${best?.stats?.pierce ?? 0} pierce against a gate of ${BAL.conquest.breachPierce}. ` +
+        'The ladder opens onto a wall only salvage or an artifact can get through.'
+      );
+    } else {
+      ok(`and the benches can answer it the day the charges land: ${opens[0].name} at ` +
+        `${opens[0].stats.pierce} pierce, off ${opens[0].unlock}, no artifacts on the way`);
+    }
+  }
 }
 
 // ---- 65. the silo is a place where people work, not stand -------------------

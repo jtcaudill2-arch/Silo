@@ -49,7 +49,15 @@ export const WEAPONS = [
   },
   {
     id: 'breaching_carbine', name: 'Breaching Carbine', kind: 'weapon', tier: 3,
-    craft: { alloy: 20, parts: 16 }, unlock: 'firearms_3',
+    // Off the charges, not off Firearms III. This is the door kit and the two
+    // are named as a pair: the charges open the airlock and this is what the
+    // party carries through it. It sat behind `firearms_3` — 900 points,
+    // Ballistic Armour, and two alloy ingots off the wasteland — which put an
+    // artifact roll in front of the only weapon that satisfies the breach's
+    // pierce requirement. See the note on `breaching_charges` for what that
+    // cost. Firearms III keeps its own tier and its armour; what it no longer
+    // does is decide whether a silo can be taken.
+    craft: { alloy: 20, parts: 16 }, unlock: 'breaching_charges',
     stats: { power: 1.9, ammo: 1.4, pierce: 3 },
     desc: 'Short, heavy, and unpleasant to be in front of at any range.',
   },

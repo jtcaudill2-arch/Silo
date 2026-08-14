@@ -345,10 +345,32 @@ export const RESEARCH = {
   // every sortie past it still costs suits, supplies and casualties.
   // Artifacts keep gating the origin chain and the exotic tech, where waiting
   // on the wasteland is the point.
+  // And it carries `weaponTier: 3`, which is the other half of the same
+  // decision and was missed when the door gained a kit requirement.
+  //
+  // `canLaunchRun` now asks what the breaching party is carrying —
+  // `conquest.breachPierce`, 2.5 — and the only thing the benches make that
+  // clears it is the Breaching Carbine at 3. That item sat at tier 3 behind
+  // `firearms_3`, which is 900 points, `ballistic_armor_1`, and **two alloy
+  // ingots off the wasteland**. So the kit requirement quietly put the artifact
+  // roll back in front of conquest, in the place this node was re-parented to
+  // take it out of: the player reached the charges on schedule, spent two
+  // expeditions mapping and undermining a silo, and met a refusal at the door
+  // that only a die roll could answer. Measured on seed 0xbeef, that is the
+  // whole failure — every time both squads were home with a door open the
+  // party averaged 2.0 to 2.3 pierce and nothing on the bench or the rack
+  // cleared the gate; seven ladders reached the undermine stage and stopped.
+  //
+  // The carbine is the door kit. It belongs with the charges, and giving it
+  // here keeps the gate's teeth — a party still has to be armed with the thing,
+  // roughly 160 alloy and 128 parts across two squads, which is a cost a silo
+  // can decide to pay — without making the decision a lottery. `firearms_3`
+  // still grants the same tier alongside `armorTier: 3`, so the weapons line
+  // keeps its own reason to exist and either route opens the door.
   breaching_charges: N({
     id: 'breaching_charges', branch: 'metallurgy', name: 'Breaching Charges',
     cost: 1100, minCycles: 36, requires: ['explosives'],
-    effects: { breaching: 1 },
+    effects: { breaching: 1, weaponTier: 3 },
     desc: 'Opens a sealed silo airlock. There is no other use for this, and everyone knows it.',
   }),
   firearms_4: N({
