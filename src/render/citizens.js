@@ -15,6 +15,7 @@ function roomSkill(room) {
   return getRoom(room.type)?.staff?.skill || null;
 }
 import { PALETTE, SLOT_W, FLOOR_H } from './canvas.js';
+import { stairX } from './floors.js';
 import { withAlpha } from './floors.js';
 import * as sprites from './sprites.js';
 import { onDuty } from './sprites.js';
@@ -58,12 +59,30 @@ export function citizensInView(state, cam) {
   const reduced = state.settings.reducedMotion;
 
   // Bucket the workforce by floor so we walk the roster once, not per floor.
+  //
+  // Off-shift people who are between floors come out of this pass entirely and
+  // go onto the stair instead — they are not on a floor, which is the whole
+  // point of them. `travelling` is checked before the range test because a
+  // journey from floor 3 to floor 19 passes through everything in between, and
+  // the traveller has to be drawn wherever they currently are rather than
+  // wherever they started.
   const byFloor = new Map();
+  const travellers = [];
+  const deepest = lastDugFloor(state);
   for (const id of state.citizenIds) {
     const c = state.citizens[id];
     if (!c || c.status === 'dead' || c.status === 'expedition') continue;
     const room = c.job ? state.silo.rooms[c.job.roomId] : null;
     const floorN = room ? room.floor : idleFloor(state, c);
+    if (!room && !reduced) {
+      const trip = journey(c, t, floorN, deepest);
+      if (trip) {
+        // World y, not floor y: they are on the steps between two landings.
+        const ty = (trip.floor - 1) * FLOOR_H + FLOOR_H - 6;
+        if (trip.floor >= from - 1 && trip.floor <= to + 1) travellers.push({ c, y: ty, trip });
+        continue;
+      }
+    }
     if (floorN < from || floorN > to) continue;
     if (!byFloor.has(floorN)) byFloor.set(floorN, []);
     byFloor.get(floorN).push({ c, room });
@@ -174,7 +193,81 @@ export function citizensInView(state, cam) {
     }
   }
 
+  // And whoever is on the stair. Last, so the shaft's traffic survives a
+  // sprite budget that has already been spent on the floor the player is
+  // looking at — but before the cap, so it is spent rather than exceeded.
+  for (const { c, y, trip } of travellers) {
+    if (out.length >= BAL.render.maxSpritesPerFrame - cam.drawn) break;
+    // `stair` is on the record rather than inferred from x, because x alone
+    // cannot tell a traveller from somebody working in a bay that happens to
+    // span the middle of the floor — a test that guessed from geometry read
+    // one room citizen a frame as being on the steps.
+    out.push({ c, x: trip.x, y, action: 'walk', stair: true });
+  }
+
   return out;
+}
+
+/**
+ * Where somebody off shift is between floors, or null if they are not.
+ *
+ * The silo has a stair running its whole depth and nobody had ever been drawn
+ * on it. Everyone was always *on a floor* — at a post or loitering in a
+ * corridor — so a hundred and forty-four levels of building had no traffic
+ * between them at all.
+ *
+ * A journey is a pure function of id and time, like every other position in
+ * this file, so a paused silo and a resumed one draw the same frame and
+ * nothing has to be stored. Each citizen has a personal cycle whose length is
+ * `stairJourneySeconds / stairTravellerFraction`; they are on the stair for
+ * the first `stairTravellerFraction` of it and on a floor for the rest. That
+ * makes the *share* of people travelling constant while *which* people they
+ * are keeps turning over — a fixed roll per citizen would have put the same
+ * dozen on the steps for the whole campaign.
+ *
+ * Where they are going is their own floor and one other, alternating, so a
+ * journey has somewhere to arrive rather than being a walk that resets. The
+ * other floor is drawn from the id and the cycle number, which is what stops
+ * one person shuttling between the same two levels for six hundred days.
+ */
+function journey(c, t, homeFloor, deepest) {
+  const R = BAL.render;
+  const share = R.stairTravellerFraction;
+  if (share <= 0 || deepest < 2) return null;
+
+  const period = R.stairJourneySeconds / share;
+  const at = ((t / period) + hash01(c.id, 2971215073)) % 1;
+  if (at >= share) return null;
+
+  const cycle = Math.floor(t / period + hash01(c.id, 2971215073));
+  // A different destination each trip, and never the floor they are stood on.
+  const pick = 1 + Math.floor(hash01(c.id + cycle * 7919, 433494437) * deepest);
+  const other = pick === homeFloor ? (pick % deepest) + 1 : pick;
+  const down = cycle % 2 === 0;
+  const a = down ? homeFloor : other;
+  const b = down ? other : homeFloor;
+
+  const k = at / share;
+  // Ease the ends, so somebody steps off a landing rather than teleporting
+  // into a sprint. Same shape as a person taking the first stair carefully.
+  const eased = k * k * (3 - 2 * k);
+  const floor = a + (b - a) * eased;
+  // A hand's width either side of the centre line, so two people passing on
+  // the same flight do not occupy one pixel column. `drawCitizens` draws a
+  // sprite from `x - 6` and a body is about twelve across, so the spread has
+  // to leave seven either side or somebody's shoulder is drawn through the
+  // shaft wall — which it was at the first attempt.
+  const lane = (hash01(c.id, 104729) - 0.5) * (BAL.render.stairWidth - 16);
+  return { floor, x: stairX() + lane };
+}
+
+/** The deepest floor anybody could walk to. */
+function lastDugFloor(state) {
+  let last = 1;
+  for (let i = 0; i < state.silo.floors.length; i++) {
+    if (state.silo.floors[i]?.excavated) last = i + 1;
+  }
+  return last;
 }
 
 /**

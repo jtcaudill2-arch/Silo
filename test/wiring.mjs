@@ -74,6 +74,7 @@ import { caretakerDay } from '../src/sim/caretaker.js';
 import { runCatchup } from '../src/core/catchup.js';
 import { CRISIS_LIST, CRISES } from '../src/data/events.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
+import { stairLeft } from '../src/render/floors.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { PAL } from '../tools/art/lib.mjs';
 import { citizenRole } from '../src/render/sprites.js';
@@ -5390,6 +5391,80 @@ console.log('');
   } else {
     ok('and reduced motion puts every one of them back on their mark');
   }
+}
+
+// ---- 66. a hundred and forty-four floors with traffic between them ----------
+//
+// The cutaway has had a "central stairwell" since the first frame it ever drew
+// and it was six translucent pixels behind the rooms — invisible on any floor
+// with a bay across the middle, which is most of them. Nobody had ever been
+// drawn anywhere but *on a floor*, so a building of a hundred and forty-four
+// levels had no movement between them at all.
+{
+  const store = newStore(0x57A1);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 60; d++) {
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  const cam = {
+    camY: -20, time: 0, drawn: 0, spriteBudget: 400,
+    viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
+  };
+  const L = stairLeft();
+  const Rt = L + BAL.render.stairWidth;
+  const sweep = () => {
+    const ys = new Map();
+    let seen = 0;
+    let drawn = 0;
+    let outside = 0;
+    for (let k = 0; k <= 200; k++) {
+      cam.time = k * 300;
+      for (const p of citizensInView(s, cam)) {
+        drawn++;
+        if (!p.stair) continue;
+        seen++;
+        // `drawCitizens` draws from `x - 6` and a body is about 12 across, so
+        // a traveller whose sprite would cross a shaft wall is a bug even
+        // though their centre is inside it.
+        if (p.x - 6 < L || p.x + 6 > Rt) outside++;
+        if (!ys.has(p.c.id)) ys.set(p.c.id, []);
+        ys.get(p.c.id).push(p.y);
+      }
+    }
+    const climbs = [...ys.values()].map((v) => Math.max(...v) - Math.min(...v));
+    return { seen, drawn, people: ys.size, climbs, outside, frames: 201 };
+  };
+
+  const live = sweep();
+  const perFrame = live.seen / live.frames;
+  const moved = live.climbs.filter((r) => r >= FLOOR_H).length;
+  if (!live.people) {
+    fail('nobody is ever on the stair — a hundred and forty-four floors and no traffic between ' +
+      'them, which is what this section exists to stop coming back');
+  } else if (perFrame < 1) {
+    fail(`the stair carries ${perFrame.toFixed(1)} people in an average frame, which is an empty ` +
+      'shaft with the occasional ghost in it');
+  } else if (!moved) {
+    fail('people appear on the stair and never change floor, so it is a waiting room');
+  } else if (live.outside) {
+    fail(`${live.outside} sprites are drawn through a shaft wall — the lane spread has to leave ` +
+      'half a body either side');
+  } else {
+    const med = live.climbs.sort((a, b) => a - b)[Math.floor(live.climbs.length / 2)];
+    ok(`the stair carries people: ${perFrame.toFixed(1)} on it in an average frame, ` +
+      `${live.people} different people, a median of ${Math.round(med / FLOOR_H)} floors each`);
+  }
+
+  // Reduced motion empties it, like every other moving thing in the renderer.
+  s.settings.reducedMotion = true;
+  const calm = sweep();
+  s.settings.reducedMotion = false;
+  if (calm.seen) fail(`${calm.seen} people are still on the stair with reduced motion on`);
+  else ok('and reduced motion clears it, the way it stops everything else that moves');
 }
 
 /** Working or standing watch — the same line economy.js and sprites.js draw. */

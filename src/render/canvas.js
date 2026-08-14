@@ -12,7 +12,7 @@
  */
 
 import { BAL } from '../config/balance.js';
-import { drawFloor, drawRoom, drawShaft, drawFloorLabel, drawPlacement } from './floors.js';
+import { drawFloor, drawRoom, drawShaft, drawStair, drawFloorLabel, drawPlacement } from './floors.js';
 import { drawCitizens } from './citizens.js';
 
 export const SLOT_W = BAL.render.slotWidth;
@@ -208,6 +208,11 @@ export class SiloRenderer {
         if (this.drawn > this.spriteBudget) break;
       }
     }
+
+    // The stair over the rooms and under the people: it is a shaft the floors
+    // open onto, so it occludes what it passes, and somebody climbing it has
+    // to be in front of the steps rather than behind them.
+    drawStair(ctx, state, range);
 
     // Citizens only on the floors closest to the camera centre (spec §3.5).
     drawCitizens(ctx, state, this);

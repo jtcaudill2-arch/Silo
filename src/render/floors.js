@@ -45,9 +45,96 @@ export function drawShaft(ctx, state, range, cam) {
   const visBottom = Math.min(dugBottom, range.to * FLOOR_H);
   if (visBottom > visTop) ctx.fillRect(-6, visTop, WORLD_W + 12, visBottom - visTop);
 
-  // The central stairwell that makes it read as one building.
-  ctx.fillStyle = withAlpha(PALETTE.concrete, 0.5);
-  ctx.fillRect(WORLD_W / 2 - 3, visTop, 6, Math.max(0, visBottom - visTop));
+  // The void behind the stair, so the shaft has a back wall to be cut into
+  // rather than floating over whatever room is behind it. The stair itself is
+  // drawn after the rooms — see `drawStair`.
+  if (visBottom > visTop) {
+    ctx.fillStyle = PALETTE.concreteDeeper;
+    ctx.fillRect(stairLeft(), visTop, BAL.render.stairWidth, visBottom - visTop);
+  }
+}
+
+/** Where the shaft starts, in world units. Between slot 2 and slot 3. */
+export function stairLeft() {
+  return Math.round(WORLD_W / 2 - BAL.render.stairWidth / 2);
+}
+
+/** The centre line people walk down. */
+export function stairX() {
+  return stairLeft() + BAL.render.stairWidth / 2;
+}
+
+/**
+ * The great stair.
+ *
+ * Drawn *over* the rooms, and that is the whole of what makes it read as
+ * architecture. It used to be six translucent pixels behind them, which meant
+ * that on any floor with a room across the middle — most floors — it was not
+ * there at all, and where it was visible it read as a scratch on the glass.
+ * A stairwell in a cutaway is a shaft the floors open onto; it occludes what
+ * it passes, the way the real thing would.
+ *
+ * Switchbacks rather than a spiral. A spiral seen side-on needs more pixels
+ * across than a 22-unit shaft has, and what it degrades into at this size is
+ * noise; alternating flights read as stairs immediately. Which way a flight
+ * leans is decided by the floor number, so the zigzag is continuous down the
+ * whole silo rather than random per floor.
+ *
+ * Only across dug floors: the stair does not exist in rock nobody has cut yet,
+ * and drawing it there would say the silo is deeper than it is.
+ */
+export function drawStair(ctx, state, range) {
+  const R = BAL.render;
+  const left = stairLeft();
+  const w = R.stairWidth;
+  const lastDug = lastExcavatedFloor(state);
+  const from = Math.max(1, range.from);
+  const to = Math.min(lastDug, range.to);
+  if (to < from) return;
+
+  const top = (from - 1) * FLOOR_H;
+  const height = (to - from + 1) * FLOOR_H;
+
+  // Opaque, and that is the point. The first version of this drew two
+  // translucent walls over the rooms and the room art carried on between them,
+  // so the whole thing read as a pair of scratches on the glass — which is
+  // exactly what the six-pixel bar it replaced looked like. A shaft is a hole
+  // through the building. It has to be dark inside and it has to cover what it
+  // passes in front of.
+  ctx.fillStyle = PALETTE.concreteDeeper;
+  ctx.fillRect(left, top, w, height);
+  ctx.fillStyle = PALETTE.concrete;
+  ctx.fillRect(left, top, 1, height);
+  ctx.fillRect(left + w - 1, top, 1, height);
+
+  const steps = R.stairStepsPerFlight;
+  const rise = FLOOR_H / steps;
+  const run = (w - 6) / steps;
+  for (let n = from; n <= to; n++) {
+    const fTop = (n - 1) * FLOOR_H;
+    // The flight: `stairStepsPerFlight` treads crossing the shaft. Even floors
+    // lean one way and odd floors the other, so it switches back at every
+    // landing the way a real stairwell does, and the zigzag is continuous down
+    // the whole silo rather than random per floor.
+    const leftward = n % 2 === 0;
+    for (let i = 0; i < steps; i++) {
+      const y = Math.round(fTop + i * rise);
+      const x = leftward
+        ? Math.round(left + 3 + (steps - 1 - i) * run)
+        : Math.round(left + 3 + i * run);
+      const tread = Math.max(3, Math.round(run) + 1);
+      // The tread, then the riser under its leading edge — two tones, because
+      // a single line of one colour at this size reads as a dash rather than
+      // as a step.
+      ctx.fillStyle = PALETTE.concreteLit;
+      ctx.fillRect(x, y, tread, 1);
+      ctx.fillStyle = withAlpha(PALETTE.concrete, 0.9);
+      ctx.fillRect(leftward ? x : x + tread - 1, y, 1, Math.round(rise));
+    }
+    // The landing, which is what the floor's corridor actually opens onto.
+    ctx.fillStyle = PALETTE.bone;
+    ctx.fillRect(left + 1, Math.round(fTop + FLOOR_H) - 2, w - 2, 1);
+  }
 }
 
 export function drawFloor(ctx, floor, n, cam) {

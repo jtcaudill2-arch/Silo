@@ -1817,6 +1817,41 @@ export const BAL = {
     // dealt across the residential floors instead, 12 is a busy corridor
     // rather than a smear, and the lanes in `citizenX` keep them apart.
     maxIdleCitizensPerFloor: 12,
+    // ---- the great stair --------------------------------------------------
+    //
+    // The silo has had a "central stairwell" since the first cutaway and it
+    // was six pixels of translucent grey behind the rooms — a line, not a
+    // building. It is the one piece of architecture that ties a hundred and
+    // forty-four floors into a single place, and nothing used it: no citizen
+    // has ever been drawn anywhere but on a floor.
+    //
+    // 22 wide, at the boundary between slot 2 and slot 3 (WORLD_W / 2), so it
+    // lands between bays rather than through the middle of one. It draws over
+    // the rooms rather than behind them, because a stairwell in a cutaway is a
+    // shaft the floors open onto — hiding it behind the nearest bay is what
+    // made it read as a scratch on the glass.
+    stairWidth: 22,
+    // Switchback flights: one leg per floor, alternating direction, which is
+    // what reads as a staircase at this size. A true spiral needs more pixels
+    // across than the shaft has.
+    stairStepsPerFlight: 5,
+    // ---- who is on it -----------------------------------------------------
+    //
+    // Off-shift people go places. Each one is given a slow deterministic
+    // journey — the same id-and-time arithmetic as every other position in the
+    // renderer, so a paused silo and a resumed one draw the same frame — and
+    // spends this share of it on the stair rather than on a floor.
+    //
+    // A tenth keeps the shaft busy without emptying the floors. Measured over
+    // two minutes of a day-220 silo of 99: 8.6 people on the stair in an
+    // average frame against 91 drawn in total, 35 different people over the
+    // run, each covering a median of eleven floors. That is one person every
+    // couple of landings — traffic rather than a procession.
+    stairTravellerFraction: 0.1,
+    // How long one journey takes, end to end, in seconds. Long enough to see
+    // somebody arrive, short enough that the shaft is never the same two
+    // people for a minute.
+    stairJourneySeconds: 26,
     tileSize: 32,
     floorHeight: 40,
     floorWidth: 384, // 6 slots * 64
