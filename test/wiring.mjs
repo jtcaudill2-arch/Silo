@@ -5393,6 +5393,24 @@ console.log('');
   }
 }
 
+/**
+ * The room that has to be on a floor for an errand to make sense there.
+ *
+ * `visiting` and `off shift` are deliberately absent: the first is aimed at a
+ * person rather than a room, and the second is the fallback for somebody with
+ * nowhere particular to be.
+ */
+const ERRAND_ROOM = {
+  clinic: ['clinic'],
+  school: ['schoolhouse'],
+  bunk: ['residences'],
+  mess: ['cafeteria'],
+  // Coming back. `idleFloor` only ever puts somebody on a floor with a mess or
+  // a bunk on it, so a return leg is checked too rather than waved through —
+  // which keeps half the journeys in the game inside this assertion.
+  home: ['residences', 'cafeteria'],
+};
+
 // ---- 66. a hundred and forty-four floors with traffic between them ----------
 //
 // The cutaway has had a "central stairwell" since the first frame it ever drew
@@ -5418,6 +5436,8 @@ console.log('');
   const Rt = L + BAL.render.stairWidth;
   const sweep = () => {
     const ys = new Map();
+    const purposes = new Map();
+    const wrongRoom = [];
     let seen = 0;
     let drawn = 0;
     let outside = 0;
@@ -5433,18 +5453,46 @@ console.log('');
         if (p.x - 6 < L || p.x + 6 > Rt) outside++;
         if (!ys.has(p.c.id)) ys.set(p.c.id, []);
         ys.get(p.c.id).push(p.y);
+        purposes.set(p.purpose, (purposes.get(p.purpose) || 0) + 1);
+        // The journey has to arrive somewhere that justifies it. This is the
+        // whole difference between traffic and a screensaver: a destination
+        // picked at random looks identical in a screenshot and means nothing.
+        const want = ERRAND_ROOM[p.purpose];
+        if (want && !want.some((type) => Object.values(s.silo.rooms)
+          .some((r) => r.type === type && r.floor === p.to))) {
+          wrongRoom.push(`${p.purpose} → floor ${p.to}`);
+        }
       }
     }
     const climbs = [...ys.values()].map((v) => Math.max(...v) - Math.min(...v));
-    return { seen, drawn, people: ys.size, climbs, outside, frames: 201 };
+    return { seen, drawn, people: ys.size, climbs, outside, frames: 201, purposes, wrongRoom };
   };
 
-  const live = sweep();
+  // Across the day, not at one shift. Night sends everybody to a bunk and a
+  // day shift does not, so a sweep at a single `clock.shift` sees one kind of
+  // errand and calls it the whole picture — which is exactly what the first
+  // run of this did.
+  const shifts = [2, 4, 6, BAL.render.nightShifts[0]];
+  const live = { seen: 0, frames: 0, people: 0, climbs: [], outside: 0 };
+  const purposes = new Map();
+  const wrongRoom = [];
+  for (const shift of shifts) {
+    s.clock.shift = shift;
+    const r = sweep();
+    live.seen += r.seen; live.frames += r.frames; live.people += r.people;
+    live.climbs.push(...r.climbs); live.outside += r.outside;
+    for (const [k, v] of r.purposes) purposes.set(k, (purposes.get(k) || 0) + v);
+    for (const w of r.wrongRoom) wrongRoom.push(w);
+  }
   const perFrame = live.seen / live.frames;
   const moved = live.climbs.filter((r) => r >= FLOOR_H).length;
   if (!live.people) {
     fail('nobody is ever on the stair — a hundred and forty-four floors and no traffic between ' +
       'them, which is what this section exists to stop coming back');
+  } else if (wrongRoom.length) {
+    fail(`${wrongRoom.length} journeys arrive somewhere that does not have the room they are ` +
+      `named for (${[...new Set(wrongRoom)].slice(0, 3).join(', ')}) — a destination picked at ` +
+      'random looks the same in a screenshot and means nothing');
   } else if (perFrame < 1) {
     fail(`the stair carries ${perFrame.toFixed(1)} people in an average frame, which is an empty ` +
       'shaft with the occasional ghost in it');
@@ -5457,6 +5505,45 @@ console.log('');
     const med = live.climbs.sort((a, b) => a - b)[Math.floor(live.climbs.length / 2)];
     ok(`the stair carries people: ${perFrame.toFixed(1)} on it in an average frame, ` +
       `${live.people} different people, a median of ${Math.round(med / FLOOR_H)} floors each`);
+  }
+
+  // And an errand answers the citizen rather than the clock. Somebody hurt
+  // heads for the clinic — planted, because a healthy fixture cannot show it,
+  // and deleting the clinic clause survived a mutation run that relied on the
+  // roster happening to contain a casualty.
+  {
+    const clinicFloors = Object.values(s.silo.rooms)
+      .filter((r) => r.type === 'clinic').map((r) => r.floor);
+    if (!clinicFloors.length) {
+      fail('the fixture has no clinic, so nobody can be shown walking to one');
+    } else {
+      // A ward's worth rather than one person: which floor any individual
+      // idles on is decided inside the renderer, and somebody who already
+      // stands on the clinic floor has nowhere to walk to.
+      const patients = s.citizenIds
+        .map((i) => s.citizens[i])
+        .filter((c) => c && !c.job && c.status !== 'dead')
+        .slice(0, 12);
+      if (!patients.length) {
+        fail('nobody in the fixture is off duty, so no errand can be shown at all');
+      } else {
+        const was = patients.map((c) => c.health);
+        for (const c of patients) c.health = BAL.render.injuredBelowHealth - 10;
+        const before = new Set();
+        for (const shift of shifts) {
+          s.clock.shift = shift;
+          for (const [k] of sweep().purposes) before.add(k);
+        }
+        patients.forEach((c, i) => { c.health = was[i]; });
+        if (!before.has('clinic')) {
+          fail('somebody at half health never walks to the clinic — the errand table reads the ' +
+            'clock and not the person, which is a screensaver with extra steps');
+        } else {
+          ok(`and an errand answers the person: ${[...before].sort().join(', ')} seen across a day, ` +
+            'with a casualty on their way to the clinic');
+        }
+      }
+    }
   }
 
   // Reduced motion empties it, like every other moving thing in the renderer.

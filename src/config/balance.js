@@ -1852,6 +1852,21 @@ export const BAL = {
     // somebody arrive, short enough that the shaft is never the same two
     // people for a minute.
     stairJourneySeconds: 26,
+    // Morale at or below which somebody off shift heads for the mess rather
+    // than a bunk. Not a simulation threshold — nothing in population.js reads
+    // it — but the difference between a silo whose traffic is random and one
+    // where a bad week visibly fills the cafeteria.
+    //
+    // 55 rather than the 25 the roster flags as "low morale": by the time
+    // somebody is flagged they are an emergency, and the point of this is the
+    // ordinary drift of people who are merely fed up.
+    //
+    // It rarely decides anything today, and that is worth writing down rather
+    // than discovering later: measured across two silos, everybody on the
+    // stair is either a schoolchild or somebody with nowhere particular to be,
+    // because every adult with a partner or a trade has a post and people at
+    // posts do not travel. The clause is right and its turn has not come.
+    messBelowMorale: 55,
     tileSize: 32,
     floorHeight: 40,
     floorWidth: 384, // 6 slots * 64

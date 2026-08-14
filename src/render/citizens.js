@@ -66,16 +66,19 @@ export function citizensInView(state, cam) {
   // journey from floor 3 to floor 19 passes through everything in between, and
   // the traveller has to be drawn wherever they currently are rather than
   // wherever they started.
+  // Whether it is the small hours, hoisted above the bucketing loop because an
+  // errand depends on it — people turn in at night — and the loop is where a
+  // journey is decided.
+  const night = BAL.render.nightShifts.includes(state.clock.shift);
   const byFloor = new Map();
   const travellers = [];
-  const deepest = lastDugFloor(state);
   for (const id of state.citizenIds) {
     const c = state.citizens[id];
     if (!c || c.status === 'dead' || c.status === 'expedition') continue;
     const room = c.job ? state.silo.rooms[c.job.roomId] : null;
     const floorN = room ? room.floor : idleFloor(state, c);
     if (!room && !reduced) {
-      const trip = journey(c, t, floorN, deepest);
+      const trip = journey(state, c, t, floorN, night);
       if (trip) {
         // World y, not floor y: they are on the steps between two landings.
         const ty = (trip.floor - 1) * FLOOR_H + FLOOR_H - 6;
@@ -102,7 +105,6 @@ export function citizensInView(state, cam) {
   // `citizenAction` takes them as context: a citizen record cannot know that
   // raiders are at the door.
   const defending = new Set(state.world?.pendingRaid ? raidDefenders(state) : []);
-  const night = BAL.render.nightShifts.includes(state.clock.shift);
   const beds = bedFloors(state);
 
   for (const floorN of order) {
@@ -202,7 +204,7 @@ export function citizensInView(state, cam) {
     // cannot tell a traveller from somebody working in a bay that happens to
     // span the middle of the floor — a test that guessed from geometry read
     // one room citizen a frame as being on the steps.
-    out.push({ c, x: trip.x, y, action: 'walk', stair: true });
+    out.push({ c, x: trip.x, y, action: 'walk', stair: true, purpose: trip.purpose, to: trip.to });
   }
 
   return out;
@@ -230,22 +232,26 @@ export function citizensInView(state, cam) {
  * other floor is drawn from the id and the cycle number, which is what stops
  * one person shuttling between the same two levels for six hundred days.
  */
-function journey(c, t, homeFloor, deepest) {
+function journey(state, c, t, homeFloor, night) {
   const R = BAL.render;
   const share = R.stairTravellerFraction;
-  if (share <= 0 || deepest < 2) return null;
+  if (share <= 0) return null;
 
   const period = R.stairJourneySeconds / share;
   const at = ((t / period) + hash01(c.id, 2971215073)) % 1;
   if (at >= share) return null;
 
   const cycle = Math.floor(t / period + hash01(c.id, 2971215073));
-  // A different destination each trip, and never the floor they are stood on.
-  const pick = 1 + Math.floor(hash01(c.id + cycle * 7919, 433494437) * deepest);
-  const other = pick === homeFloor ? (pick % deepest) + 1 : pick;
-  const down = cycle % 2 === 0;
-  const a = down ? homeFloor : other;
-  const b = down ? other : homeFloor;
+  const errand = errandFor(state, c, night);
+  if (!errand) return null;
+  // Somewhere with the right room on it, and never the floor they are already
+  // stood on — a journey to where you are is a person twitching in a doorway.
+  const options = errand.floors.filter((f) => f !== homeFloor);
+  if (!options.length) return null;
+  const other = options[hash01(c.id + cycle * 7919, 433494437) * options.length | 0];
+  const out = cycle % 2 === 0;
+  const a = out ? homeFloor : other;
+  const b = out ? other : homeFloor;
 
   const k = at / share;
   // Ease the ends, so somebody steps off a landing rather than teleporting
@@ -258,16 +264,90 @@ function journey(c, t, homeFloor, deepest) {
   // to leave seven either side or somebody's shoulder is drawn through the
   // shaft wall — which it was at the first attempt.
   const lane = (hash01(c.id, 104729) - 0.5) * (BAL.render.stairWidth - 16);
-  return { floor, x: stairX() + lane };
+  // The errand names the *outbound* leg only. Coming back is its own thing:
+  // reporting "clinic" on the return trip pointed at whatever floor they set
+  // out from, which is how a check on "does the destination have the room this
+  // journey is named for" caught 91 people apparently walking to a bunk on the
+  // cafeteria level.
+  return { floor, x: stairX() + lane, purpose: out ? errand.purpose : 'home', to: b };
 }
 
-/** The deepest floor anybody could walk to. */
-function lastDugFloor(state) {
-  let last = 1;
-  for (let i = 0; i < state.silo.floors.length; i++) {
-    if (state.silo.floors[i]?.excavated) last = i + 1;
+/**
+ * Why somebody is on the stair, and where that puts them.
+ *
+ * The first version of this picked a destination floor at random, which looked
+ * like traffic and meant nothing: a person walked eleven floors to a level
+ * they had no business on and walked back. Traffic you can read is the whole
+ * difference between a busy building and a screensaver.
+ *
+ * So an errand comes off the citizen's own record, in the order somebody would
+ * actually weigh it. Each rung falls through if the silo has nowhere to go —
+ * a silo with no clinic cannot send anybody to one — so a half-built silo gets
+ * fewer kinds of journey rather than people walking to rooms that do not
+ * exist.
+ *
+ * `purpose` rides out on the sprite. Nothing draws it yet; it is what makes
+ * this testable, and it is what a tapped citizen would want to say.
+ *
+ * There was a fifth clause here — go and see your partner — and it is gone
+ * because it never once fired. Everyone with a partner in a measured silo has
+ * a job, and only people without one are ever on the stair, so the clause was
+ * complete, reasonable, and unreachable: the exact thing the rest of this
+ * branch has spent its time deleting. Bringing it back means first giving
+ * somebody at a post a reason to leave it.
+ */
+function errandFor(state, c, night) {
+  const R = BAL.render;
+  const hurt =
+    c.health < R.injuredBelowHealth ||
+    c.radiation >= BAL.citizens.radiation.sicknessThreshold ||
+    c.pregnantUntilDay != null;
+  if (hurt) {
+    const f = floorsWith(state, 'clinic');
+    if (f.length) return { purpose: 'clinic', floors: f };
   }
-  return last;
+  if (c.status === 'school' || c.age < BAL.citizens.workingAgeMin) {
+    const f = floorsWith(state, 'schoolhouse');
+    if (f.length) return { purpose: 'school', floors: f };
+  }
+  if (night) {
+    const f = floorsWith(state, 'residences');
+    if (f.length) return { purpose: 'bunk', floors: f };
+  }
+  if (c.morale < R.messBelowMorale) {
+    const f = floorsWith(state, 'cafeteria');
+    if (f.length) return { purpose: 'mess', floors: f };
+  }
+  const f = floorsWith(state, 'cafeteria', 'residences');
+  return f.length ? { purpose: 'off shift', floors: f } : null;
+}
+
+/**
+ * Which floors carry a given kind of room, cached for the cycle.
+ *
+ * The cache lives in this module rather than on `state`, like every other one
+ * here: render code must never write to the store, or the cache is serialised
+ * into a save file.
+ */
+let roomFloorCache = { cycle: -1, byType: new Map() };
+
+function floorsWith(state, ...types) {
+  if (roomFloorCache.cycle !== state.clock.cycle) {
+    const byType = new Map();
+    for (const room of Object.values(state.silo.rooms)) {
+      if (room.buildingUntilCycle !== 0) continue;
+      if (!byType.has(room.type)) byType.set(room.type, []);
+      const arr = byType.get(room.type);
+      if (!arr.includes(room.floor)) arr.push(room.floor);
+    }
+    for (const arr of byType.values()) arr.sort((a, b) => a - b);
+    roomFloorCache = { cycle: state.clock.cycle, byType };
+  }
+  const out = [];
+  for (const type of types) {
+    for (const f of roomFloorCache.byType.get(type) || []) if (!out.includes(f)) out.push(f);
+  }
+  return out;
 }
 
 /**
