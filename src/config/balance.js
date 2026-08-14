@@ -1517,6 +1517,32 @@ export const BAL = {
     undermineDefenseReduction: 0.25,
     breachSquadsRequired: 2,
     breachSuitTier: 3,
+    // What it takes to get through somebody else's door.
+    //
+    // The ladder gated the breach on charges, two squads and tier-3 suits, and
+    // on nothing the squad was *carrying*. So a party could walk up to a
+    // sealed silo with pipe guns — power 1, pierce 1, twenty-two scrap and
+    // four parts apiece — and the game would let them try.
+    //
+    // `pierce` is the stat the weapon table already scales for exactly this,
+    // and the Breaching Carbine is named for the job: tier 3, pierce 3,
+    // "short, heavy, and unpleasant to be in front of at any range". It and
+    // the Breacher Plate — "built for standing in a doorway somebody else is
+    // shooting at" — were craftable, described in those words, and required by
+    // nothing.
+    //
+    // 2.5 is the line, and it is deliberately between the tiers rather than on
+    // one. A squad of Service Rifles (pierce 2) cannot force a door however
+    // many of them there are; a squad of Breaching Carbines (3) can; and a
+    // mixed party gets through if most of it is carrying the right thing,
+    // which is what the mean rather than the minimum is for. Nobody has to
+    // re-equip the whole squad to move the ladder one stage.
+    //
+    // It is reachable two ways, which is the point of putting it on a stat
+    // rather than on an item id: craft it behind Firearms III, or bring back a
+    // Garrison Rifle or a Rail-Carbine (pierce 4) from the surface. Salvage is
+    // a route to the door, not just to a better damage number.
+    breachPierce: 2.5,
     holdCombats: 5,
     holdGarrisonDays: 30,
     // ---- how hard they fight back ----
@@ -1810,6 +1836,34 @@ export const BAL = {
     // and people loitering in it rather than a procession.
     idleWanderSeconds: 11,
     idleStandFraction: 0.45,
+    // ---- what people are doing *at* a post --------------------------------
+    //
+    // Somebody at a post used to be pinned to a mark. `citizens.js` read
+    // `still = onDuty(c) ? !!room : …`, so a citizen with a room never moved a
+    // pixel — the walk cycle in the atlas, six frames of it, was drawn for
+    // off-duty people and for nobody else. A working silo rendered as rows of
+    // figures standing to attention, which is the one thing a working silo is
+    // not.
+    //
+    // So a post is two places now, not one: the lane the crewing code deals
+    // them, and a second station somewhere else in the same room. They work at
+    // one, cross to the other, work there, cross back. The lanes still decide
+    // where people *stop*, which is what stops a crowded post reading as a
+    // pile of overlapping heads; what changed is that stopping is no longer
+    // the whole of the job.
+    //
+    // The period is per-citizen (see `shiftPhase`), spread across this range,
+    // so eight people at one post are on eight different rhythms rather than
+    // marching. Under six seconds a post reads as agitated rather than busy.
+    postCycleSeconds: [9, 21],
+    // The share of a cycle spent standing at a station rather than crossing
+    // between them. Split across the two stations, so at 0.72 a citizen is
+    // working about a third of the time at each end and walking the rest.
+    postDwellFraction: 0.72,
+    // How far the second station sits from the first, as a share of the room's
+    // usable width. Kept off 0.5 so two people who happen to share a rhythm
+    // do not converge on the same middle.
+    postStationSpread: [0.28, 0.62],
     // Two people standing near each other talk. The pairing is by adjacent
     // lane and costs nothing to compute, but pairing *every* neighbour made a
     // floor look like a staged crowd scene, so only some pairs strike up.

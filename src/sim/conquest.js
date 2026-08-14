@@ -35,7 +35,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { resolve as resolveCombat, applyResolution, unitPower, averageSuitStat } from './combat.js';
 import { conquestState, CONQUEST_STAGES } from './diplomacy.js';
-import { readySquads, lootGear } from './military.js';
+import { readySquads, squadMembers, lootGear } from './military.js';
 import { getItem, LOOT } from '../data/items.js';
 
 const Q = BAL.conquest;
@@ -91,8 +91,57 @@ export function canLaunchRun(state, siloId) {
         reason: `Needs ${Q.breachSquadsRequired} squads standing by; ${ready} are.`,
       };
     }
+    // And something to open the door with.
+    //
+    // Every other clause here is about the ladder or the roster; none was
+    // about what the party is holding, so a squad of pipe guns — twenty-two
+    // scrap and four parts apiece — could be sent at a sealed silo. The
+    // Breaching Carbine and the Breacher Plate are crafted, described in
+    // exactly those words, and were required by nothing.
+    const kit = breachPierce(state);
+    if (kit.mean < Q.breachPierce) {
+      return {
+        ok: false,
+        stage,
+        reason:
+          `Nothing here will open that door. The party averages ${kit.mean.toFixed(1)} pierce ` +
+          `and forcing a silo takes ${Q.breachPierce} — a Breaching Carbine is 3, and so is ` +
+          'anything heavier off the surface.',
+      };
+    }
   }
   return { ok: true, stage };
+}
+
+/**
+ * What the standing squads could bring to a door, as mean pierce.
+ *
+ * Exported because the World panel has to be able to say *why* a breach is
+ * refused before the player has walked anybody anywhere, and because the
+ * standing order that points at the Armory reads the same number. One
+ * definition, three readers.
+ *
+ * Squads at home, since those are the ones who would go. An unarmed body
+ * counts as 0 rather than being skipped: eight people with two carbines
+ * between them are not a breaching party, and averaging only over the armed
+ * would say they were.
+ */
+export function breachPierce(state) {
+  const ids = readySquads(state);
+  let total = 0;
+  let heads = 0;
+  let best = 0;
+  for (const sid of ids) {
+    for (const c of squadMembers(state, sid)) {
+      heads++;
+      const gid = c.gear?.weapon;
+      const item = gid ? getItem(state.military.gear[gid]?.item) : null;
+      const pierce = item?.stats?.pierce || 0;
+      total += pierce;
+      best = Math.max(best, pierce);
+    }
+  }
+  return { mean: heads ? total / heads : 0, best, heads };
 }
 
 /** True for the purposes this module handles, i.e. not a salvage run. */

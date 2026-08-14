@@ -140,10 +140,21 @@ export function citizensInView(state, cam) {
       // Standing still: at a post, in a conversation, asleep, or in the
       // stationary half of an off-duty wander. Anything else is walking.
       const sleeping = night && !onDuty(c) && beds.has(floorN);
-      const still = onDuty(c) ? !!room : (talking || sleeping || loitering(c, t));
-      const x = still && !fighting
-        ? home.get(c.id)
-        : citizenX(c, room, t, reduced, lane, lanes, extent);
+      // On duty and in a room: they work a round between two stations, and
+      // `moving` comes back from that rather than being assumed false. Reduced
+      // motion pins them to the lane, which is what it did for everybody
+      // before and is the whole point of the setting.
+      const round = onDuty(c) && room && !reduced
+        ? postRound(c, room, t, lane, lanes, extent)
+        : null;
+      const still = onDuty(c) ? !round?.moving : (talking || sleeping || loitering(c, t));
+      const x = fighting
+        ? citizenX(c, room, t, reduced, lane, lanes, extent)
+        : round
+          ? round.x
+          : still
+            ? home.get(c.id)
+            : citizenX(c, room, t, reduced, lane, lanes, extent);
       // The sprite picker needs to know what job somebody holds to choose a
       // farmer over a plain resident, and it has no room table of its own —
       // importing one would drag the data layer into the render path. The
@@ -288,6 +299,59 @@ function loitering(c, t) {
   const at = ((t / period) + phase) % 1;
   return at < BAL.render.idleStandFraction;
 }
+
+/**
+ * A shift at a post, as a position and whether they are on the move.
+ *
+ * Somebody at a post used to be drawn on a mark and left there — `still` was
+ * `onDuty(c) ? !!room : …`, so having a room meant never moving. Six frames of
+ * walk cycle in the atlas were for off-duty people and nobody else, and a silo
+ * at full employment rendered as rows of figures standing to attention.
+ *
+ * A post is two places now: the lane the crewing code dealt them, and a second
+ * station elsewhere in the same room. They work at one, cross to the other,
+ * work there, cross back. Everything below is a pure function of id and time,
+ * like every other position in this file — no per-citizen render state, so a
+ * paused game and a resumed one draw the same frame.
+ *
+ * Three things are seeded off the id rather than shared, because the point is
+ * that a room looks like people rather than like a mechanism: how long a
+ * citizen's round takes, where their second station is, and where in the cycle
+ * they happen to be. Eight people at one post are on eight rhythms.
+ *
+ * @returns {{x: number, moving: boolean}}
+ */
+function postRound(c, room, t, lane, lanes, extent) {
+  const R = BAL.render;
+  const home = laneHome(room, lane, lanes, extent);
+  if (!room) return { x: home, moving: false };
+
+  const [minS, maxS] = R.postCycleSeconds;
+  const period = minS + hash01(c.id, 40503) * (maxS - minS);
+  const [lo, hi] = R.postStationSpread;
+  const usable = room.width * SLOT_W - 14;
+  const left = room.slot * SLOT_W + 7;
+  // The second station, on whichever side of the lane has more room — so a
+  // citizen on the left edge of a wide room crosses it rather than pressing
+  // into the wall.
+  const reach = (lo + hash01(c.id, 91711) * (hi - lo)) * usable;
+  const away = home - left > usable / 2 ? home - reach : home + reach;
+  const other = Math.max(left + 4, Math.min(left + usable - 4, away));
+
+  const dwell = R.postDwellFraction / 2; // per station
+  const at = ((t / period) + hash01(c.id, 15485863)) % 1;
+  if (at < dwell) return { x: home, moving: false };
+  if (at < 0.5) return { x: lerp(home, other, (at - dwell) / (0.5 - dwell)), moving: true };
+  if (at < 0.5 + dwell) return { x: other, moving: false };
+  return { x: lerp(other, home, (at - 0.5 - dwell) / (0.5 - dwell)), moving: true };
+}
+
+/** 0..1 from an id and a salt. The salt is what keeps the three draws apart. */
+function hash01(id, salt) {
+  return (((id * 2654435761) ^ salt) >>> 0) % 1000 / 1000;
+}
+
+const lerp = (a, b, k) => a + (b - a) * k;
 
 /**
  * Who is talking to whom.

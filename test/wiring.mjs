@@ -1512,8 +1512,21 @@ console.log('');
       if (c) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
     }
   }
+  // And armed. The breach also asks what the party is carrying now — see
+  // `breachPierce` — and this fixture is about the headcount clause, so it
+  // hands out carbines and holds the rest of the question still.
+  for (const sqId of s.military.squadIds) {
+    for (const cid of s.military.squads[sqId].members) {
+      const gid = `carbine_${cid}`;
+      s.military.gear[gid] = {
+        id: gid, item: 'breaching_carbine', kind: 'weapon',
+        durability: 100, integrity: 100, assignedTo: cid,
+      };
+      s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), weapon: gid };
+    }
+  }
   const crewed = canLaunchRun(s, TARGET);
-  if (!crewed.ok) fail(`crewing the squads did not open the breach (${crewed.reason})`);
+  if (!crewed.ok) fail(`crewing and arming the squads did not open the breach (${crewed.reason})`);
   else ok('and opens once they are crewed');
 }
 
@@ -5231,6 +5244,157 @@ console.log('');
       ok(`and Muster is worth its 12 commendations: ${without} at the door becomes ${withMuster}`);
     }
   }
+}
+
+// ---- 64. you cannot open a door with a pipe gun -----------------------------
+//
+// The breach was gated on the ladder (scouted, undermined), on research
+// (charges), and on the roster (two crewed squads) — and on nothing the party
+// was holding. A squad carrying pipe guns, twenty-two scrap and four parts
+// apiece, could be sent at a sealed silo and the game would let them.
+//
+// Meanwhile the item table has a Breaching Carbine — tier 3, pierce 3, "short,
+// heavy, and unpleasant to be in front of at any range" — and a Breacher Plate
+// "built for standing in a doorway somebody else is shooting at". Both
+// craftable, both named for this exact job, both required by nothing.
+{
+  const store = newStore(0x51E6);
+  const s = store.state;
+  const TARGET = 6;
+  store.dispatch({ type: 'RESEARCH_COMPLETE', id: 'breaching_charges' });
+  store.dispatch({ type: 'CONQUEST_PATCH', siloId: TARGET, patch: { stage: 'breach', scoutRuns: 2, undermined: true } });
+  for (let i = 0; i < BAL.conquest.breachSquadsRequired; i++) {
+    store.dispatch({ type: 'SQUAD_CREATE', name: `S${i + 1}` });
+  }
+  const crew = s.citizenIds.map((i) => s.citizens[i]).filter((c) => c.age >= 20 && c.status !== 'dead');
+  let next = 0;
+  for (const sqId of s.military.squadIds) {
+    for (let i = 0; i < BAL.military.squadMin; i++) {
+      const c = crew[next++];
+      if (c) store.dispatch({ type: 'SQUAD_MEMBER', squadId: sqId, citizenId: c.id });
+    }
+  }
+  const armAll = (item) => {
+    for (const sqId of s.military.squadIds) {
+      for (const cid of s.military.squads[sqId].members) {
+        const gid = `w_${cid}`;
+        s.military.gear[gid] = { id: gid, item, kind: 'weapon', durability: 100, integrity: 100, assignedTo: cid };
+        s.citizens[cid].gear = { ...(s.citizens[cid].gear || {}), weapon: gid };
+      }
+    }
+  };
+
+  armAll('pipe_gun');
+  const withPipes = canLaunchRun(s, TARGET);
+  const pipeOrder = (directives(s) || []).find((d) => d.id === 'breach_kit');
+  armAll('breaching_carbine');
+  const withCarbines = canLaunchRun(s, TARGET);
+  const carbineOrder = (directives(s) || []).find((d) => d.id === 'breach_kit');
+
+  if (withPipes.ok) {
+    fail('a squad of pipe guns can force a sealed silo — the Breaching Carbine exists, is ' +
+      'crafted, is described as the tool for this, and is required by nothing');
+  } else if (!withCarbines.ok) {
+    fail(`Breaching Carbines still do not open the door: ${withCarbines.reason}`);
+  } else if (!pipeOrder) {
+    fail('the silo is at the door with the wrong kit and raises no order about it — the player ' +
+      'meets the gate as a refusal, which reads as a bug rather than a requirement');
+  } else if (carbineOrder) {
+    fail('the breaching-kit order keeps firing at a party that is already carrying it');
+  } else {
+    ok('a door takes more than a pipe gun: refused at pierce 1, opened at 3, and the silo says ' +
+      'so before the run rather than after it');
+  }
+
+  // And the loot route is real: a rifle off the surface has to work too, or
+  // the gate is a research gate wearing a gear gate's clothes.
+  armAll('rail_carbine');
+  if (!canLaunchRun(s, TARGET).ok) {
+    fail('a looted Rail-Carbine does not open a door that a crafted carbine does — then the ' +
+      'only way through is the research tree, and salvage buys nothing');
+  } else {
+    ok('and salvage is a route to it: a looted Rail-Carbine opens the same door');
+  }
+}
+
+// ---- 65. the silo is a place where people work, not stand -------------------
+//
+// `citizens.js` read `still = onDuty(c) ? !!room : …`, so anybody with a post
+// was pinned to a mark and never moved a pixel. Six frames of walk cycle sit in
+// the atlas and they were drawn for off-duty people and for nobody else — a
+// silo at full employment rendered as rows of figures standing to attention,
+// which is the one thing a working silo is not.
+//
+// Measured before: of 37 working citizens sampled over a simulated minute, 37
+// never moved at all and 0 ever played the walk animation.
+{
+  const store = newStore(0x11FE);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 30; d++) {
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  const cam = {
+    camY: -20, time: 0, drawn: 0, spriteBudget: 400,
+    viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
+  };
+  // `cam.time` is milliseconds; sampling it in seconds looks like a frozen
+  // silo and is how the first run of this measurement fooled its author.
+  const track = (reduced) => {
+    s.settings.reducedMotion = reduced;
+    const xs = new Map();
+    const acts = new Map();
+    for (let k = 0; k <= 240; k++) {
+      cam.time = k * 250;
+      for (const p of citizensInView(s, cam)) {
+        if (!onDutyStatus(p.c)) continue;
+        if (!xs.has(p.c.id)) { xs.set(p.c.id, []); acts.set(p.c.id, new Set()); }
+        xs.get(p.c.id).push(p.x);
+        acts.get(p.c.id).add(p.action);
+      }
+    }
+    const ranges = [...xs.values()].map((v) => Math.max(...v) - Math.min(...v));
+    const walkers = [...acts.values()].filter((a) => a.has('walk')).length;
+    return { n: ranges.length, ranges, walkers };
+  };
+
+  const live = track(false);
+  const calm = track(true);
+  s.settings.reducedMotion = false;
+
+  const stuck = live.ranges.filter((r) => r < 2).length;
+  const median = [...live.ranges].sort((a, b) => a - b)[Math.floor(live.ranges.length / 2)] || 0;
+  if (!live.n) {
+    fail('no working citizens were drawn at all, so this measures nothing');
+  } else if (stuck > live.n * 0.2) {
+    fail(`${stuck} of ${live.n} people at posts never moved over a simulated minute — the walk ` +
+      'cycle in the atlas is drawn for off-duty people and nobody else');
+  } else if (median < 10) {
+    fail(`people at posts shift a median of ${median.toFixed(1)}px, which is a twitch rather ` +
+      'than a shift being worked');
+  } else if (live.walkers < live.n * 0.5) {
+    fail(`only ${live.walkers} of ${live.n} ever played the walk animation`);
+  } else {
+    ok(`the silo works rather than stands: ${live.n - stuck} of ${live.n} people at posts cross ` +
+      `their room, a median of ${median.toFixed(0)}px, and ${live.walkers} play the walk cycle`);
+  }
+
+  // And reduced motion still means reduced motion. This is the setting's whole
+  // job and it would be easy to animate straight through it.
+  const calmStuck = calm.ranges.filter((r) => r < 2).length;
+  if (calm.n && calmStuck < calm.n) {
+    fail(`${calm.n - calmStuck} people still walk their post with reduced motion on`);
+  } else {
+    ok('and reduced motion puts every one of them back on their mark');
+  }
+}
+
+/** Working or standing watch — the same line economy.js and sprites.js draw. */
+function onDutyStatus(c) {
+  return c.status === 'working' || c.status === 'training';
 }
 
 function readSource(rel) {

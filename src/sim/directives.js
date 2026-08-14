@@ -31,7 +31,7 @@ import {
 import { staffSlots, inService } from './economy.js';
 import { readySquads } from './military.js';
 import { canLaunch } from './expedition.js';
-import { canLaunchRun } from './conquest.js';
+import { canLaunchRun, breachPierce } from './conquest.js';
 import { raiderBandFor, defenders as raidDefenders, forecast as raidForecast } from './raid.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
@@ -939,6 +939,37 @@ export function directives(state) {
       panel: 'military',
       weight: 52,
     });
+  }
+
+  // ---- a door nothing here will open ---------------------------------------
+  //
+  // The breach stage now asks what the party is carrying, and a gate the
+  // player only meets as a refusal is a gate that reads as a bug. This is the
+  // order that gets ahead of it: once a silo has been scouted and undermined,
+  // the next stage is the door, and the door wants pierce.
+  //
+  // It fires only when the ladder is actually at that rung, so it is never
+  // advice about a thing the player is not doing.
+  if (state.research?.completed?.includes('breaching_charges')) {
+    const atTheDoor = Object.values(state.world?.silos || {}).find(
+      (s) => s.conquest?.stage === 'breach'
+    );
+    if (atTheDoor) {
+      const kit = breachPierce(state);
+      if (kit.heads && kit.mean < BAL.conquest.breachPierce) {
+        add({
+          id: 'breach_kit',
+          text: 'Issue something that opens a door',
+          why:
+            `${atTheDoor.name} is mapped and undermined, and the next run is the door itself. ` +
+            `The squads average ${kit.mean.toFixed(1)} pierce and forcing a silo takes ` +
+            `${BAL.conquest.breachPierce}. Breaching Carbines are made in the Armory; a Garrison ` +
+            'Rifle or a Rail-Carbine off the surface does the same job.',
+          panel: 'military',
+          weight: 56,
+        });
+      }
+    }
   }
 
   // ---- a silo with no soldiers in it ---------------------------------------
