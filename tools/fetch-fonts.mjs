@@ -26,6 +26,24 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
 const WANTED = [
+  // The pixel set. The interface is drawn from the same palette as the sprites
+  // and framed in sprite chrome, and type was the last thing still saying it
+  // belonged to a different program.
+  //
+  // Three faces because one pixel font cannot do every job at this size:
+  // Pixelify Sans has real lowercase and enough x-height to carry a paragraph,
+  // Silkscreen is a small-caps label face that stays sharp at the sizes the
+  // eyebrows and chips run at, and VT323 is a terminal face, which is what the
+  // numbers in this game actually are — a readout on a machine.
+  //
+  // All three are SIL OFL 1.1, like the three they join.
+  { css: 'Pixelify+Sans:wght@400', weight: '400', file: 'PixelifySans-Regular.woff2' },
+  { css: 'Pixelify+Sans:wght@600', weight: '600', file: 'PixelifySans-SemiBold.woff2' },
+  { css: 'Silkscreen:wght@400', weight: '400', file: 'Silkscreen-Regular.woff2' },
+  { css: 'VT323', weight: '400', file: 'VT323-Regular.woff2' },
+
+  // Kept as the fallback stack's first stop and for anything the pixel faces
+  // cannot carry. See styles.css.
   { css: 'Saira+Condensed:wght@600', weight: '600', file: 'SairaCondensed-SemiBold.woff2' },
   { css: 'IBM+Plex+Sans:wght@400', weight: '400', file: 'IBMPlexSans-Regular.woff2' },
   { css: 'IBM+Plex+Sans:wght@500', weight: '500', file: 'IBMPlexSans-Medium.woff2' },
@@ -61,10 +79,13 @@ await writeFile(
   [
     'Fonts bundled with Deepwater',
     '',
+    'Pixelify Sans — Copyright the Pixelify Sans Project Authors.',
+    'Silkscreen — Copyright Jason Kottke.',
+    'VT323 — Copyright the VT323 Project Authors.',
     'Saira Condensed — Copyright the Saira Project Authors.',
     'IBM Plex Sans, IBM Plex Mono — Copyright IBM Corp.',
     '',
-    'All three are licensed under the SIL Open Font License, Version 1.1.',
+    'All are licensed under the SIL Open Font License, Version 1.1.',
     'https://openfontlicense.org',
     '',
     'They are redistributed here unmodified so the game can run with no',

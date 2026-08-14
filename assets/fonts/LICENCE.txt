@@ -1,9 +1,12 @@
 Fonts bundled with Deepwater
 
+Pixelify Sans — Copyright the Pixelify Sans Project Authors.
+Silkscreen — Copyright Jason Kottke.
+VT323 — Copyright the VT323 Project Authors.
 Saira Condensed — Copyright the Saira Project Authors.
 IBM Plex Sans, IBM Plex Mono — Copyright IBM Corp.
 
-All three are licensed under the SIL Open Font License, Version 1.1.
+All are licensed under the SIL Open Font License, Version 1.1.
 https://openfontlicense.org
 
 They are redistributed here unmodified so the game can run with no
