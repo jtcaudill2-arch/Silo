@@ -58,12 +58,18 @@ export const researchPanel = {
               shell.renderPanel(true);
             },
           },
-          b.name
+          // The short name on the tab, the whole one under it. Six branches
+          // spelled out are 795px of tabs in a 374px panel, so half the tree
+          // was off the right edge — and the full name was already printed
+          // below the strip beside its description, which is where a player
+          // reads it anyway. Nothing is lost by the tab being brief.
+          b.short || b.name
         )
       )
     );
 
     const b = BRANCHES[branch];
+    body.appendChild(el('div.branch-head', el('span.branch-glyph', b.glyph), b.name));
     body.appendChild(el('div.note', b.desc));
 
     const nodes = branchNodes(branch).sort((a, b2) => nodeDepth(a.id) - nodeDepth(b2.id) || a.cost - b2.cost);

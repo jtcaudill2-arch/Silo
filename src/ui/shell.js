@@ -284,6 +284,35 @@ export class Shell {
     this.host.appendChild(this.panelFrame(panel));
     const next = this.host.querySelector('.panel-body');
     if (next && scrollTop) next.scrollTop = scrollTop;
+    this.settleTabs();
+  }
+
+  /**
+   * Tab strips that do not fit have to admit it, and have to be reachable.
+   *
+   * Research has six branches and they are 795px of tabs in a 374px panel, so
+   * three of them — Metallurgy & Arms, Surface Science, Governance & Signal —
+   * sat off the right edge with nothing on screen saying a strip that scrolls
+   * was a strip that scrolls. Measured, not guessed: the audit walked every
+   * panel and found it.
+   *
+   * Two things fix it and both belong here rather than in the panels, because
+   * a panel rebuilds itself twice a second and would have to remember to do
+   * this every time. `.overflowing` puts a fade on the right edge, and the
+   * active tab is scrolled into view — which matters most on the rebuild
+   * after a player picks a branch that was only half on screen when they
+   * pressed it.
+   */
+  settleTabs() {
+    for (const strip of this.host.querySelectorAll('.tabs')) {
+      strip.classList.toggle('overflowing', strip.scrollWidth > strip.clientWidth + 1);
+      const active = strip.querySelector('.tab.active');
+      // `nearest`, so a tab already fully in view is left exactly where it is.
+      // `auto` rather than smooth: this runs on every rebuild, and a strip
+      // that eases itself sideways twice a second is a strip that never sits
+      // still under the finger trying to press it.
+      active?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+    }
   }
 
   panelFrame(panel) {
@@ -888,6 +917,31 @@ export class Shell {
 
       ref.node.hidden = !live.has(def.key);
     }
+    this.markStripEdges();
+  }
+
+  /**
+   * Which end of the strip has more counters past it.
+   *
+   * The classes drive a mask, so this is only ever telling CSS what is true —
+   * but it has to be told on two occasions and it is easy to wire only one:
+   * every strip render, because a silo that unlocks Alloy has one more counter
+   * than it did, and on scroll, because the fade has to move to the other end
+   * once the player has swiped. The listener is attached once, lazily, since
+   * `renderStrip` runs every frame and `addEventListener` does not de-dupe
+   * closures.
+   */
+  markStripEdges() {
+    if (!this.strip) return;
+    if (!this._stripEdgeBound) {
+      this._stripEdgeBound = true;
+      this.strip.addEventListener('scroll', () => this.markStripEdges(), { passive: true });
+    }
+    const max = this.strip.scrollWidth - this.strip.clientWidth;
+    const x = this.strip.scrollLeft;
+    this.strip.classList.toggle('overflowing', max > 1);
+    this.strip.classList.toggle('scrolled', x > 1);
+    this.strip.classList.toggle('at-end', max > 1 && x >= max - 1);
   }
 
   /** Open the ledger with one resource already opened onto its own causes. */

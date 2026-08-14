@@ -27,7 +27,15 @@ import { BRIEFING, PREDECESSOR } from '../data/briefing.js';
 export function showBriefing({ sections = BRIEFING, onDone } = {}) {
   const PAGES = sections.length ? sections : BRIEFING;
   return new Promise((resolve) => {
-    const root = document.getElementById('modal-root');
+    // document.body, not #modal-root. The wrap asks for z-index 80 so it sits
+    // above the toast rail at 70, and inside `.modal-root` — `position: fixed`
+    // with `z-index: 60` — it cannot: a stacking context clamps everything in
+    // it to its own layer, so 80 only ever meant "80 within 60". Screenshotted
+    // on a two-day return: three unlock toasts painted straight across the
+    // headline and the first two lines of the log, which is exactly the moment
+    // catch-up fires them. Ordinary modals stay in `.modal-root` on purpose;
+    // toasts are meant to be visible over those. This one owns the screen.
+    const root = document.body;
     let page = 0;
 
     const scrim = el('div.modal-scrim', { style: { pointerEvents: 'auto' } });

@@ -4738,9 +4738,12 @@ console.log('');
       const full = h.length === 4 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h.slice(0, 7);
       if (!allowed.has(full)) problems.push(`${where}: ${m[0]} is not in the art palette`);
     }
-    // rgb()/rgba() triples too, except pure black — scrims and drop shadows are
-    // an absence of light rather than a colour, and the art has no entry for
-    // "transparent dark".
+    // rgb()/rgba() triples too, except pure black — scrims, drop shadows and
+    // the stencils behind `mask-image` are an absence of light rather than a
+    // colour, and the art has no entry for "transparent dark". The mask case
+    // is the clearest of the three: nothing there is ever painted, the black
+    // IS the alpha channel, and a palette entry in its place would mean the
+    // same thing while looking like a decision.
     for (const m of css.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
       const rgb = [+m[1], +m[2], +m[3]];
       if (rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0) continue;

@@ -112,6 +112,17 @@
                -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'VT323', 'IBM Plex Mono', ui-monospace, 'SF Mono',
                Menlo, Consolas, monospace;
+  /* Long-form reading, and only that.
+   *
+   * Pixelify Sans is the body face everywhere in the game and it should be:
+   * the interface is a label at a time and a bitmap face is sharper than a
+   * hinted vector one at those sizes. It costs about 15% in density, which is
+   * nothing across a chip and something across a page — and the return report
+   * is the one page in the game, forty lines of names and causes after a
+   * weekend away. This token is where a surface says "I am prose, not
+   * chrome"; nothing else should reach for it. */
+  --font-prose: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system,
+                'Segoe UI', Roboto, sans-serif;
   /* ---- metrics ---- */
   --topbar-h: 46px;
   --navbar-h: 54px;
@@ -260,6 +271,17 @@
 
 /* --------------------------------------------------------------- reset --- */
 *, *::before, *::after { box-sizing: border-box; }
+
+/* Every control is pressed by a finger, so every control opts out of the
+   double-tap-to-zoom wait. The viewport already says `user-scalable=no`, which
+   removes the delay on most browsers, but "most" is not a thing to leave a
+   300ms lag to on a game where the whole interface is buttons. `manipulation`
+   keeps panning and pinching and drops only the double-tap gesture, which
+   nothing here uses. */
+button, input, select, textarea, a[href], [role='button'],
+.btn, .tab, .chip, .row, .nav-btn, .res {
+  touch-action: manipulation;
+}
 html, body {
   margin: 0;
   padding: 0;
@@ -489,7 +511,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    button — so it carries role and tabindex and its own keyboard handler. */
 .act-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  min-height: 34px; min-width: 66px; padding: 0 6px;
+  min-height: var(--tap); min-width: 66px; padding: 0 6px;
   border-style: solid; border-width: var(--ui-border-btn); border-color: transparent;
   border-image-source: var(--ui-frame-btn);
   border-image-slice: var(--ui-slice-btn);
@@ -553,13 +575,23 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .directive-why {
-  font-size: 12px; color: var(--bone-faint); line-height: 18px;
-  /* Three lines, not one. The reason is the half that teaches — clamping it
-     to a single line cut every order off mid-sentence ("Past it, rooms shut
-     down from the …"), which is worse than not explaining at all. Two was
-     enough until the action button took ninety pixels off the width of this
-     column; at 390px that put most orders back to ending in an ellipsis. */
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  font-size: 12px; color: var(--bone-faint); line-height: 16px;
+  /* Four lines at 16, not three at 18. The reason is the half that teaches —
+     clamping it to a single line cut every order off mid-sentence ("Past it,
+     rooms shut down from the …"), which is worse than not explaining at all.
+     Two was enough until the action button took ninety pixels off the width of
+     this column; at 390px that put most orders back to ending in an ellipsis,
+     and three was enough until the orders themselves got longer.
+
+     A sweep for text the layout actually cuts — every panel, every tab, a
+     day-220 silo — found exactly one node in the whole game, and it was this
+     one: "53 posts are standing empty and nobody i…". The most-read line in
+     the interface was the only one being truncated.
+
+     The fourth line costs 10px rather than 18 because the leading comes down
+     with it. 16px of leading on a 12px secondary line is tight and still
+     comfortably readable; it is the same ratio the roster subtitle uses. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   overflow: hidden;
 }
 .directive.urgent { border-left-color: var(--rust); }
@@ -597,18 +629,51 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   color: var(--bone-faint);
 }
 .speed-btn {
-  min-width: 38px; padding: 0 6px;
+  min-width: 46px; padding: 0 6px;
   border-left: 1px solid var(--hairline);
   font-family: var(--font-mono); font-size: 18px; color: var(--sodium);
 }
 .speed-btn.paused { color: var(--rust); }
 
+/* The strip scrolls, and it has to look like it scrolls.
+ *
+ * Four counters fit. A mid-game silo has eleven, so seven of them are off the
+ * right edge — and the eighth was sliced down the middle of its value, which
+ * reads as a rendering fault rather than as an invitation to swipe. Screenshot
+ * of a day-220 silo: PARTS showing as "26" with the rest of the number past
+ * the edge and nothing anywhere admitting there was more.
+ *
+ * Two rules, and neither of them is "make it fit", because eleven counters in
+ * 266px is not a layout problem, it is arithmetic:
+ *
+ *   - a fade on the right edge whenever there is more to the right, so the
+ *     strip ends in something that obviously continues rather than in a
+ *     chopped digit. `.scrolled` puts the same fade on the left once the
+ *     player has moved, so the first counters do not vanish silently either.
+ *   - snapping, so a swipe settles on whole counters. Half a counter is only
+ *     ever seen in passing now, never at rest.
+ */
 .resource-strip {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 0;
   overflow-x: auto; overflow-y: hidden;
   scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
 }
 .resource-strip::-webkit-scrollbar { display: none; }
+.resource-strip.overflowing {
+  -webkit-mask-image: linear-gradient(to right, rgb(0,0,0) calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, rgb(0,0,0) calc(100% - 14px), transparent);
+}
+.resource-strip.overflowing.scrolled {
+  -webkit-mask-image: linear-gradient(to right, transparent, rgb(0,0,0) 18px, rgb(0,0,0) calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, transparent, rgb(0,0,0) 18px, rgb(0,0,0) calc(100% - 14px), transparent);
+}
+.resource-strip.overflowing.at-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, rgb(0,0,0) 12px);
+  mask-image: linear-gradient(to right, transparent, rgb(0,0,0) 12px);
+}
+.res { scroll-snap-align: start; }
 
 /* Four counters at 62px needed 248px in the 230px the topbar leaves, so SCRAP
    — the unit every standing order is priced in — was clipped on the very first
@@ -642,12 +707,23 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    measures (62 and 38 from 66 and 46), which widens the strip itself by 12.
    The number underneath went the other way — VT323 is a 0.4em face against
    IBM Plex Mono's 0.6em, so the value row is NARROWER at 16px than it was at
-   12.5, and taller. Measured after all of it: see the run in mobile.mjs §3c. */
+   12.5, and taller. Measured after all of it: see the run in mobile.mjs §3c.
+
+   And the touch pass took it a third time. The speed control and the gear were
+   38 and 36 wide against a 44px thumb, and widening them costs the strip 18 of
+   the pixels this comment has spent three paragraphs finding. They go to 46
+   rather than 44, and that is not a rounding-up: a control laid out at exactly
+   44 fails a 44px probe about half the time, because flex distributes
+   fractional widths and 44.0 painted from 43.6 has 43.6 to press. The gear
+   was the one place that tried to save the 2px on a Fitts argument — it is in
+   the screen corner, where the edge stops the finger — and test/mobile.mjs §5
+   caught it at 44x45 immediately. The 18px came from here instead: side
+   padding to 2 and the column gap to 1, which is 6px a tile across four. */
 .res {
   display: grid; align-content: center;
   grid-template-columns: var(--ui-res-size) auto;
-  grid-template-rows: auto auto; column-gap: 2px;
-  padding: 0 3px; min-width: 52px; flex: 0 0 auto;
+  grid-template-rows: auto auto; column-gap: 1px;
+  padding: 0 2px; min-width: 52px; flex: 0 0 auto;
   border-right: 1px solid var(--hairline);
   height: 100%; text-align: left; position: relative;
 }
@@ -754,10 +830,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em;
   color: var(--bone-faint); background: color-mix(in srgb, var(--concrete-deeper) 88%, transparent);
   border: 1px solid var(--hairline); border-radius: var(--radius);
-  /* 30px minimum because it is a real tap target — it opens the People panel
-   * — and test/mobile.mjs holds every visible control to that. It failed at
-   * 190x25 first time round. */
-  padding: 6px 10px; min-height: 30px; box-sizing: border-box; cursor: pointer;
+  /* A real tap target — it opens the People panel — so it is held to the same
+   * 44px floor as everything else. It was 30 before that, and 190x25 before
+   * that, each time because the number that was being checked against was the
+   * one the control already happened to be. */
+  padding: 6px 10px; min-height: var(--tap); box-sizing: border-box; cursor: pointer;
 }
 .crew-readout:active { background: var(--concrete-deep); }
 .crew-readout .crew-part { display: flex; align-items: center; gap: 4px; }
@@ -937,8 +1014,13 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   font-family: var(--font-mono); font-size: 14px; color: var(--bone-faint);
   margin-left: auto;
 }
+/* The smallest control in the game was the one you press to leave every
+   screen in it: 30x30, measured, against a 44px thumb. The header has the
+   room — it is 10px of padding around a 16px title — so this grows for real
+   rather than hiding a bigger hit box behind a small glyph. */
 .panel-close {
-  margin-left: 8px; width: 30px; height: 30px; display: grid; place-items: center;
+  margin-left: 8px; width: var(--tap); height: var(--tap);
+  display: grid; place-items: center;
   font-family: var(--font-mono); font-size: 20px; color: var(--bone-faint);
 }
 .panel-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
@@ -961,13 +1043,30 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    is the 48 that buys it back: measured after, 369 of 396 with ENDS whole.
    The label itself did not shrink — Silkscreen at 12px has the same 7.5px cap
    as the Saira 11px it replaces. */
+/* 44, not 36. The tab strip is how you get between the halves of a panel —
+   the Log's five views, Military's Doctrine and Armory, Research's six
+   branches — and measured at 390x844 every tab in the game was 36px tall and
+   packed against its neighbour with zero separation. That is the single
+   control a player uses most to navigate and it was the second-smallest thing
+   on the screen. A thumb pad is about 9mm, which is 44px at this density. */
 .tab {
-  padding: 8px 8px; min-height: 36px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 10px; min-height: 46px; min-width: 48px; white-space: nowrap;
   font-family: var(--font-display); font-size: 12px; letter-spacing: 0;
   text-transform: uppercase; color: var(--bone-faint);
   border-bottom: 2px solid transparent;
 }
 .tab.active { color: var(--sodium); border-bottom-color: var(--sodium); }
+/* A strip that scrolls says so. Six research branches are 795px of tabs in a
+   374px panel, so three of them were off the right edge with nothing on
+   screen admitting it — the fade is the only thing that distinguishes "that
+   is the last tab" from "there are three more tabs". */
+.tabs.overflowing {
+  -webkit-mask-image: linear-gradient(to right, rgb(0,0,0) calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, rgb(0,0,0) calc(100% - 24px), transparent);
+}
+.tabs { scroll-snap-type: x proximity; }
+.tab { scroll-snap-align: end; }
 
 /* -------------------------------------------------------------- pieces --- */
 .section-label {
@@ -998,7 +1097,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    always was. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 38px; padding: 0 8px;
+  min-height: var(--tap); padding: 0 8px;
   border-style: solid; border-width: var(--ui-border-btn); border-color: transparent;
   border-image-source: var(--ui-frame-btn);
   border-image-slice: var(--ui-slice-btn);
@@ -1037,7 +1136,17 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
    of one. Silkscreen is sharp at 8 and at 12 and smeared at everything
    between, so "a bit smaller than the big button" is not a size this face
    offers. GARRISON at 8px is 48px of label in a 72px button. */
-.btn.sm { min-height: 30px; padding: 0 4px; font-size: 8px; }
+/* 40 painted, 44 pressed. The small button is the action inside a row —
+   AUTO-ASSIGN, GARRISON, ISSUE — and at 30px it was the thing you were
+   reaching for and the thing you kept missing. It does not go to a full 44
+   because a row that is mostly button stops reading as a row, so the last
+   four pixels are bought with a hit box instead of ink. The row underneath is
+   56px or more, so the overhang costs it nothing it needs. */
+.btn.sm { min-height: 40px; padding: 0 8px; font-size: 8px; position: relative; }
+.btn.sm::after {
+  content: ''; position: absolute; left: 0; right: 0;
+  top: 50%; height: 46px; transform: translateY(-50%);
+}
 
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1248,6 +1357,16 @@ button.why-line:active { background: var(--sodium-dim); }
   padding: 10px 12px; font-size: 13px; color: var(--bone-faint);
   border-top: 1px solid var(--hairline);
 }
+/* The branch's whole name, since the tab above it only has room for a word.
+   Sits on the description's border rather than adding a second rule. */
+.branch-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px 0; border-top: 1px solid var(--hairline);
+  font-family: var(--font-display); font-size: 14px; letter-spacing: 0;
+  color: var(--bone);
+}
+.branch-head + .note { border-top: none; padding-top: 4px; }
+.branch-glyph { color: var(--sodium); font-family: var(--font-mono); font-size: 16px; }
 .note.warn { color: var(--sodium); background: var(--sodium-dim); border-top: none; }
 .note.bad { color: var(--rust); background: var(--rust-dim); border-top: none; }
 .pad { padding: 10px 12px; }
@@ -1270,7 +1389,11 @@ button.why-line:active { background: var(--sodium-dim); }
 }
 .floor-strip::-webkit-scrollbar { display: none; }
 .floor-pip {
-  flex: 0 0 auto; min-width: 38px; min-height: 40px;
+  /* The floor picker is how you choose where a room goes, so it is pressed
+     once per build and it was 38x40. Both dimensions clear 44 now with a pixel
+     to spare, which the sub-pixel layout needs — a pip that measures exactly
+     44 fails a 44px probe about half the time. */
+  flex: 0 0 auto; min-width: 46px; min-height: 46px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: var(--concrete-deeper); border: 1px solid var(--hairline);
   border-radius: var(--radius); color: var(--bone-dim);
@@ -1432,18 +1555,36 @@ button.why-line:active { background: var(--sodium-dim); }
 
 .roster-controls { display: flex; gap: 6px; padding: 8px 10px 4px; }
 .roster-search {
-  flex: 1; min-width: 0; min-height: 32px; padding: 0 9px;
+  flex: 1; min-width: 0; min-height: var(--tap); padding: 0 9px;
   background: var(--concrete-deep); border: 1px solid var(--hairline);
   border-radius: var(--radius); color: var(--bone); font-size: 14px;
 }
 .roster-search::placeholder { color: var(--bone-faint); }
 
+/* Filter chips are the one place where growing the ink would be wrong: a row
+   of 44px pills is a row of buttons, and these are meant to read as a quiet
+   line of labels you can press. So the chip keeps its 26px and the hit box
+   goes to 44 — the only neighbours it can steal from are the other chips
+   beside it, which the 8px gap keeps clear of each other, and the panel
+   chrome above and below, which is not tappable. */
+/* 11px of vertical padding, and that number is doing real work: `overflow-x`
+   set to anything but `visible` makes `overflow-y` compute to `auto` as well,
+   so the row clips its own children vertically. The 46px hit box below needs
+   10px above and below a 26px chip to fit inside that clip, and at the 9px it
+   had, every filter chip in the game was being trimmed back to the chip. */
 .chip-row {
-  display: flex; gap: 5px; padding: 5px 10px; overflow-x: auto;
+  display: flex; gap: 8px; padding: 11px 10px; overflow-x: auto;
   scrollbar-width: none; align-items: center;
 }
 .chip-row::-webkit-scrollbar { display: none; }
-.chip-row .chip { flex: 0 0 auto; min-height: 26px; padding: 0 9px; }
+.chip-row .chip {
+  flex: 0 0 auto; min-height: 26px; min-width: 44px; padding: 0 9px;
+  justify-content: center; position: relative;
+}
+.chip-row .chip::after {
+  content: ''; position: absolute; left: -3px; right: -3px;
+  top: 50%; height: 46px; transform: translateY(-50%);
+}
 .chip-label {
   font-family: var(--font-display); font-size: 8px; letter-spacing: 0.125em;
   text-transform: uppercase; color: var(--bone-faint); flex: 0 0 auto;
@@ -1607,8 +1748,15 @@ button.why-line:active { background: var(--sodium-dim); }
 
 .report-tally { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 16px 8px; }
 
+/* The body of the report reads in Plex, its furniture stays pixel.
+   The eyebrow, the title, the section rules and every number are unchanged —
+   what changes is the forty lines of names and causes underneath them, which
+   is the only run of continuous prose in the game and the only place the 15%
+   Pixelify costs in density is a page rather than a chip. `.report-day` keeps
+   the mono face beside it, so the dates still line up in a column. */
 .report-line {
   display: flex; gap: 9px; padding: 6px 16px; font-size: 13px;
+  font-family: var(--font-prose);
   border-left: 2px solid transparent;
 }
 .report-line .report-day { color: var(--bone-faint); font-size: 11px; flex: 0 0 24px; padding-top: 1px; }
@@ -1618,7 +1766,10 @@ button.why-line:active { background: var(--sodium-dim); }
 .report-line.alert { border-left-color: var(--sodium); }
 .report-line.radio { border-left-color: var(--concrete-lit); }
 
-.report-note { padding: 10px 16px; font-size: 13px; color: var(--bone-faint); }
+.report-note {
+  padding: 10px 16px; font-size: 13px; color: var(--bone-faint);
+  font-family: var(--font-prose);
+}
 
 .report-foot {
   padding: 12px 16px; border-top: 1px solid var(--hairline);
@@ -1721,7 +1872,7 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
 .squad-ready-k { font-size: 12px; color: var(--bone-faint); flex: 0 0 68px; }
 .squad-ready .meter { flex: 1; }
 .squad-ready-v { font-size: 13px; flex: 0 0 34px; text-align: right; }
-.squad-members { display: flex; flex-wrap: wrap; gap: 5px; }
+.squad-members { display: flex; flex-wrap: wrap; gap: 10px; }
 .squad-member {
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   width: 46px; padding: 3px; border: 1px solid var(--hairline);
@@ -1736,7 +1887,7 @@ body.reduced-motion .boot-bar i { animation: none; width: 100%; }
   width: 46px; min-height: 52px; border: 1px dashed var(--concrete-lit);
   border-radius: var(--radius); color: var(--bone-faint); font-size: 19px;
 }
-.squad-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.squad-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 
 .gear-row {
   display: flex; align-items: flex-start; gap: 10px; width: 100%;
@@ -2012,7 +2163,7 @@ html.large-text .section-label { font-size: 12px; }
    chain rather than a choice. 36px because the counters next door need the
    width more than this does, and it is still over the 30px tap floor. */
 .settings-btn {
-  min-width: 36px; padding: 0 6px;
+  min-width: 46px; padding: 0 6px;
   border-left: 1px solid var(--hairline);
   font-family: var(--font-mono); font-size: 18px; color: var(--bone-faint);
 }

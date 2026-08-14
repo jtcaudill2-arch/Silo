@@ -330,19 +330,94 @@ try {
   } else ok('nothing is crying wolf on the first frame');
 
   // ---- 5. every control is thumb-sized -------------------------------------
-  const small = await page.evaluate(() => {
+  //
+  // 44, not 30. 30 was never a standard — it was the number the controls
+  // already happened to be, written down. A thumb pad is about 9mm, which is
+  // 44 CSS pixels, and an audit of every panel at 390x844 found 417 of 610
+  // controls under it: the tab strip a player uses to move around inside a
+  // panel was 36px tall and packed edge to edge, and the button that closes
+  // every screen in the game was the smallest thing on it at 30x30.
+  //
+  // What is measured is the box a FINGER hits, not the box a pixel artist
+  // drew. Some controls are deliberately small — a filter chip has to read as
+  // a label you can press rather than as a button — and they carry an
+  // invisible 46px hit area instead of growing. Probing the four extremes of a
+  // 44px box with elementFromPoint is the only check that sees both.
+  //
+  // And it walks the panels, because the opening screen is a topbar and a
+  // navbar and nothing else. The first version of this check ran here with no
+  // panel open, so it never saw a tab strip or a filter chip — the two things
+  // the audit found worst — and putting the tabs back to 36px did not fail it.
+  const TAP = 44;
+  const probe = (min) => {
     const out = [];
+    const R = min / 2 - 0.5;
     for (const n of document.querySelectorAll('#app button:not([hidden])')) {
       const r = n.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      if (r.height < 30 || r.width < 30) {
+      // The navbar is nine panels across 390px, which is 43.3 each. It is a
+      // segmented bar with no gaps, 53px tall, and the only thing a mis-tap
+      // can reach is the panel next door — so it is exempt by name rather than
+      // by loosening the number for everybody.
+      if (n.classList.contains('nav-btn')) continue;
+      // A scroller's end item is half off screen by definition; swiping it in
+      // is the interaction, not a defect.
+      const clip = n.closest('.resource-strip, .chip-row, .tabs');
+      if (clip) {
+        const cr = clip.getBoundingClientRect();
+        if (r.left < cr.left - 1 || r.right > cr.right + 1) continue;
+      }
+      // The control itself, or something inside it. NOT an ancestor: the
+      // first version of this accepted `h.contains(n)` too, which meant a 26px
+      // chip inside a 48px row passed because probing past the chip hit the
+      // row — every small control in the game "owned" its container's area and
+      // the check could not fail. Deleting the chips' hit boxes did not fail
+      // it; that is how this was found.
+      const owns = (x, y) => {
+        const h = document.elementFromPoint(x, y);
+        return !!h && (n === h || n.contains(h));
+      };
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (!owns(cx, cy)) continue; // covered by something else; not this test's business
+      if (!owns(cx, cy - R) || !owns(cx, cy + R) || !owns(cx - R, cy) || !owns(cx + R, cy)) {
         out.push(`${n.id || n.className}: ${Math.round(r.width)}×${Math.round(r.height)}`);
       }
     }
     return out;
-  });
-  if (small.length) fail(`tap targets under 30px: ${small.slice(0, 6).join(', ')}`);
-  else ok('every visible control is at least 30×30');
+  };
+
+  const small = [];
+  let screens = 0;
+  const sweep = async (where) => {
+    screens++;
+    for (const s of await page.evaluate(probe, TAP)) small.push(`${where} ${s}`);
+  };
+  await sweep('cross-section');
+  const openPanels = await page.$$eval('#navbar .nav-btn:not([disabled])',
+    (ns) => ns.map((n) => n.dataset.panel).filter(Boolean));
+  for (const p of openPanels) {
+    const btn = await page.$(`#navbar .nav-btn[data-panel="${p}"]`);
+    if (!btn) continue;
+    await btn.click().catch(() => {});
+    await page.waitForTimeout(350);
+    await sweep(p);
+    // Each tab is its own screen, and the tab strip itself is what this check
+    // exists for.
+    const tabs = await page.$$('.tabs .tab');
+    for (let t = 1; t < tabs.length; t++) {
+      await tabs[t].click().catch(() => {});
+      await page.waitForTimeout(250);
+      await sweep(`${p}/tab${t}`);
+    }
+    await (await page.$('.panel-close'))?.click().catch(() => {});
+    await page.waitForTimeout(200);
+  }
+  if (small.length) {
+    fail(`${small.length} control(s) a finger cannot reliably hit at ${TAP}px, across ` +
+      `${screens} screens: ${small.slice(0, 6).join(', ')}`);
+  } else {
+    ok(`every visible control on ${screens} screens takes a ${TAP}px press, by ink or by hit box`);
+  }
 
   // ---- 6. the bottom bar clears the home indicator -------------------------
   const nav = await page.evaluate(() => {
