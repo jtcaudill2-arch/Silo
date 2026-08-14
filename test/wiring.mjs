@@ -58,6 +58,7 @@ import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { getEnemy, ENEMIES } from '../src/data/encounters.js';
 import { UNLOCKS, announce } from '../src/sim/unlocks.js';
+import { TUTORIAL, ALERT_COACH, REPORT_COACH } from '../src/data/tutorial.js';
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun, sack as sackSilo } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower, rollEnemyForce, applyResolution } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
@@ -5039,8 +5040,67 @@ console.log('');
   }
 }
 
+// ---- 62. every card the guide has is a card the guide gives -----------------
+//
+// The guided session is ten steps of the game's best explanation of itself and
+// it has no coverage at all, which is how its last step stayed broken: the
+// shift report only exists once a shift has ended with something in it, and
+// the room the guide has just had the player order does not report until it
+// comes online — measured, cycle 3, four and a half minutes at 1×. The step
+// waited twelve seconds and then stood aside, so on a brisk first session the
+// guide ended on a card saying "the silo files one line here… Tap it" over an
+// empty strip of screen with no ring under it.
+//
+// The fix moves it to a one-card coach fired when the line actually lands,
+// which introduces the failure this asserts against: a set of steps that
+// exists, reads well, and is never armed by anybody. Same shape as §61 — a
+// thing that is finished and unreachable — one layer down.
+{
+  const tutSrc = readSource('../src/data/tutorial.js');
+  // Both call sites: `main.js` arms the coaches by name, and the engine takes
+  // the guide itself as its default `steps`, so neither file alone is the
+  // whole answer to "who shows this".
+  //
+  // Comments stripped, and that is not fussiness. The first version of this
+  // read the files whole and passed with the report coach fully disarmed,
+  // because the comment in `ui/tutorial.js` explaining the coach mentions it
+  // by name. A test satisfied by prose about the code is a test of the prose.
+  const shows = codeIn(readSource('../src/main.js')) + codeIn(readSource('../src/ui/tutorial.js'));
+  const decks = [...tutSrc.matchAll(/export const ([A-Z][A-Z0-9_]*)\s*=\s*\[/g)].map((m) => m[1]);
+  const orphans = decks.filter((name) => !new RegExp(`\\b${name}\\b`).test(shows));
+  if (!decks.length) {
+    fail('no step decks found in data/tutorial.js — this check is looking in the wrong place');
+  } else if (orphans.length) {
+    fail(`${orphans.join(', ')} is written and never shown: nothing in main.js starts it`);
+  } else {
+    ok(`all ${decks.length} decks of guidance (${decks.join(', ')}) are started by the game`);
+  }
+
+  // And every step of every deck has both halves of a step: something to point
+  // at, and something to say about it.
+  const bad = [];
+  for (const deck of [TUTORIAL, ALERT_COACH, REPORT_COACH]) {
+    for (const step of deck) {
+      if (!step.target) bad.push(`${step.id} points at nothing`);
+      if (!step.copy) bad.push(`${step.id} says nothing`);
+      // A step completes on a tap, on a predicate, or on the target going away.
+      // One with none of those can only be got past by the Done button, which
+      // makes it a slide rather than a step.
+      if (!step.tap && !step.done) bad.push(`${step.id} cannot be completed by doing anything`);
+    }
+  }
+  if (bad.length) fail(bad.join('; '));
+  else ok(`and each of the ${TUTORIAL.length + ALERT_COACH.length + REPORT_COACH.length} cards ` +
+    'points at a real control and can be finished by using it');
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
+}
+
+/** A module with its comments taken out, so only what runs is searchable. */
+function codeIn(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
 }
 
 /**

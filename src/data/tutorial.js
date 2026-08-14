@@ -14,11 +14,13 @@
  * game hangs on, so three of the steps exist to teach the player to read it and
  * follow it rather than to teach any particular building.
  *
- * The last three steps are the three surfaces that answer questions rather
- * than give orders: a counter opened onto its own arithmetic, the shift report
- * under the standing order, and — contextually, the first time one lands — an
+ * Three surfaces answer questions rather than give orders: a counter opened
+ * onto its own arithmetic, the shift report under the standing order, and an
  * alert card. Those were built and then never mentioned, which is the same as
- * not having built them.
+ * not having built them. The counter is a step of the guide because a counter
+ * is always there; the other two are one-card coaches below, fired the first
+ * time each thing actually happens, because neither exists to point at on the
+ * first morning.
  *
  * The voice is the silo's: administrative, specific, second person, and never
  * congratulatory. Nothing here says "great job" because nothing in this game
@@ -42,9 +44,6 @@
  *   back     (ctx) => boolean, true when the player has undone the step before
  *            it — cancelling a placement, closing a panel — and the guide
  *            should follow them back rather than point at nothing.
- *   when     (ctx) => boolean, false while the step is about something that has
- *            not happened yet. The step waits, and stands aside if it still has
- *            not happened.
  *   mark     (ctx) => any, captured when the step is entered and handed back as
  *            `ctx.mark`, for steps that mean "more of this than there was".
  *   after    (ctx) => void, run once when the step is completed — never on the
@@ -246,20 +245,37 @@ export const TUTORIAL = [
     done: ({ el }) => !el,
     copy: 'Close this. The silo keeps running with the tab shut, and there will be a report and a fresh standing order when you come back.',
   },
+];
+
+/**
+ * The shift report, taught when there is a shift report.
+ *
+ * This was the tenth step of the guide and it could not work there. The bar
+ * only exists once a shift has ended *with something to put in it*, and the
+ * thing the guide has just had the player do — order a room — does not report
+ * until that room comes online. Measured on a real first session: the card was
+ * reached with `clock.cycle` at 0 and the line did not land until cycle 3, so
+ * at 1× the guide spent its last twelve seconds saying "the silo files one
+ * line here… Tap it" over an empty strip of screen with no ring under it, then
+ * timed out. The final impression of the guided session was a sentence
+ * pointing at nothing.
+ *
+ * Waiting longer is not the fix — three shifts is four and a half minutes at
+ * 1×, and a card that sits on the screen that long has stopped being a guide.
+ * So this uses the same shape as the alert coach below, for the same reason:
+ * some things cannot be taught before they happen, and the honest moment to
+ * say one sentence about the shift report is the shift it first appears.
+ */
+export const REPORT_COACH = [
   {
     id: 'report',
     target: '#change-line',
     prefer: 'below',
     tap: true,
     done: ({ state }) => showing(state, 'log'),
-    // The bar does not exist until a shift has produced something to put in it.
-    // Ordering a room two steps ago guarantees one, but not instantly: at 1×
-    // the shift boundary that reports it is up to a minute and a half away. So
-    // the step waits for it, and stands aside if it never comes.
-    when: ({ el }) => onScreen(el),
     copy:
-      `Every ${SHIFT_SECONDS} seconds the silo files one line here: the loudest thing that ` +
-      'changed, and a count of what is queued behind it. Tap it for the rest.',
+      `That line is the shift report. Every ${SHIFT_SECONDS} seconds the silo files one: the ` +
+      'loudest thing that changed, and a count of what is queued behind it. Tap it for the rest.',
   },
 ];
 

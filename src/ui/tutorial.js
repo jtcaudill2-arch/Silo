@@ -84,8 +84,17 @@ const BOTTOM_SAFE = 62; // the navbar, plus air — the card never sits on it
  */
 const KEEP_CLEAR = ['#topbar', '#resource-strip', '#directive', '#change-line'];
 
-/** How long a step whose `when` is still false waits before being skipped. */
-const WHEN_GRACE_MS = 12000;
+/*
+ * There used to be a `when` gate here: a step could declare that it was about
+ * something not on screen yet, wait twelve seconds for it, and stand aside if
+ * it never came. One step ever used it — the shift report — and waiting was
+ * the wrong answer for it. The bar needs a shift that had something to report,
+ * which for the room the guide has just had the player order means the shift
+ * it comes online: measured, cycle 3, four and a half minutes at 1×. Twelve
+ * seconds was never going to reach it and four minutes of a card on the screen
+ * is not a guide. It is a one-card coach now (`REPORT_COACH`), fired the shift
+ * the line first appears, so nothing here has to guess how long to wait.
+ */
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
@@ -278,16 +287,6 @@ export function startTutorial({
     };
     current = resolve(step.target, ctx);
     ctx.el = current;
-
-    // A step can be about something that is not on screen yet — the shift
-    // report only exists once a shift has produced one. Such a step waits, and
-    // if what it is about has not turned up by the time the player would have
-    // given up on it, it stands aside rather than pointing at nothing.
-    if (step.when && !step.when(ctx)) {
-      if (now - enteredAt > WHEN_GRACE_MS) return advance();
-      tapped = false;
-      return paint(step, ctx);
-    }
 
     if (tapped) {
       tapped = false;

@@ -20,7 +20,7 @@ import { showEnding } from './ui/ending.js';
 import { showBriefing } from './ui/briefing.js';
 import { openTitle } from './ui/title.js';
 import { COLD_OPEN } from './data/briefing.js';
-import { ALERT_COACH } from './data/tutorial.js';
+import { ALERT_COACH, REPORT_COACH } from './data/tutorial.js';
 import { startTutorial } from './ui/tutorial.js';
 
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
@@ -346,7 +346,11 @@ async function main() {
       // window would be shown the whole thing again on the way back in.
       onPersist: () => autosave.saveNow('tutorial'),
       onEnd: (completed) => {
-        if (completed) armAlertCoach();
+        // Both of the things the guide could not point at, armed together.
+        // Neither writes a flag: they are offered to somebody who has just
+        // finished the guide, in the session they finished it in, so there is
+        // nothing to migrate and nothing to show a silo on day 200.
+        if (completed) { armAlertCoach(); armReportCoach(); }
       },
     });
     window.DEEPWATER.tutorial = tutorial;
@@ -364,12 +368,49 @@ async function main() {
    */
   function armAlertCoach() {
     const disarm = on('alert', () => {
-      disarm();
-      // One frame, so the card the coach is about is in the document.
-      requestAnimationFrame(() =>
-        startTutorial({ store, shell, steps: ALERT_COACH, persist: false, label: 'The silo' })
-      );
+      // One frame, so the card the coach is about is in the document. Disarmed
+      // only once it has actually started: `startCoach` refuses while another
+      // coach is up, and an alert that arrives during the shift-report card
+      // must be waited for again rather than silently spent.
+      requestAnimationFrame(() => {
+        if (startCoach(ALERT_COACH)) disarm();
+      });
     });
+  }
+
+  /**
+   * The other lesson that cannot be given in advance.
+   *
+   * The shift report is a bar under the standing order that does not exist
+   * until a shift ends with something in it, and the room the guide has just
+   * had the player order does not report until it comes online — measured,
+   * three shifts, four and a half minutes at 1×. So this watches for the line
+   * rather than guessing at a delay, and says one sentence the moment it is
+   * there to point at. Polled rather than evented: the bar's visibility is a
+   * render decision (`renderChangeLine` weighs staleness and unread count),
+   * and asking the document is the only thing that cannot disagree with it.
+   */
+  function armReportCoach() {
+    const timer = setInterval(() => {
+      const bar = document.getElementById('change-line');
+      if (!bar || bar.hidden || !bar.getClientRects().length) return;
+      if (startCoach(REPORT_COACH)) clearInterval(timer);
+    }, 1000);
+  }
+
+  /**
+   * One coach at a time. Two cards pointing at different corners of the same
+   * screen is not twice the guidance, and the second would be drawn by the
+   * same overlay as the first.
+   */
+  let coachRunning = null;
+  function startCoach(steps) {
+    if (coachRunning) return false;
+    coachRunning = startTutorial({
+      store, shell, steps, persist: false, label: 'The silo',
+      onEnd: () => { coachRunning = null; },
+    });
+    return !!coachRunning;
   }
 
   // Settings ⚙ can run it again. The guide is eight minutes of the game's
