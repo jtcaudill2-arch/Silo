@@ -288,6 +288,13 @@ export function autopilot(state) {
   }
   if (powerHeadroom < 0.25) wants.push('generator_hall');
   if (count('laboratory') === 0 && scrapIncome > 3) wants.push('laboratory');
+  // A squad and nowhere to train it. The standing order asks for this at 47
+  // whenever a garrison is green and there is no yard, and until it existed
+  // nothing in the game had ever caused one to be built — measured, zero
+  // Training Yards across every campaign this file has ever run.
+  if (state.military.squadIds.length && count('training_yard') === 0) {
+    wants.push('training_yard');
+  }
 
   // Everything else waits until nothing is on fire and there's a reserve
   // left over. Spending the last of the scrap on an Archive while the water
@@ -568,6 +575,35 @@ function runSurface(state) {
   const cap = airlockCapacity(state);
   const target = Math.min(BAL.military.squadMax, Math.max(BAL.military.squadMin, cap));
   const members = squadMembers(state, squadId);
+
+  // Green squads train before they do anything else.
+  //
+  // This file is meant to be a competent player, and a competent player now
+  // has a standing order telling them to — `directives.js` raises `train` at
+  // 54 whenever a garrison is below `trainedEnough` and a Training Yard is
+  // standing empty. Without this the autopilot never pressed the assignment
+  // button, which is exactly how the game came to have one soldier in a silo
+  // of 223, and how twenty-one measured raids produced no defensible fight.
+  //
+  // It switches back to garrison the moment the squad is trained, so training
+  // is a phase rather than a state: four people on the range are four people
+  // not earning, and a bot that stayed there for ever would be measuring a
+  // different game from the one a player plays.
+  if (members.length >= BAL.military.squadMin) {
+    const mean = members.reduce((a, c) => a + (c.skills?.combat || 0), 0) / members.length;
+    const yard = Object.values(state.silo.rooms).some(
+      (r) => getRoom(r.type)?.provides?.training && r.powered && r.buildingUntilCycle === 0
+    );
+    const green = mean < BAL.military.trainedEnough;
+    if (yard && green && squad.assignment !== 'training') {
+      return [{ type: 'SQUAD_PATCH', id: squadId, patch: { assignment: 'training' } }];
+    }
+    if (!green && squad.assignment === 'training') {
+      actions.push({ type: 'SQUAD_PATCH', id: squadId, patch: { assignment: 'garrison' } });
+    }
+    // Still on the range: nothing goes outside until it is finished.
+    if (yard && green) return actions;
+  }
 
   if (members.length < target) {
     const candidate = employableCitizens(state)

@@ -44,6 +44,33 @@ export const CRISES = {
     id: 'raider_probe',
     name: 'Raider probe',
     atMinutes: 300,
+    /**
+     * Waits for a silo that can put somebody on the airlock.
+     *
+     * 300 minutes is day 25, and the Squads panel is earned on day 26, 33 and
+     * 47 across the three seeds this project measures on — so on every one of
+     * them the game's own teaching raid arrived before the player was allowed
+     * a squad, and its advice line ("Put somebody on the airlock before
+     * tomorrow") named a thing they could not do. Measured across three
+     * campaigns: 0 defenders, every time.
+     *
+     * The scrapper band it sends is the weakest in the game and is meant to be
+     * turned away by anybody at all — recomputed with a garrison present, the
+     * forecast reads 7.4 to 8.4, which is "they will not get through this".
+     * That is the lesson it was written to teach, and this is the clause that
+     * lets it.
+     *
+     * A *crewed squad*, not merely the Squads panel. `unlocked(state,
+     * 'military')` is the gate `sim/diplomacy.js` puts on emergent raids and
+     * it is the right one there — it means "you have the means, and leaving
+     * the door open is now your decision". It is not enough here: on seed
+     * 0x1234 the panel is earned on day 26 and this fired the same day, which
+     * left one grace day to form a squad, crew it and put it on the airlock.
+     * A scripted lesson has to be learnable on the day it arrives, so it waits
+     * for the thing the lesson is about to exist.
+     */
+    requires: (s) =>
+      (s.military?.squadIds || []).some((id) => (s.military.squads[id]?.members || []).length > 0),
     headline: 'Somebody is at the airlock',
     text:
       'Four of them, maybe five, working at the outer door with a cutting torch and no ' +

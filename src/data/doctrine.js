@@ -103,7 +103,7 @@ export const NODES = {
   // ---- III. Door ----------------------------------------------------------
   muster: {
     id: 'muster', name: 'Muster', doctrine: 'door', rank: 1, cost: 12, excludes: 'cache',
-    desc: 'The alarm reaches the whole silo. Anyone who has been outside and lived picks up a rifle, squad or no squad.',
+    desc: 'The alarm reaches the whole silo. Anyone who has been outside and lived, or been trained to fight, picks up a rifle — squad or no squad.',
     effect: { musterVeterans: true },
     proves: 'defenders',
   },

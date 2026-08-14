@@ -1036,6 +1036,20 @@ export const BAL = {
     maxSquads: 6,
     trainingSkillPerDay: 1.5,
     trainingAmmoPerDay: 2,
+    // The combat skill at which a garrison stops being four people standing in
+    // a corridor. Below it, `directives.js` raises a standing order to train,
+    // because nothing else in the game ever mentions that the Training Yard or
+    // the training assignment exist — measured, a 223-person silo fifty
+    // expeditions deep had exactly one person above 40.
+    //
+    // 40 rather than a rounder number because it is where the raid table above
+    // starts to bend: it is roughly the skill at which four defenders on home
+    // ground stop losing to Dust Runners, which is the second of the four
+    // bands and the first one a peaceful silo is likely to meet. Reaching it
+    // from a green squad is about twenty days of training at 1.5 a day, which
+    // is a real commitment of ammunition and of four people who are then not
+    // outside earning.
+    trainedEnough: 40,
     barracksFoodPerSoldierPerDay: 0.4,
     garrisonOrderBonusPerSquad: 2.5,
     readinessWeights: { training: 0.3, equipment: 0.3, health: 0.2, morale: 0.1, ammo: 0.1 },

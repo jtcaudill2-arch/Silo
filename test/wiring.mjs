@@ -72,7 +72,7 @@ import { ammoFactor } from '../src/sim/combat.js';
 import { squadCap } from '../src/sim/military.js';
 import { caretakerDay } from '../src/sim/caretaker.js';
 import { runCatchup } from '../src/core/catchup.js';
-import { CRISIS_LIST } from '../src/data/events.js';
+import { CRISIS_LIST, CRISES } from '../src/data/events.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
 import { drawCitizen as drawCitizenArt, W as CW, H as CH } from '../tools/art/citizens.mjs';
 import { PAL } from '../tools/art/lib.mjs';
@@ -1392,6 +1392,12 @@ console.log('');
     const silo = s.world.silos[5];
     silo.contact = 'radio';
     silo.reputation = BAL.diplomacy.raidGrudgeReputation - 50;
+    // A crewed squad, because nobody raids a silo that cannot answer the door
+    // — see the gate in sim/diplomacy.js. This fixture is about the conquest
+    // clause, not about that gate, so it gives the silo a garrison and holds
+    // the rest of the question still.
+    s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
     silo.treaties = [];
     mutate(s, silo);
     let queued = 0;
@@ -1861,6 +1867,12 @@ console.log('');
     const silo = s.world.silos[5];
     silo.contact = 'radio';
     silo.reputation = BAL.diplomacy.raidGrudgeReputation - 50;
+    // A crewed squad, because nobody raids a silo that cannot answer the door
+    // — see the gate in sim/diplomacy.js. This fixture is about the treaty
+    // clause, not about that gate, so it gives the silo a garrison and holds
+    // the rest of the question still.
+    s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
     silo.treaties = treaties;
     let n = 0;
     for (let d = 0; d < 400; d++) {
@@ -5095,6 +5107,130 @@ console.log('');
   if (bad.length) fail(bad.join('; '));
   else ok(`and each of the ${TUTORIAL.length + ALERT_COACH.length + REPORT_COACH.length} cards ` +
     'points at a real control and can be finished by using it');
+}
+
+// ---- 63. the door is worth standing at --------------------------------------
+//
+// Measured over three full campaigns before this: twenty-one raids, and the
+// best forecast the player was ever offered was 0.9 — "too close". Not one was
+// winnable, so three of the forecast's five verdicts ("they will not get
+// through this", "the door should hold", "it should hold and it will cost
+// people") had never been shown to anybody.
+//
+// The cause was not raid strength. balance.js's own table says four defenders
+// with tier-1 kit turn back Scrappers forty times out of forty. What actually
+// met every raid was four *untrained* people, because the Training Yard and
+// the training assignment were named by nothing in the game — a silo of 223
+// with fifty expeditions behind it had one person above combat 40.
+{
+  // (a) Nobody raids a silo that cannot answer the door.
+  {
+    const s = newStore(4242).state;
+    const silo = s.world.silos[5];
+    silo.contact = 'radio';
+    silo.reputation = BAL.diplomacy.raidGrudgeReputation - 50;
+    silo.treaties = [];
+    const queued = () => {
+      let n = 0;
+      for (let d = 0; d < 300; d++) {
+        s.clock.day = d;
+        for (const a of diploTick(s)) {
+          if (a.type === 'WORLD_EVENT_QUEUE' && a.event?.kind === 'raid') n++;
+        }
+      }
+      return n;
+    };
+    const defenceless = queued();
+    s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
+    const armed = queued();
+    if (defenceless > 0) {
+      fail(`${defenceless} raids queued against a silo with no squad and no armoury — the first ` +
+        'raid of every measured campaign landed on day 26 with nothing to meet it');
+    } else if (armed === 0) {
+      fail('gating raids on the military unlock turned raids off entirely');
+    } else {
+      ok(`raids wait for a silo that can answer: 0 against a defenceless one, ${armed} once it can`);
+    }
+  }
+
+  // (b) The teaching raid waits for the thing it is teaching about.
+  {
+    const probe = CRISES.raider_probe;
+    const s = newStore(4243).state;
+    if (!probe?.requires) {
+      fail('the raider probe has no `requires`, so it fires on the clock alone — measured, that ' +
+        'is day 25, before any campaign has a squad');
+    } else if (probe.requires(s)) {
+      fail('the raider probe would fire at a silo with no squad, and its own advice line says ' +
+        '"put somebody on the airlock"');
+    } else {
+      s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+      s.military.squadIds = [1];
+      if (!probe.requires(s)) fail('the raider probe never fires even once there is a squad');
+      else ok('and the scripted probe waits for a crewed squad, so its own advice can be followed');
+    }
+  }
+
+  // (c) A green garrison is told to train, and a trained one wins the fight
+  //     the green one lost. Same silo, same raid, one difference.
+  {
+    const s = newStore(4244).state;
+    s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 6), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
+    for (const id of s.military.squads[1].members) s.citizens[id].skills.combat = 5;
+    // A yard, so the order is "train" rather than "build one".
+    const donor = Object.values(s.silo.rooms)[0];
+    s.silo.rooms.test_yard = { ...donor, id: 'test_yard', type: 'training_yard', powered: true, buildingUntilCycle: 0, staff: [] };
+
+    const green = (directives(s) || []).map((d) => d.id);
+    const forecastGreen = raid.forecast(s, 0.25).ratio;
+    for (const id of s.military.squads[1].members) {
+      s.citizens[id].skills.combat = BAL.military.trainedEnough + 5;
+    }
+    const trained = (directives(s) || []).map((d) => d.id);
+    const forecastTrained = raid.forecast(s, 0.25).ratio;
+
+    if (!green.includes('train')) {
+      fail('a garrison averaging 5 combat next to an empty Training Yard raises no order — the ' +
+        'one thing in the game that makes soldiers is still named by nothing');
+    } else if (trained.includes('train')) {
+      fail('the training order keeps firing at a squad that is already trained');
+    } else if (!(forecastTrained > forecastGreen * 1.5)) {
+      fail(`training a garrison barely moves the odds (${forecastGreen.toFixed(2)} → ` +
+        `${forecastTrained.toFixed(2)}), so the order it raises is not worth following`);
+    } else {
+      ok(`a green garrison is told to train, and training it takes a scrapper raid from ` +
+        `${forecastGreen.toFixed(2)} to ${forecastTrained.toFixed(2)} — the top of the forecast is ` +
+        'reachable at last');
+    }
+  }
+
+  // (d) Muster changes the defender pool. It counted the `veteran` trait
+  //     alone, and forcing it on across twenty-one measured raids changed the
+  //     odds on exactly none of them.
+  {
+    const s = newStore(4245).state;
+    s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+    s.military.squadIds = [1];
+    // Six trained people who are not in the squad — exactly what a silo that
+    // has rotated people through a Training Yard looks like.
+    for (const id of s.citizenIds.slice(6, 12)) {
+      s.citizens[id].skills.combat = BAL.military.trainedEnough + 10;
+      s.citizens[id].age = Math.max(s.citizens[id].age, BAL.citizens.workingAgeMin + 1);
+      s.citizens[id].status = 'idle';
+    }
+    s.doctrine = { points: 0, earned: 0, taken: [], frontier: 0 };
+    const without = raid.defenders(s).length;
+    s.doctrine.taken = ['muster'];
+    const withMuster = raid.defenders(s).length;
+    if (withMuster <= without) {
+      fail(`Muster turns out ${withMuster} against ${without} without it — the node costs 12 ` +
+        'commendations and changes nothing');
+    } else {
+      ok(`and Muster is worth its 12 commendations: ${without} at the door becomes ${withMuster}`);
+    }
+  }
 }
 
 function readSource(rel) {

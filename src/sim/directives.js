@@ -941,6 +941,69 @@ export function directives(state) {
     });
   }
 
+  // ---- a silo with no soldiers in it ---------------------------------------
+  //
+  // The Training Yard is the only thing in the game that grows combat skill,
+  // and nothing had ever mentioned it. Measured on two 400-day campaigns: a
+  // silo of 223 people, fifty expeditions returned, and **one person** above
+  // combat 40. `assignment: 'training'` is a button on the Squads panel that
+  // no order, no unlock and no tutorial step has ever named, and the autopilot
+  // — which plays the game as well as anything does — never once pressed it.
+  //
+  // That is what makes the door indefensible. balance.js's own raid table says
+  // four defenders with tier-1 kit turn back Scrappers 40 times out of 40 and
+  // eight with tier-3 kit turn back a Warband 27 of 40; what actually shows up
+  // to every raid is four untrained bodies, so across three campaigns and
+  // twenty-one raids the best forecast the player was ever offered was 0.9 —
+  // "too close" — and three of the forecast's five verdicts have never been
+  // seen by anybody. The raids were not too strong. The silo had no soldiers.
+  {
+    const M = BAL.military;
+    const squads = state.military?.squadIds || [];
+    const home = squads.filter((id) => {
+      const sq = state.military.squads[id];
+      return sq && !sq.deployed && (sq.members || []).length;
+    });
+    const members = home.flatMap((id) =>
+      (state.military.squads[id].members || []).map((cid) => state.citizens[cid]).filter(Boolean)
+    );
+    if (members.length) {
+      const mean = members.reduce((a, c) => a + (c.skills?.combat || 0), 0) / members.length;
+      const yard = Object.values(state.silo.rooms).some(
+        (r) => getRoom(r.type)?.provides?.training && inService(r)
+      );
+      const training = home.some((id) => state.military.squads[id].assignment === 'training');
+      // Untrained enough that the door is a formality. Above this the squad is
+      // a real garrison and what to do with it is the player's business.
+      if (mean < M.trainedEnough && !training) {
+        if (!yard) {
+          add({
+            id: 'training_yard',
+            text: 'Build a Training Yard',
+            room: 'training_yard',
+            why:
+              `Your squad averages ${Math.round(mean)} combat. Nothing else in the silo raises that, ` +
+              'and a raid met by untrained people is a raid you lose whoever is standing there.',
+            panel: 'build',
+            weight: 47,
+          });
+        } else {
+          const days = Math.ceil((M.trainedEnough - mean) / Math.max(0.01, M.trainingSkillPerDay));
+          add({
+            id: 'train',
+            text: 'Put a squad on training',
+            why:
+              `Your garrison averages ${Math.round(mean)} combat and the Training Yard is standing ` +
+              `empty. About ${days} day${days === 1 ? '' : 's'} of it, paid in ammunition, is the ` +
+              'difference between holding the airlock and reading about it afterwards.',
+            panel: 'military',
+            weight: 54,
+          });
+        }
+      }
+    }
+  }
+
   // ---- kit nobody is carrying ---------------------------------------------
   //
   // Looted gear arrives unassigned and stays that way. `equipBest` is the only

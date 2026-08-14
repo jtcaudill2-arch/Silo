@@ -198,13 +198,27 @@ for (const c of CRISIS_LIST) {
   const day = crisisDays[c.id];
   const expectDay = Math.round(minutesToDays(c.atMinutes));
   console.log(
-    `  ${c.name.padEnd(20)} ${(day === undefined ? '—' : `d${day}`).padEnd(8)} scheduled d${expectDay}`
+    `  ${c.name.padEnd(20)} ${(day === undefined ? '—' : `d${day}`).padEnd(8)} scheduled d${expectDay}` +
+      (c.requires ? '  (gated)' : '')
   );
   if (day === undefined && DAYS >= expectDay + 3) {
     fail(`the ${c.name} crisis never fired, though it was due on day ${expectDay}`);
-  } else if (day !== undefined && Math.abs(day - expectDay) > 4) {
+  } else if (day === undefined) {
+    // Due after the window this run covers. Nothing to say.
+  } else if (day < expectDay) {
+    fail(`the ${c.name} crisis fired on day ${day}, ahead of its scheduled ${expectDay}`);
+  } else if (!c.requires && day - expectDay > 4) {
     fail(`the ${c.name} crisis fired on day ${day}, scheduled for ${expectDay}`);
   }
+  // A crisis with `requires` is allowed to be late, and that is the whole
+  // point of the field: it waits for the silo to be in a state where the
+  // crisis means something. The Raider probe is the clearest case — it is
+  // scheduled for day 25 and now waits for a crewed squad, because its own
+  // advice line is "put somebody on the airlock" and across three measured
+  // campaigns it fired on day 25 to a silo that had nobody to put there.
+  // Holding a gated crisis to a ±4 day window asserts the opposite of what
+  // the gate is for; what still has to be true is that it never fires *early*
+  // and that it fires at all, and both are checked above.
 }
 
 console.log('');

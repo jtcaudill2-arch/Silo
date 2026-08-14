@@ -138,18 +138,31 @@ export function defenders(state) {
       }
     }
   }
-  // Muster: everyone who has been outside and come back turns out, squad or
-  // no squad. `veteran` is granted on an expedition's return (reducers.js), so
-  // this is exactly "has been through the airlock and lived" — a pool that
-  // grows on its own as the silo runs expeditions, and one a player who keeps
-  // rotating people through the door builds without meaning to.
+  // Muster: anyone who can hold a rifle turns out, squad or no squad.
+  //
+  // This counted the `veteran` trait alone, and the trait is granted on an
+  // expedition's return — which sounded like "a pool that grows on its own as
+  // the silo runs expeditions". It does not. The same squad runs every
+  // expedition, so measured at day 400 a silo of 223 people with fifty
+  // expeditions returned had **three** veterans, and at raid time they were
+  // either outside or already counted as the squad. Recomputed across
+  // twenty-one raids on three campaigns, forcing this doctrine on changed the
+  // odds by exactly nothing, on every one of them.
+  //
+  // So it also takes anyone trained to fight. That is the same idea the node's
+  // own line describes — you need to know how to use the rifle you pick up —
+  // and it is a pool the player can actually grow, now that there is a
+  // standing order pointing at the Training Yard. It stays bounded: only squad
+  // members train, so this is everyone who has ever served in a trained squad
+  // and is still in the silo, not everyone who lives here.
   if (doctrineFlag(state, 'musterVeterans')) {
     for (const cid of state.citizenIds) {
       const c = state.citizens[cid];
       if (!c || seen.has(cid)) continue;
       if (c.status === 'dead' || c.status === 'expedition') continue;
       if (c.age < BAL.citizens.workingAgeMin) continue;
-      if (!c.traits.includes('veteran')) continue;
+      const trained = (c.skills?.combat || 0) >= BAL.military.trainedEnough;
+      if (!c.traits.includes('veteran') && !trained) continue;
       seen.add(cid);
       out.push(cid);
     }

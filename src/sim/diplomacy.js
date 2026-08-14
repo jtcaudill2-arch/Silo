@@ -13,6 +13,7 @@ import { streamFor } from '../core/rng.js';
 import { siloDef, ARCHETYPES, PLAYER_SILO_ID } from '../data/silos.js';
 import { playerPower, specialtyResource, inRange } from './world.js';
 import { readySquads } from './military.js';
+import { unlocked } from './unlocks.js';
 
 const D = BAL.diplomacy;
 
@@ -469,7 +470,31 @@ export function simulateTick(state) {
   const fat = me.economy >= D.raidTemptEconomy;
   const soft = me.military <= D.raidTemptMilitary;
   const opportunity = fat && soft;
-  for (const silo of Object.values(state.world.silos)) {
+  // Nobody raids a silo that cannot answer the door.
+  //
+  // The comment above has said since Phase 6 that a raid landing "before the
+  // player can have formed a squad is a mechanic the player never gets to
+  // use", and nothing enforced it. Measured on three campaigns, all three
+  // took their first raid on **day 26**, with `squadIds.length === 0` — the
+  // Squads panel had not been earned yet on any of them. That is stores and
+  // people lost to a fight that was unanswerable by construction.
+  //
+  // The gate is "can have a squad", not "has one". Gating on having one would
+  // mean a player who never forms a squad is never raided, which turns the
+  // whole threat off for exactly the people it is aimed at; gating on the
+  // Squads panel being earned means the means exist, and leaving the door open
+  // is then a decision rather than an ambush.
+  //
+  // No settling window on top, and none is needed: the event is queued for
+  // `day + 2..5` and `raid.graceDays` adds another, so the earliest a raid can
+  // land is three days after the silo could first have crewed a squad, and the
+  // latest is six. That is the runway, and it is already here.
+  //
+  // A guard on the loop, not a return: everything below it still has to run.
+  // Returning here skipped the `MEMORY_DECAY` push at the end of this
+  // function, so every silo in the world remembered every slight for ever —
+  // caught by test/world.mjs, which says so in one line.
+  for (const silo of unlocked(state, 'military') ? Object.values(state.world.silos) : []) {
     if (silo.id === PLAYER_SILO_ID) continue;
     if (silo.status === 'collapsed') continue;
     // A silo you have taken does not put a raiding party on your airlock.
