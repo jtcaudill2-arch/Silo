@@ -5476,6 +5476,11 @@ const ERRAND_ROOM = {
   // a bunk on it, so a return leg is checked too rather than waved through —
   // which keeps half the journeys in the game inside this assertion.
   home: ['residences', 'cafeteria'],
+  // `post` is deliberately absent: a worker walking back to their post is
+  // checked against *their own room* below rather than against a list of room
+  // types, which is the stronger claim and the only one that means anything —
+  // "arrives at a floor with some generator hall on it" would pass for a
+  // mechanic heading to the wrong generator hall.
 };
 
 // ---- 66. a hundred and forty-four floors with traffic between them ----------
@@ -5505,6 +5510,8 @@ const ERRAND_ROOM = {
     const ys = new Map();
     const purposes = new Map();
     const wrongRoom = [];
+    const posted = new Set();
+    const postedPurpose = new Set();
     let seen = 0;
     let drawn = 0;
     let outside = 0;
@@ -5521,18 +5528,26 @@ const ERRAND_ROOM = {
         if (!ys.has(p.c.id)) ys.set(p.c.id, []);
         ys.get(p.c.id).push(p.y);
         purposes.set(p.purpose, (purposes.get(p.purpose) || 0) + 1);
+        if (p.c.job) { posted.add(p.c.id); postedPurpose.add(p.purpose); }
         // The journey has to arrive somewhere that justifies it. This is the
         // whole difference between traffic and a screensaver: a destination
         // picked at random looks identical in a screenshot and means nothing.
-        const want = ERRAND_ROOM[p.purpose];
-        if (want && !want.some((type) => Object.values(s.silo.rooms)
-          .some((r) => r.type === type && r.floor === p.to))) {
-          wrongRoom.push(`${p.purpose} → floor ${p.to}`);
+        if (p.purpose === 'post') {
+          const own = p.c.job ? s.silo.rooms[p.c.job.roomId] : null;
+          if (!own || own.floor !== p.to) {
+            wrongRoom.push(`post → floor ${p.to}, but their post is on ${own ? own.floor : 'nowhere'}`);
+          }
+        } else {
+          const want = ERRAND_ROOM[p.purpose];
+          if (want && !want.some((type) => Object.values(s.silo.rooms)
+            .some((r) => r.type === type && r.floor === p.to))) {
+            wrongRoom.push(`${p.purpose} → floor ${p.to}`);
+          }
         }
       }
     }
     const climbs = [...ys.values()].map((v) => Math.max(...v) - Math.min(...v));
-    return { seen, drawn, people: ys.size, climbs, outside, frames: 201, purposes, wrongRoom };
+    return { seen, drawn, people: ys.size, climbs, outside, frames: 201, purposes, wrongRoom, posted, postedPurpose };
   };
 
   // Across the day, not at one shift. Night sends everybody to a bunk and a
@@ -5543,6 +5558,8 @@ const ERRAND_ROOM = {
   const live = { seen: 0, frames: 0, people: 0, climbs: [], outside: 0 };
   const purposes = new Map();
   const wrongRoom = [];
+  const posted = new Set();
+  const postedPurpose = new Set();
   for (const shift of shifts) {
     s.clock.shift = shift;
     const r = sweep();
@@ -5550,7 +5567,33 @@ const ERRAND_ROOM = {
     live.climbs.push(...r.climbs); live.outside += r.outside;
     for (const [k, v] of r.purposes) purposes.set(k, (purposes.get(k) || 0) + v);
     for (const w of r.wrongRoom) wrongRoom.push(w);
+    for (const id of r.posted) posted.add(id);
+    for (const w of r.postedPurpose) postedPurpose.add(w);
   }
+  // And the same question again with the canteen taken away.
+  //
+  // A posted worker's errands are the clinic, a bunk at night, and the mess.
+  // The mess rung covers every ordinary case, so the clause that stops them
+  // falling through to the off-shift wander only bites in a silo that has no
+  // cafeteria at all — which is a real silo, and the one where the wander would
+  // send mechanics to the residences. Without this the clause can be deleted
+  // and nothing notices.
+  const messless = new Set();
+  {
+    const saved = {};
+    for (const [id, r] of Object.entries(s.silo.rooms)) {
+      if (r.type === 'cafeteria') { saved[id] = r; delete s.silo.rooms[id]; }
+    }
+    // `floorsWith` caches per cycle, so the cache has to be stepped past.
+    s.clock.cycle += 1;
+    for (const shift of shifts) {
+      s.clock.shift = shift;
+      for (const w of sweep().postedPurpose) messless.add(w);
+    }
+    Object.assign(s.silo.rooms, saved);
+    s.clock.cycle += 1;
+  }
+
   const perFrame = live.seen / live.frames;
   const moved = live.climbs.filter((r) => r >= FLOOR_H).length;
   if (!live.people) {
@@ -5568,6 +5611,30 @@ const ERRAND_ROOM = {
   } else if (live.outside) {
     fail(`${live.outside} sprites are drawn through a shaft wall — the lane spread has to leave ` +
       'half a body either side');
+  } else if (!posted.size) {
+    // The stair used to be a school run and nothing else.
+    //
+    // `citizensInView` bucketed by floor and only offered a journey to somebody
+    // with no post, which in a silo at full employment means children.
+    // Measured over sixteen hundred frames of a day-150 silo: thirty-two people
+    // used the stair, one of them was an adult, none of them held a post, and
+    // the only two errands the whole silo ever ran were `school` and the walk
+    // home from it. A hundred and forty-four floors of building, and the only
+    // traffic between them was somebody else's kids.
+    fail('nobody who holds a post ever uses the stair — the shaft carries the school run and ' +
+      'nothing else, which is what a silo at full employment looks like from the outside');
+  } else if (messless.has('off shift')) {
+    fail('with no cafeteria in the silo, somebody at a post walks to the residences instead — a ' +
+      'worker with nowhere to go on a break stays in their bay');
+  } else if (postedPurpose.has('off shift')) {
+    // Every worker on the steps has to be going somewhere nameable. `off shift`
+    // is the fallback errand — by far the most common branch — and admitting
+    // the posted to it does two bad things at once: it reads as a mechanic
+    // walking out of a running generator hall to loiter in the residences, and
+    // because it is the common branch it would take a large slice of the
+    // workforce off its posts to do it.
+    fail('somebody at a post is on the stair with nowhere in particular to be — a worker leaves ' +
+      'their bay because they are hurt, hungry or off for the night, and otherwise stays in it');
   } else {
     const med = live.climbs.sort((a, b) => a - b)[Math.floor(live.climbs.length / 2)];
     ok(`the stair carries people: ${perFrame.toFixed(1)} on it in an average frame, ` +

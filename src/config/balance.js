@@ -1848,6 +1848,20 @@ export const BAL = {
     // run, each covering a median of eleven floors. That is one person every
     // couple of landings — traffic rather than a procession.
     stairTravellerFraction: 0.1,
+    // And the share for somebody who is posted, which has to be much smaller.
+    //
+    // A silo at full employment has almost nobody off shift — measured over
+    // eight hundred frames of a day-150 silo, sixteen people used the stair,
+    // one was an adult and none held a post — so a hundred and forty-four
+    // floors of building had the school run and nothing else moving between
+    // them. Letting workers travel is what fills the shaft; the fraction is
+    // what stops it emptying the rooms.
+    //
+    // 0.03 against 0.1: three workers in a hundred are between floors at any
+    // instant, which reads as a building with people going about their day and
+    // leaves the bays at ninety-seven per cent of what they were. The rooms
+    // are the point; the stair is the seasoning.
+    postedTravellerFraction: 0.03,
     // How long one journey takes, end to end, in seconds. Long enough to see
     // somebody arrive, short enough that the shaft is never the same two
     // people for a minute.

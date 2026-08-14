@@ -77,8 +77,13 @@ export function citizensInView(state, cam) {
     if (!c || c.status === 'dead' || c.status === 'expedition') continue;
     const room = c.job ? state.silo.rooms[c.job.roomId] : null;
     const floorN = room ? room.floor : idleFloor(state, c);
-    if (!room && !reduced) {
-      const trip = journey(state, c, t, floorN, night);
+    // Posted or not. This read `!room` and so only ever put the jobless on the
+    // steps, which in a silo at full employment means children: measured over
+    // eight hundred frames of a day-150 silo, sixteen people used the stair, one
+    // of them was an adult and none of them held a post. A hundred and forty-four
+    // floors of building, and the only traffic between them was the school run.
+    if (!reduced) {
+      const trip = journey(state, c, t, floorN, night, !!room);
       if (trip) {
         // World y, not floor y: they are on the steps between two landings.
         const ty = (trip.floor - 1) * FLOOR_H + FLOOR_H - 6;
@@ -232,9 +237,14 @@ export function citizensInView(state, cam) {
  * other floor is drawn from the id and the cycle number, which is what stops
  * one person shuttling between the same two levels for six hundred days.
  */
-function journey(state, c, t, homeFloor, night) {
+function journey(state, c, t, homeFloor, night, posted = false) {
   const R = BAL.render;
-  const share = R.stairTravellerFraction;
+  // A posted worker walks a much narrower share of the day than somebody off
+  // shift, which is what keeps the rooms full while the stair stops being
+  // empty. It is a share of the *workforce* at any instant, not of the day: at
+  // three per cent, a silo of a hundred workers has three of them on the steps
+  // in a given frame and the other ninety-seven at their posts.
+  const share = posted ? R.postedTravellerFraction : R.stairTravellerFraction;
   if (share <= 0) return null;
 
   const period = R.stairJourneySeconds / share;
@@ -242,7 +252,7 @@ function journey(state, c, t, homeFloor, night) {
   if (at >= share) return null;
 
   const cycle = Math.floor(t / period + hash01(c.id, 2971215073));
-  const errand = errandFor(state, c, night);
+  const errand = errandFor(state, c, night, posted);
   if (!errand) return null;
   // Somewhere with the right room on it, and never the floor they are already
   // stood on — a journey to where you are is a person twitching in a doorway.
@@ -269,7 +279,13 @@ function journey(state, c, t, homeFloor, night) {
   // out from, which is how a check on "does the destination have the room this
   // journey is named for" caught 91 people apparently walking to a bunk on the
   // cafeteria level.
-  return { floor, x: stairX() + lane, purpose: out ? errand.purpose : 'home', to: b };
+  // And what "coming back" means depends on who is walking. Somebody off shift
+  // is going home; somebody who holds a post is going back to it, which is a
+  // different room on a different floor and was reported as `home` for one
+  // measured run — 548 journeys arriving at a generator hall and calling it a
+  // bunk, caught by the same check that caught the first version of this.
+  const back = posted ? 'post' : 'home';
+  return { floor, x: stairX() + lane, purpose: out ? errand.purpose : back, to: b };
 }
 
 /**
@@ -291,12 +307,23 @@ function journey(state, c, t, homeFloor, night) {
  *
  * There was a fifth clause here — go and see your partner — and it is gone
  * because it never once fired. Everyone with a partner in a measured silo has
- * a job, and only people without one are ever on the stair, so the clause was
+ * a job, and only people without one were ever on the stair, so the clause was
  * complete, reasonable, and unreachable: the exact thing the rest of this
- * branch has spent its time deleting. Bringing it back means first giving
- * somebody at a post a reason to leave it.
+ * branch has spent its time deleting. Somebody at a post has a reason to leave
+ * it now, which is the prerequisite that note asked for; a partner errand is
+ * still not back, because it wants a rule about where the partner *is* and
+ * that is a bigger thing than this.
+ *
+ * Somebody who is posted gets the first three rungs and not the fallback. A
+ * person off shift wandering to the mess is what off shift is; a mechanic
+ * leaving a running generator hall to loiter needs a better reason than
+ * nothing, and "hurt, hungry, or the end of the day" is the whole list of
+ * reasons a silo would accept. It also makes the traffic legible in the one
+ * way that matters — every worker on the steps is going somewhere you can
+ * name — and it is what keeps the rooms full: the fallback is by far the most
+ * common branch, so admitting it for the posted would have emptied the bays.
  */
-function errandFor(state, c, night) {
+function errandFor(state, c, night, posted = false) {
   const R = BAL.render;
   const hurt =
     c.health < R.injuredBelowHealth ||
@@ -314,10 +341,25 @@ function errandFor(state, c, night) {
     const f = floorsWith(state, 'residences');
     if (f.length) return { purpose: 'bunk', floors: f };
   }
-  if (c.morale < R.messBelowMorale) {
+  // The canteen: a grievance for somebody off shift, and simply a meal for
+  // somebody who is working. The morale gate is what tells an off-shift drift
+  // towards the mess apart from a drift towards the bunks, and a posted worker
+  // has no such choice to make — the mess is the only place they are going.
+  //
+  // Written as two labels for a moment, `mess` and `a break`, and measured:
+  // every posted worker in a day-150 silo sits between 49 and 54 morale, so the
+  // second was unreachable, and where it *was* reachable it named the same walk
+  // to the same room. One rung, one word.
+  if (posted || c.morale < R.messBelowMorale) {
     const f = floorsWith(state, 'cafeteria');
     if (f.length) return { purpose: 'mess', floors: f };
   }
+  // And nothing further for somebody at a post. Off shift drifting between the
+  // mess and the bunks is what off shift *is*; a mechanic walking out of a
+  // running generator hall to loiter in the residences is a mechanic who should
+  // be sacked. It is also what keeps the bays full — this is by far the most
+  // common branch, so admitting the posted to it would have emptied them.
+  if (posted) return null;
   const f = floorsWith(state, 'cafeteria', 'residences');
   return f.length ? { purpose: 'off shift', floors: f } : null;
 }
