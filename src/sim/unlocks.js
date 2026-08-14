@@ -151,6 +151,11 @@ const researched = (state, id) => (state.research.completed || []).includes(id);
  * @property {string} panel    panel id to reveal
  * @property {(state: object) => boolean} earnedBy  has the silo earned it yet
  * @property {string} why      one sentence, shown while it is still shut
+ * @property {string} [opened] one sentence, said the moment it opens
+ *
+ * `opened` is for a panel that contains something the panel itself does not
+ * advertise. Most do not need it — a new button that says Research is not
+ * mysterious — and where it is absent the arrival line stands on its own.
  */
 
 /**
@@ -198,6 +203,19 @@ export const UNLOCKS = [
      */
     earnedBy: (state) => (state.world.radioTier || 0) > 0 || researched(state, 'radio_range_1'),
     why: 'Research Radio Range I. Silo 12 has been listening for two generations; now you can transmit.',
+    /**
+     * The one panel that hides a whole system inside it.
+     *
+     * Trade and reputation are on the face of a silo's card; the four-stage
+     * conquest ladder is below them, and a player who reads the card as an
+     * address book never scrolls to it. There is a standing order for
+     * conquest, but it waits until a squad can actually walk out on the
+     * approach band, which measures at day 273 and day 465 across two
+     * campaigns — far too late to be the first anyone hears of it. This is
+     * the early half: it costs one sentence and it is said at the only moment
+     * the player is certainly looking at the World panel.
+     */
+    opened: 'Nineteen other silos, and you can trade with them, court them — or take one.',
   },
   {
     id: 'airlock',
@@ -315,6 +333,23 @@ export function lockReason(state, id) {
   const u = BY_ID.get(id);
   if (!u) return null;
   return u.earnedBy(state) ? null : u.why;
+}
+
+/**
+ * What the silo says the moment a system opens.
+ *
+ * Here rather than in the shell because the shell said it twice — once as a
+ * toast and once as a logged line, with the wording drifting between the two
+ * ("on the bar below" against "on the bar at the bottom") — and because a
+ * sentence nothing can call is a sentence nothing can test. `opened` is the
+ * half that says what is *inside* the panel, and without a seam like this
+ * there is no way to assert it is ever read.
+ *
+ * @param {Unlock} u
+ * @param {string} where  how to describe the bar, which differs by surface
+ */
+export function announce(u, where = 'below') {
+  return `${u.label} is open — a new panel on the bar ${where}.${u.opened ? ` ${u.opened}` : ''}`;
 }
 
 /** Ids of everything currently open, in list order. */
@@ -460,5 +495,6 @@ export default {
   lockReason,
   unlockedIds,
   newlyUnlocked,
+  announce,
   liveResourceKeys,
 };

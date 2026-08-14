@@ -45,7 +45,7 @@ import {
   shoreFloor,
 } from '../sim/build.js';
 import { autoAssign } from '../sim/jobs.js';
-import { liveResourceKeys, newlyUnlocked, unlockedIds, lockReason } from '../sim/unlocks.js';
+import { liveResourceKeys, newlyUnlocked, unlockedIds, lockReason, announce } from '../sim/unlocks.js';
 
 /** Resources shown in the top strip, in this order. */
 const STRIP = [
@@ -1476,12 +1476,14 @@ export class Shell {
       // most often while the player is in the panel that caused it. The toast
       // sits directly above the bar it is talking about, and the button it
       // names keeps its mark until the panel has been opened once.
-      toast(`${u.label} is open — a new panel on the bar below.`, 'good');
-      this.recordChange({
-        kind: 'unlock',
-        panel: u.panel,
-        text: `${u.label} is open — a new panel on the bar at the bottom.`,
-      });
+      // `announce` carries the unlock's own `opened` sentence, where it has
+      // one — the part that says what is *inside* the panel. It goes on both
+      // the toast and the logged line on purpose: the toast is the moment,
+      // and the log is where a player who was away reads it, since the return
+      // report shows unlocks under "Finished while you were out" and "World
+      // is open" alone tells them nothing.
+      toast(announce(u), 'good');
+      this.recordChange({ kind: 'unlock', panel: u.panel, text: announce(u, 'at the bottom') });
     }
   }
 

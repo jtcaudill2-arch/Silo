@@ -22,11 +22,16 @@
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
 import { readEnvironment } from './population.js';
+import { NODE_LIST as DOCTRINE_NODES } from '../data/doctrine.js';
+import { canTake as canTakeDoctrine } from './doctrine.js';
 import { available as availableResearch } from './research.js';
 import {
   canBuild, canExcavate, canRepair, canShore, strainedFloors, buildCostFor, describeCost,
 } from './build.js';
 import { staffSlots, inService } from './economy.js';
+import { readySquads } from './military.js';
+import { canLaunch } from './expedition.js';
+import { canLaunchRun } from './conquest.js';
 import { raiderBandFor, defenders as raidDefenders, forecast as raidForecast } from './raid.js';
 import { employableCitizens, openSlots } from './jobs.js';
 import { getResearch } from '../data/research.js';
@@ -934,6 +939,121 @@ export function directives(state) {
       panel: 'military',
       weight: 52,
     });
+  }
+
+  // ---- kit nobody is carrying ---------------------------------------------
+  //
+  // Looted gear arrives unassigned and stays that way. `equipBest` is the only
+  // thing that issues anything and it runs when a squad is formed or equipped,
+  // not when a Rail-Carbine turns up in a crate — so the best weapon in the
+  // game can sit on the rack for the rest of a campaign while the squad that
+  // fought for it carries what it already had.
+  //
+  // This is also the only thing that tells a player the loadout screen exists.
+  // It is reached by tapping a squad member, which is a gesture nothing else
+  // in the game asks for.
+  {
+    const spare = Object.values(state.military?.gear || {}).filter((g) => !g.assignedTo);
+    const looted = spare.filter((g) => g.loot).length;
+    const soldiers = (state.military?.squadIds || []).reduce(
+      (n, id) => n + (state.military.squads[id]?.members?.length || 0), 0
+    );
+    if (looted > 0 && soldiers > 0) {
+      add({
+        id: 'issue_loot',
+        text: 'Issue what you brought back',
+        why:
+          `${looted} piece${looted === 1 ? '' : 's'} of found kit ${looted === 1 ? 'is' : 'are'} on the ` +
+          'rack and nobody is carrying it. Tap a squad member to see what they have and change it.',
+        panel: 'military',
+        weight: 49,
+      });
+    }
+  }
+
+  // ---- doctrine ----------------------------------------------------------
+  //
+  // The talent tree was reachable and unannounced. It lives as a third tab
+  // inside Military, commendations arrive quietly in a log line, and nothing
+  // anywhere told a player it existed — so the most valuable decision in the
+  // late game was one you found by tapping a tab you had no reason to tap.
+  //
+  // This is what the standing order is for. It fires only once there is
+  // something to spend, so it is never an order you cannot follow, and it goes
+  // away the moment the tree is exhausted rather than nagging about a
+  // currency with nowhere left to go.
+  if (state.doctrine && state.doctrine.points > 0) {
+    const affordable = DOCTRINE_NODES.filter((n) => canTakeDoctrine(state, n.id));
+    const cheapest = affordable.sort((a, b) => a.cost - b.cost)[0];
+    if (cheapest) {
+      add({
+        id: 'doctrine',
+        text: `Adopt ${cheapest.name}`,
+        why:
+          `${state.doctrine.points} commendation${state.doctrine.points === 1 ? '' : 's'} unspent. ` +
+          'Doctrine is permanent, and each rank is a choice between two — taking one closes the other.',
+        panel: 'military',
+        weight: 50,
+      });
+    }
+  }
+
+  // ---- the ladder nobody is told about -----------------------------------
+  //
+  // Conquest is four stages, its own module, its own reducer and a drawn
+  // ladder in the World panel, and the only way a player meets it is by
+  // opening a silo's card and scrolling past the trade offers. It is the
+  // largest thing in the game that nothing points at.
+  //
+  // This fires once and retires for good: the moment a single approach run
+  // has gone out, the player has met the system and the World panel carries
+  // it from there. It waits for a run to be launchable *now*, which makes it
+  // late — and that lateness is the system, not the order.
+  //
+  // Measured over two campaigns with every conquest launch suppressed, so the
+  // gate never closes: a crewed squad is standing by on 270 and 405 days, and
+  // of those it can actually go out on the approach band on 43 and 15,
+  // starting day 273 and day 465. The rest is one blocker — 173 and 229 days
+  // of "Silo approach needs tier-3 suits", and on every no-suit day there was
+  // no unassigned suit anywhere in the silo, so there is no issuing hole
+  // hiding behind it. Conquest is a tier-3 system and this is when it opens.
+  //
+  // The obvious alternative was to raise it anyway and name the blocker in
+  // the sentence. Measured against the real order list, that variant leads on
+  // 232 of 270 days and 378 of 405, with unbroken runs of 136 and 167 days as
+  // the headline — the thread would read "Scout Harlow" for four real hours
+  // straight while the answer was a research ladder. Nothing in the UI shows
+  // a directive below the first, so there is no quiet rank to demote it to
+  // either. Saying it early is a job for the unlock announcement, which the
+  // World panel now carries; this stays an order that can be obeyed the day
+  // it appears.
+  if (
+    (state.world?.radioTier || 0) > 0 &&
+    !(state.world.satellites || []).length &&
+    !Object.values(state.world.silos || {}).some((s) => (s.conquest?.scoutRuns || 0) > 0 || s.conquest?.stage)
+  ) {
+    // `readySquads` returns ids, not squads. Getting that wrong is silent —
+    // `canLaunch(state, undefined)` answers "No such squad" and the order
+    // simply never appears — and it cost this one 500 measured days of not
+    // firing once.
+    const squad = readySquads(state).find((id) => canLaunch(state, id, BAL.conquest.band).ok);
+    // The weakest door, since this is the one that teaches the ladder.
+    const target = Object.values(state.world.silos || {})
+      .filter((s) => canLaunchRun(state, s.id).ok)
+      .sort((a, b) => (a.power?.military ?? 40) - (b.power?.military ?? 40))[0];
+    if (squad != null && target) {
+      add({
+        id: 'conquest',
+        text: `Scout ${target.name}`,
+        why:
+          'A silo can be taken, not just traded with. It runs as four expeditions — map them, ' +
+          'undermine them, force the door, hold the floors — and what it leaves you pays ' +
+          `${BAL.conquest.satelliteYieldPerDay} a day of their specialty for as long as you garrison it. ` +
+          'Open their card in the World panel to start it.',
+        panel: 'radio',
+        weight: 48,
+      });
+    }
   }
 
   // ---- steady state ------------------------------------------------------

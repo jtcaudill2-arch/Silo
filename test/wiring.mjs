@@ -57,6 +57,7 @@ import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
 import { getEnemy, ENEMIES } from '../src/data/encounters.js';
+import { UNLOCKS, announce } from '../src/sim/unlocks.js';
 import { canLaunchRun, nextStage, garrisonForce, accumulate, resolveRun as resolveConquestRun, sack as sackSilo } from '../src/sim/conquest.js';
 import { resolve as resolveCombat, unitPower, rollEnemyForce, applyResolution } from '../src/sim/combat.js';
 import { conquestState, simulateTick as diploTick, availableActions } from '../src/sim/diplomacy.js';
@@ -4894,8 +4895,176 @@ console.log('');
   }
 }
 
+// ---- 61. nothing ships unannounced -----------------------------------------
+//
+// The game's answer to "what do I do next" is the standing order, and it is a
+// good one — measured over two 400-day campaigns there is not a single day
+// without one. But a system can be finished, reachable and completely unheard
+// of, and two were: the talent tree lives as a third tab inside Military with
+// commendations arriving in a log line, and the loadout screen is reached by
+// tapping a squad member, which is a gesture nothing else in the game asks
+// for. Neither was mentioned by the tutorial, the standing orders, or the
+// unlock announcements. The most valuable decision in the late game was one
+// you found by tapping a tab you had no reason to tap.
+//
+// So this asserts the property rather than those two: every system a player
+// has to go and find must be named by something that finds them first.
+{
+  // Only the copy counts. Searching the raw files passes on an import line or
+  // a comment — `import { canTake } from './doctrine.js'` would satisfy "the
+  // talent tree is named" while the player is told nothing — so this strips
+  // both and keeps the string literals, which is where every word a player
+  // reads actually lives in these three files.
+  const taught = [
+    '../src/sim/directives.js', '../src/data/tutorial.js', '../src/sim/unlocks.js',
+  ].map((p) => copyIn(readSource(p))).join(' ');
+
+  // Each system, and a phrase that must appear in something that teaches.
+  //
+  // These are deliberately narrower than a keyword. Every loose one here was
+  // matching something else: "carrying" found a floor's load, "order" found a
+  // satellite's morale, and "conquest" found `BAL.conquest.satelliteYieldPerDay`
+  // inside a sentence about something else entirely. If a copy edit breaks one
+  // of these, the question it is asking is a fair one — does the new sentence
+  // still introduce the system? — and the answer is a word, not a deletion.
+  const SYSTEMS = [
+    ['the talent tree', /doctrine|commendation/i],
+    ['the loadout screen', /loadout|tap a squad member|what they have/i],
+    ['expeditions', /expedition|airlock|surface/i],
+    ['squads', /squad/i],
+    ['research', /research|labs/i],
+    ['conquest', /conquer|silo can be taken|or take one/i],
+    ['policies', /polic|verdict|sheriff/i],
+    ['excavation', /excavat|dig/i],
+  ];
+  const silent = SYSTEMS.filter(([, re]) => !re.test(taught)).map(([name]) => name);
+  if (silent.length) {
+    fail(`${silent.join(', ')} is never named by the tutorial, a standing order or an unlock — ` +
+      'a player can only find it by accident');
+  } else {
+    ok(`all ${SYSTEMS.length} systems are named by something that reaches the player first`);
+  }
+
+  // And the two orders that carry the newest systems must actually fire.
+  const store = newStore(313);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 40; d++) {
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  // Plant exactly the conditions each one is for.
+  s.doctrine = { points: 40, earned: 40, taken: [], frontier: 0 };
+  s.military.squads[1] = { id: 1, name: 'A', members: s.citizenIds.slice(0, 4), leaderId: s.citizenIds[0], deployed: false, assignment: 'garrison' };
+  s.military.squadIds = [1];
+  s.military.gear.loot1 = { id: 'loot1', item: 'rail_carbine', kind: 'weapon', durability: 100, integrity: 100, assignedTo: null, loot: true };
+
+  const ids = (directives(s) || []).map((d) => d.id);
+  const missing = ['doctrine', 'issue_loot'].filter((id) => !ids.includes(id));
+  if (missing.length) {
+    fail(`${missing.join(', ')} did not fire with its exact conditions present — the order exists and ` +
+      'never reaches anybody');
+  } else {
+    ok('and unspent commendations and unissued loot each raise a standing order of their own');
+  }
+
+  // Conquest is the third, and it is the one that has to be kitted out rather
+  // than switched on: it waits for a squad that can walk out on the approach
+  // band, which is a working airlock, tier-3 suits on every member and the
+  // supplies for the trip. Planting all of it is the point — the order was
+  // written against `readySquads`, which returns ids and not squads, and with
+  // that one confusion in place it never fired on any of 500 measured days
+  // while every gate above it read as open.
+  s.world.radioTier = Math.max(1, s.world.radioTier || 0);
+  let air = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.provides?.airlock);
+  if (!air) {
+    // Forty days is not long enough to have dug one, so borrow an existing
+    // room's record and re-type it. Cloning rather than hand-writing the
+    // fields means this fixture cannot drift out of shape when a room grows
+    // a new one.
+    const donor = Object.values(s.silo.rooms)[0];
+    air = { ...donor, id: 'test_airlock', type: 'airlock', staff: [] };
+    s.silo.rooms[air.id] = air;
+  }
+  {
+    air.powered = true;
+    air.buildingUntilCycle = 0;
+    air.level = Math.max(air.level, 4);
+    for (const id of s.military.squads[1].members) {
+      const g = `suit_for_${id}`;
+      s.military.gear[g] = { id: g, item: 'suit_3', kind: 'suit', durability: 100, integrity: 100, assignedTo: id };
+      s.citizens[id].gear = { ...(s.citizens[id].gear || {}), suit: g };
+    }
+    for (const k of ['ammo', 'food', 'water', 'meds', 'filters', 'parts']) s.resources[k] = 5000;
+
+    const gate = canLaunch(s, 1, BAL.conquest.band);
+    if (!gate.ok) {
+      fail(`the conquest fixture cannot launch, so the order below proves nothing: ${gate.reason}`);
+    } else if (!(directives(s) || []).some((d) => d.id === 'conquest')) {
+      fail('a squad can walk out on the approach band against an untouched silo and nothing tells ' +
+        'the player conquest exists');
+    } else {
+      // And it retires: one scout run is the whole of "I have met this system".
+      const first = Object.values(s.world.silos).find((x) => canLaunchRun(s, x.id).ok);
+      first.conquest = { stage: 'scout', scoutRuns: 1, undermined: false, defenseMult: 1 };
+      if ((directives(s) || []).some((d) => d.id === 'conquest')) {
+        fail('the conquest order keeps firing after the player has already scouted somebody');
+      } else {
+        ok('and a silo that can reach the approach band is told conquest exists, once, then left alone');
+      }
+    }
+  }
+
+  // The early half of the same story: an unlock that carries an `opened`
+  // sentence has to actually say it. A data field nothing reads is the exact
+  // shape of bug this whole section exists to catch, and this one is load
+  // bearing — it is the only thing that names conquest before day 273.
+  {
+    const carriers = UNLOCKS.filter((u) => u.opened);
+    const dropped = carriers.filter((u) => !announce(u).includes(u.opened));
+    const shell = readSource('../src/ui/shell.js');
+    if (!carriers.length) {
+      fail('no unlock says what is inside its panel, so the World panel introduces nothing');
+    } else if (dropped.length) {
+      fail(`${dropped.map((u) => u.id).join(', ')} carries an 'opened' line that the announcement drops`);
+    } else if (!/announce\(u/.test(shell)) {
+      fail('the shell writes its own unlock announcement instead of calling announce(), so the ' +
+        "'opened' lines never reach a player");
+    } else {
+      ok(`and ${carriers.length === 1 ? 'the one panel' : `each of the ${carriers.length} panels`} ` +
+        `that hides a system (${carriers.map((u) => u.label).join(', ')}) says so on the day it opens`);
+    }
+  }
+}
+
 function readSource(rel) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
+}
+
+/**
+ * The prose of a module: string literals, minus comments, imports and the
+ * single-token strings that are machinery rather than copy.
+ *
+ * The whitespace rule is the important one. Without it `id: 'conquest'`
+ * satisfies "conquest is named to the player" — which it did, and the order
+ * carrying that id does not appear until day 273, so the first two hundred
+ * days of every campaign passed a test asserting they were told. Ids, panel
+ * keys and room types are one token; a sentence a player reads is not.
+ */
+function copyIn(src) {
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^[ \t]*\/\/.*$/gm, ' ')
+    .replace(/^[ \t]*import[\s\S]*?from[ \t]*['"][^'"]*['"];?[ \t]*$/gm, ' ');
+  const lits = code.match(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g) || [];
+  return lits
+    // `${...}` is code wearing a string's clothes. `BAL.conquest.satelliteYieldPerDay`
+    // sits inside a sentence and answered for the word "conquest" all by itself.
+    .map((s) => s.slice(1, -1).replace(/\$\{[^}]*\}/g, ' '))
+    .filter((s) => /\s/.test(s.trim()))
+    .join(' ');
 }
 
 console.log('');
