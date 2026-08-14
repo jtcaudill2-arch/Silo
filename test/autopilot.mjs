@@ -24,7 +24,8 @@ import { readEnvironment } from '../src/sim/population.js';
 import { computeCaps, staffSlots } from '../src/sim/economy.js';
 import { employableCitizens } from '../src/sim/jobs.js';
 import {
-  formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear, getItem,
+  formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear,
+  getItem, readySquads,
 } from '../src/sim/military.js';
 import { canLaunch, launch, launchConquest, airlockCapacity } from '../src/sim/expedition.js';
 import { canLaunchRun } from '../src/sim/conquest.js';
@@ -666,6 +667,44 @@ function runSurface(state) {
   const deconCost = BAL.expedition.decon.filtersPerMember * members.length;
   if (hasChemLab && state.resources.filters < deconCost) return actions;
 
+  // Stand by while a door is open.
+  //
+  // A breach needs `conquest.breachSquadsRequired` squads at home, and this
+  // squad walks to the Scar for ten days at a time. Nothing here knew that, so
+  // the two halves of the surface programme worked against each other: the
+  // conquest party would map a silo, undermine it, come home to force the door
+  // and find itself the only squad in the building — then leave again, and be
+  // out when this one got back. Measured on seed 0xbeef, two squads perfectly
+  // out of phase is the single largest blocker in the whole ladder: 320 days
+  // refused with "Needs 2 squads standing by; 1 are", against 90 refused for
+  // want of pierce and 7 ladders abandoned at the third rung.
+  //
+  // Deliberately judged on `pierceWhenHome` rather than on `breachPierce`,
+  // which is the same mistake in miniature: `breachPierce` averages the squads
+  // that are *ready*, so with the conquest party outside it reads this squad
+  // alone, scores it short, and sends the last squad in the silo out of the
+  // door. The question is whether the force clears the gate once everybody is
+  // back, and that is a question about all of them.
+  //
+  // And only while the wait can end: either the party already carries enough,
+  // or something that would fix it is on the rack or on the bench. A squad kept
+  // indoors for a breach that cannot happen is a squad that has stopped
+  // salvaging for nothing.
+  {
+    const doorOpen = Object.values(state.world.silos).some((x) => x.conquest?.stage === 'breach');
+    const gate = BAL.conquest.breachPierce;
+    const fixable =
+      craftableItems(state).some((i) => i.kind === 'weapon' && (i.stats?.pierce || 0) >= gate) ||
+      unassignedGear(state, 'weapon').some((g) => pierceOfGear(g) >= gate);
+    if (
+      doorOpen &&
+      readySquads(state).length <= BAL.conquest.breachSquadsRequired &&
+      (pierceWhenHome(state) >= gate || fixable)
+    ) {
+      return actions;
+    }
+  }
+
   // Send them out — the furthest band the suits allow. Reward tier rises
   // with distance and the near ruins yield no artifacts at all, so a squad
   // that keeps walking to the same safe rubble is a squad the research tree
@@ -678,6 +717,30 @@ function runSurface(state) {
     }
   }
   return actions;
+}
+
+/** Pierce of a rack entry, 0 for nothing and for anything that is not a weapon. */
+function pierceOfGear(g) {
+  return getItem(g?.item)?.stats?.pierce || 0;
+}
+
+/** What one soldier's weapon would bring to the door. */
+function pierceCarried(state, c) {
+  return pierceOfGear(state.military.gear[c.gear?.weapon]);
+}
+
+/**
+ * Mean pierce over every soldier in every squad, deployed or not.
+ *
+ * `breachPierce` in sim/conquest.js is the gate itself and averages the squads
+ * standing by, which is right for deciding a launch and wrong for deciding
+ * whether to wait: a squad outside is a squad coming back. This is the number
+ * the gate will read once it does.
+ */
+function pierceWhenHome(state) {
+  const all = (state.military?.squadIds || []).flatMap((id) => squadMembers(state, id));
+  if (!all.length) return 0;
+  return all.reduce((a, c) => a + pierceCarried(state, c), 0) / all.length;
 }
 
 /**
@@ -695,6 +758,47 @@ function runSurface(state) {
  */
 function conquer(state) {
   const actions = [];
+
+  // ---- something to open the door with -------------------------------------
+  //
+  // The kitting below ranks on tier and `equipBest` ranks weapons on power,
+  // and the door asks for neither: `canLaunchRun` refuses a breach unless the
+  // ready squads average `conquest.breachPierce` of pierce. A Slag Autogun is
+  // the hardest-hitting weapon in the game and cannot open a tier-4 gate; a
+  // Breaching Carbine hits for two thirds as much and can.
+  //
+  // Nothing here knew that, so a silo pushed to the breach stage stopped being
+  // launchable, dropped out of the target list, and this function went and
+  // scouted the next-weakest silo instead — the ladder climbed to its third
+  // rung over and over and never once to the top. Measured on seed 0xbeef: 63
+  // days refused at the door with the party averaging 1.6 to 2.0 pierce, and
+  // seven silos each mapped, undermined and abandoned.
+  //
+  // The player has been told this since the `breach_kit` standing order went
+  // in. This is that order, in the one player that cannot read it. It runs
+  // before the second-squad checks below on purpose: `breachPierce` is a mean
+  // over every ready squad, so the garrison holds the door shut just as firmly
+  // as the conquest party does, and it is worth arming while the party is out.
+  if (
+    Object.values(state.world.silos).some((x) => x.conquest?.stage === 'breach') &&
+    pierceWhenHome(state) < BAL.conquest.breachPierce
+  ) {
+    // Only people who are here — a soldier six days out on the Scar cannot be
+    // handed a rifle — but judged against `pierceWhenHome`, so arming the
+    // garrison counts towards a gate the conquest party will meet later.
+    const worst = readySquads(state)
+      .flatMap((sid) => squadMembers(state, sid))
+      .sort((a, b) => pierceCarried(state, a) - pierceCarried(state, b))[0];
+    const held = worst ? pierceCarried(state, worst) : 0;
+    const spare = unassignedGear(state, 'weapon').sort((a, b) => pierceOfGear(b) - pierceOfGear(a))[0];
+    if (worst && spare && pierceOfGear(spare) > held) {
+      return [{ type: 'GEAR_ASSIGN', gearId: spare.id, citizenId: worst.id, slot: 'weapon' }];
+    }
+    const bench = craftableItems(state)
+      .filter((i) => i.kind === 'weapon' && (i.stats?.pierce || 0) > held)
+      .sort((a, b) => (b.stats?.pierce || 0) - (a.stats?.pierce || 0))[0];
+    if (bench && canCraft(state, bench.id).ok) return craft(state, bench.id);
+  }
 
   // A second squad, so the surface programme keeps running.
   if (state.military.squadIds.length < 2) {
@@ -744,10 +848,27 @@ function conquer(state) {
     if (members.some((c) => !c.gear?.[kind])) return actions;
   }
 
+  // Finish a ladder before starting another.
+  //
+  // This sorted on military power alone, which reads as "pick the easiest
+  // door" and behaves as "never open one". A silo pushed to the breach stage
+  // stops being launchable the moment any breach clause is unmet — two squads
+  // standing by, charges researched, enough pierce in the party — so it drops
+  // out of this list, the next-weakest silo is still at `scout`, and the
+  // autopilot cheerfully starts again from the bottom. Measured on seed
+  // 0xbeef: twenty-one runs launched across seven different silos, every one
+  // of them scout, undermine, abandon, and not a single silo taken.
+  //
+  // Depth first, then weakness. A campaign is long enough to take several
+  // silos and short enough to take none, and the difference is whether the
+  // runs are spent on one ladder or spread across seven.
+  const STAGE_DEPTH = { scout: 1, undermine: 2, breach: 3, hold: 4 };
   const target = Object.values(state.world.silos)
     .filter((x) => x.id !== PLAYER_SILO_ID && x.status !== 'collapsed' && x.contact !== 'satellite')
     .filter((x) => canLaunchRun(state, x.id).ok)
-    .sort((a, b) => (a.power?.military ?? 99) - (b.power?.military ?? 99))[0];
+    .sort((a, b) =>
+      (STAGE_DEPTH[b.conquest?.stage] || 0) - (STAGE_DEPTH[a.conquest?.stage] || 0) ||
+      (a.power?.military ?? 99) - (b.power?.military ?? 99))[0];
   if (!target) return actions;
   if (!canLaunch(state, squadId, BAL.conquest.band).ok) return actions;
   return launchConquest(state, squadId, target.id);
