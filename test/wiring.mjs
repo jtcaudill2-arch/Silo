@@ -2596,7 +2596,15 @@ console.log('');
   store.dispatch({ type: 'CITIZEN_DIE', id: other.id, cause: 'a second test', text: 'another' });
   if (deathMarks(s).length !== 2) fail(`two deaths left ${deathMarks(s).length} marks`);
 
+  // Guarded, because `fail` records and carries on. Every check from here reads
+  // a mark by index, so a build that draws none does not fail this section — it
+  // throws `Cannot read properties of undefined` out of the middle of it, which
+  // aborts the run before any failure summary prints and leaves the reader a
+  // stack trace instead of a sentence.
   const target = deathMarks(s)[0];
+  if (!target) {
+    fail('two deaths left no marks at all, so nothing below this can be checked');
+  } else {
   const hit = deathMarkAt(s, target.x, target.y - 8);
   if (!hit) {
     fail('tapping a mark dead centre found nothing — it cannot be dismissed');
@@ -2606,6 +2614,7 @@ console.log('');
     if (left.some((m) => m.c.id === hit.c.id)) fail('the acknowledged mark is still on the cross-section');
     else if (left.length !== 1) fail(`acknowledging one mark left ${left.length}, not 1 — it cleared the wrong ones`);
     else ok('a tap clears the mark it landed on, and only that one');
+  }
   }
 
   // A campaign kills steadily, so the marks are capped — newest first, older
@@ -2630,19 +2639,27 @@ console.log('');
       ok(`${victims.length} deaths show ${shown.length} marks, newest first`);
     }
     // Hidden, not forgotten: clearing one brings the next up.
+    if (!shown.length) {
+      fail(`${victims.length} deaths put no marks on screen at all`);
+    } else {
     many.dispatch({ type: 'DEATH_ACKNOWLEDGE', id: shown[0].c.id });
     if (deathMarks(m).length !== BAL.render.maxDeathMarks) {
       fail('clearing a mark did not bring an older one up — the hidden deaths were lost');
     } else {
       ok('and clearing one brings an older one up, so none are lost');
     }
+    }
   }
 
   // And a tap nowhere near one does nothing, or every tap on the silo would
-  // silently dismiss a death somewhere off screen.
-  const far = deathMarkAt(s, target.x + 400, target.y + 400);
-  if (far) fail('a tap 400 units away still hit a death mark');
-  else ok('and a tap away from a mark leaves it alone');
+  // silently dismiss a death somewhere off screen. Guarded like the reads
+  // above: `target` is undefined when nothing was marked, and this was the last
+  // line still turning that into a stack trace.
+  if (target) {
+    const far = deathMarkAt(s, target.x + 400, target.y + 400);
+    if (far) fail('a tap 400 units away still hit a death mark');
+    else ok('and a tap away from a mark leaves it alone');
+  }
 }
 
 // ---- 36. children are drawn as children ------------------------------------
