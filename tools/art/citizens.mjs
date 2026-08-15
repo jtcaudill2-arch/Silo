@@ -98,11 +98,19 @@ export const ACTIONS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 
  * three of those five names are not among the things it returns at all.
  *
  * src/render/sprites.js:citizenFrame() names frames
- * `citizen_<role>_<action><n>`, and `citizenRole()` returns exactly the ten
- * ids in ROLES below — base, farmer, mechanic, medic, deputy, militia, child,
- * elder, hazmat, irradiated — so every role this module draws is reachable
- * art. Its FRAME_COUNTS matches ACTIONS above exactly: walk 6, idle 4, work 4,
- * sleep 2, injured 4.
+ * `citizen_<role>_<action><n>`, and `citizenRole()` returns exactly the eleven
+ * ids in ROLES below — base, resident, farmer, mechanic, medic, deputy,
+ * militia, child, elder, hazmat, irradiated — so every role this module draws
+ * is reachable art. Its FRAME_COUNTS matches ACTIONS above exactly: walk 6,
+ * idle 4, work 4, sleep 2, injured 4, talk 4, fight 4.
+ *
+ * Neither of those sentences is taken on trust any more, and neither survived
+ * being checked: this one said ten roles and left `resident` out of a list of
+ * ten, and it described five of the seven actions. test/atlas.mjs sweeps every
+ * name the renderer can produce against the shipped sheet in both directions,
+ * so a role or an action that stops matching fails there rather than sitting
+ * in a comment. It found a `die: 4` in FRAME_COUNTS that this file had stopped
+ * baking — 44 frames the renderer could name and the atlas did not have.
  *
  * CONSUMER_ROLES survives as a compatibility alias for the old five names.
  * Only `irradiated` and `child` are still asked for and both map to

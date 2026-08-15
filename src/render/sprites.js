@@ -33,8 +33,7 @@ export async function loadAtlas(base = './assets/') {
         loadImage(base + 'atlas.png'),
         fetch(base + 'atlas.json').then((r) => r.json()),
       ]);
-      atlas = img;
-      table = json;
+      if (!adoptAtlas(img, json)) throw new Error('atlas.json carried no frame table');
       return true;
     } catch (err) {
       console.warn('[sprites] atlas unavailable, falling back to block shapes:', err);
@@ -43,6 +42,33 @@ export async function loadAtlas(base = './assets/') {
     }
   })();
   return loading;
+}
+
+/**
+ * Install an atlas that is already decoded. `loadAtlas` fetches one; this
+ * takes one.
+ *
+ * It is here because the branch the player actually sees was covered by
+ * nothing. `drawAt` returns false before it looks at its arguments when no
+ * atlas is loaded, and `loadAtlas` needs `Image` and `fetch`, so under node
+ * every assertion in the suite went through the procedural fallback in
+ * citizens.js — the sprite anchors could be moved two hundred pixels with the
+ * whole suite green. test/atlas.mjs adopts the real assets/atlas.json through
+ * here and checks where the frames land.
+ *
+ * The frame-table check is not only for tests. This module's contract is that
+ * the game never stops drawing because an asset went missing, and JSON that
+ * parses but is not an atlas — a stale manifest, the wrong file resolved under
+ * a subpath — used to install itself and then make every later draw throw on
+ * `table.frames[name]`, which is a worse failure than the fallback it was
+ * meant to avoid.
+ */
+export function adoptAtlas(image, frameTable) {
+  if (!image || !frameTable?.frames) return false;
+  atlas = image;
+  table = frameTable;
+  failed = false;
+  return true;
 }
 
 function loadImage(src) {
@@ -94,23 +120,18 @@ export function citizenFrame(citizen, timeMs, action) {
 }
 
 /**
- * A frame of a one-shot animation, held on its last frame.
+ * Frames per action, matching what tools/art/citizens.mjs bakes.
  *
- * Death is the only animation in the game that is not a loop. `citizenFrame`
- * phases by id and wraps, which is right for a walk and wrong for a collapse —
- * wrapped, somebody would fall over, stand up and fall over again for as long
- * as the body was on screen.
+ * "Matching" is now checked rather than asserted in prose: test/atlas.mjs
+ * walks every name `citizenFrame` can produce and fails on any the sheet does
+ * not carry, and on any citizen frame in the sheet that nothing can name. It
+ * found a `die: 4` here that the baker had stopped baking — 44 frames this
+ * table named and the atlas did not have. The only thing that could ask for
+ * them was a `citizenFrameOnce` helper with no callers, left behind when the
+ * death animation became the tappable skull marker `drawCitizens` draws now.
+ * Both are gone: a citizen dying is a mark on the floor, not a collapse.
  */
-export function citizenFrameOnce(citizen, action, progress) {
-  const role = citizenRole(citizen);
-  const act = FRAME_COUNTS[action] ? action : 'idle';
-  const n = FRAME_COUNTS[act];
-  const f = Math.min(n - 1, Math.max(0, Math.floor(progress * n)));
-  return `citizen_${role}_${act}${f}`;
-}
-
-/** Frames per action, matching what tools/art/citizens.mjs bakes. */
-const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4, die: 4 };
+const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4, fight: 4 };
 /**
  * How long each frame holds. Sleep breathes slowly; a walk cycle does not.
  *
@@ -120,7 +141,7 @@ const FRAME_COUNTS = { walk: 6, idle: 4, work: 4, sleep: 2, injured: 4, talk: 4,
  */
 const FRAME_MS = {
   walk: 130, idle: 520, work: 300, sleep: 1400, injured: 260,
-  talk: 380, fight: 110, die: 420,
+  talk: 380, fight: 110,
 };
 
 /**
