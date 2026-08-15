@@ -50,7 +50,7 @@ import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { streamFor } from '../src/core/rng.js';
 import { canRepair, repair, strainedFloors, canDemolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
-import { resolveExpedition, supplyCost, BANDS } from '../src/sim/expedition.js';
+import { resolveExpedition, supplyCost, BANDS, homeCost } from '../src/sim/expedition.js';
 import { inService } from '../src/sim/economy.js';
 import { tierUnlocked, available as availableResearch } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
@@ -6722,6 +6722,122 @@ const ERRAND_ROOM = {
     } else {
       ok(`a project nothing is working on is named, with the reason: "${dark.text}" — ` +
         `"${dark.why.slice(0, 72)}…"`);
+    }
+  }
+}
+
+// ---- 73. the launch screen says what the silo gives up ---------------------
+//
+// The forecast was entirely about the ground: strength against the enemy,
+// expected encounters, the dose on return, the supplies. Nothing about home —
+// and the people walking out of the airlock are the people running the rooms.
+//
+// They are almost always. `SQUAD_MEMBER` strips a soldier's job when they
+// enlist, which puts them back in `autoAssign`'s pool with no job, and this
+// silo runs at zero spare labour from about day 30, so they get posted like
+// anybody else. Measured across ten 400-day campaigns: every one of 198
+// launches took somebody off a post, and 100 left a room with nobody working
+// — 34 laboratories, 28 chem labs, 17 generator halls, and seven between the
+// water reclaimer and hydroponics. The seats are held for the whole trip, so
+// nothing can relieve them. A player authorising a run was committing to a
+// dark generator hall and was not told.
+{
+  const store = newStore(0xa17c);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+
+  const room = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.staff.length);
+  const crew = room ? room.staff.map((id) => s.citizens[id]) : [];
+  const spare = s.citizenIds
+    .map((id) => s.citizens[id])
+    .filter((c) => c && !c.job && c.status !== 'dead' && c.age >= 20)
+    .slice(0, 2);
+
+  if (!room || !crew.length || spare.length < 2) {
+    fail('fixture problem: the opening silo has no crewed room or nobody spare to send');
+  } else {
+    const squadId = 'sq_cost';
+    s.military.squads[squadId] = {
+      id: squadId, name: 'Test squad', members: [], leaderId: null,
+      assignment: 'garrison', deployed: false,
+    };
+    s.military.squadIds.push(squadId);
+    const enlist = (c) => { s.military.squads[squadId].members.push(c.id); c.squadId = squadId; };
+
+    // A squad of people who hold nothing: the silo gives up posts, and no room
+    // stops. Both halves matter — a screen that always warns is not a warning.
+    spare.forEach(enlist);
+    const quiet = homeCost(s, squadId);
+
+    // Now take the room's whole crew with them.
+    crew.forEach(enlist);
+    const costly = homeCost(s, squadId);
+
+    if (quiet.posts !== 0 || quiet.stopping.length) {
+      fail(`a squad of people who hold no post is reported as costing ${quiet.posts} posts and ` +
+        `stopping ${quiet.stopping.length} rooms — a screen that always warns is not a warning`);
+    } else if (costly.posts !== crew.length) {
+      fail(`${crew.length} of the ${room.type}'s crew are in the squad and the launch screen counts ` +
+        `${costly.posts} posts going with them`);
+    } else if (!costly.stopping.some((r) => r.id === room.id)) {
+      fail(`the whole crew of the ${room.type} is walking out of the airlock and the launch screen ` +
+        'does not say the room stops — the seats are held for the trip, so nothing can relieve it');
+    } else {
+      const named = costly.stopping.find((r) => r.id === room.id);
+      ok(`the launch screen names what stops while they are out: ${costly.posts} posts, ` +
+        `"${named.name}" on floor ${named.floor}`);
+    }
+
+    // And "somebody is left" has to mean somebody who will be working, not
+    // somebody still on the roster. Two squads is the case that separates
+    // them, and it is an ordinary one: the first is already outside, so its
+    // members hold their seats and do no work. A check that only asked whether
+    // the remaining names were in *this* squad would count a room as staffed
+    // by a person standing in the wasteland — and the room the player is being
+    // warned about is exactly the one that already lost half its crew.
+    {
+      const twoUp = crew.length >= 2;
+      if (!twoUp) {
+        fail(`fixture problem: the ${room.type} has one on its roster, so a squad cannot leave ` +
+          'behind somebody who is already out');
+      } else {
+        const away = 'sq_away';
+        s.military.squads[away] = {
+          id: away, name: 'The other squad', members: [crew[0].id], leaderId: crew[0].id,
+          assignment: 'expedition', deployed: true,
+        };
+        s.military.squadIds.push(away);
+        crew[0].squadId = away;
+        crew[0].status = 'expedition';
+
+        // A second squad of everyone else in that room.
+        const second = 'sq_second';
+        s.military.squads[second] = {
+          id: second, name: 'Second squad', members: crew.slice(1).map((c) => c.id),
+          leaderId: crew[1].id, assignment: 'garrison', deployed: false,
+        };
+        s.military.squadIds.push(second);
+        for (const c of crew.slice(1)) c.squadId = second;
+
+        const both = homeCost(s, second);
+        if (!both.stopping.some((r) => r.id === room.id)) {
+          fail(`the ${room.type}'s only crew not in the launching squad is already outside with ` +
+            'another one, and the screen counts the room as still working — a roster is not a shift');
+        } else {
+          ok('and somebody already outside with another squad does not count as holding the room open');
+        }
+      }
+    }
+
+    // And the panel actually says it, rather than the sim merely knowing.
+    // Reading the source, the way §28's siblings check copy: a preview nothing
+    // renders is the same as no preview.
+    const panel = codeIn(readSource('../src/ui/panels/airlock.js'));
+    if (!/homeCost\s*\(/.test(panel)) {
+      fail('sim/expedition.js computes what a launch costs at home and the launch screen never ' +
+        'calls it, so the player is still only shown the ground');
+    } else {
+      ok('and the launch screen is what calls it');
     }
   }
 }

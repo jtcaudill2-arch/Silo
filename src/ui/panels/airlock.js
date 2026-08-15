@@ -9,7 +9,7 @@
 
 import { BAL } from '../../config/balance.js';
 import {
-  BANDS, canLaunch, launch, riskPreview, airlockCapacity, supplyCost,
+  BANDS, canLaunch, launch, riskPreview, homeCost, airlockCapacity, supplyCost,
 } from '../../sim/expedition.js';
 import { squadMembers, readiness } from '../../sim/military.js';
 import { fullName } from '../../sim/population.js';
@@ -213,6 +213,29 @@ function openLaunch(state, shell, band) {
         el(
           'div.note',
           'That is a range, not a promise. The wasteland does not read forecasts.'
+        )
+      );
+    }
+
+    // What it costs at home. The forecast above is entirely about the ground;
+    // this is the half the player was never shown, and it is the half they are
+    // actually deciding. A post is held for the whole trip, so a room losing
+    // its last worker is dark until the squad walks back in.
+    const cost = homeCost(state, selected);
+    if (cost.posts) {
+      const days = band.travelDays;
+      body.appendChild(sectionLabel('What the silo gives up'));
+      body.appendChild(
+        el(
+          cost.stopping.length ? 'div.note.warn' : 'div.note',
+          cost.stopping.length
+            ? `${cost.posts} post${cost.posts === 1 ? '' : 's'} go with them, and ` +
+              `${cost.stopping.length === 1 ? 'one room stops' : `${cost.stopping.length} rooms stop`} ` +
+              `for the ${days} days they are out: ` +
+              cost.stopping.map((r) => `${r.name} (floor ${r.floor})`).join(', ') +
+              '. Their seats are held, so nobody else can take them.'
+            : `${cost.posts} post${cost.posts === 1 ? '' : 's'} go with them and every room they ` +
+              `leave keeps working. Their seats are held for the ${days} days they are out.`
         )
       );
     }

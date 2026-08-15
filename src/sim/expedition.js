@@ -764,6 +764,58 @@ export function riskPreview(state, squadId, bandKey) {
   };
 }
 
+/**
+ * What the silo gives up while they are outside.
+ *
+ * The launch screen forecast everything about the ground and nothing about
+ * home. It showed strength against the enemy, expected encounters, the dose on
+ * return and the supplies — and never mentioned that the people walking out
+ * are the people running the rooms.
+ *
+ * They are, almost always. A squad member is eligible for a bench —
+ * `SQUAD_MEMBER` strips their job when they enlist, which puts them straight
+ * back in `autoAssign`'s pool — and this silo runs at zero spare labour from
+ * about day 30, so the pool is empty and a soldier gets posted like anyone
+ * else. Measured across ten 400-day campaigns: every one of 198 launches took
+ * somebody off a post, and 100 of them left a room with nobody working at all.
+ * 34 laboratories, 28 chem labs, 17 generator halls, and seven between the
+ * water reclaimer and hydroponics. A generator hall dark for a week is a
+ * brownout, and a brownout sheds the labs — so some of the frozen research the
+ * silo now complains about starts at this button.
+ *
+ * A post is held for the trip rather than released, deliberately (see
+ * `EXPEDITION_LAUNCH`), so nothing can relieve these rooms until the squad is
+ * home. That makes it a cost the player is committing to, which is precisely
+ * the kind of thing a launch screen is for.
+ *
+ * Preferring civilians for posts was tried first and is not the answer: it
+ * moved 100 emptied rooms to 97, because when a soldier takes a bench there
+ * was nobody else to take it. The silo is not choosing wrongly. It is short of
+ * people, and this says so at the moment it matters.
+ */
+export function homeCost(state, squadId) {
+  const going = new Set(squadMembers(state, squadId).map((c) => c.id));
+  const out = { posts: 0, stopping: [] };
+  if (!going.size) return out;
+
+  for (const room of Object.values(state.silo.rooms || {})) {
+    const def = getRoom(room.type);
+    if (!def?.staff || room.buildingUntilCycle > 0) continue;
+    const held = (room.staff || []).filter((cid) => going.has(cid));
+    if (!held.length) continue;
+    out.posts += held.length;
+    // The same test `roomCapability` applies: a room works if somebody in it
+    // is at work, and the roster is not the same question.
+    const left = (room.staff || []).filter((cid) => {
+      const c = state.citizens[cid];
+      return c && !going.has(cid) && (c.status === 'working' || c.status === 'training');
+    });
+    if (!left.length) out.stopping.push({ id: room.id, name: def.name, floor: room.floor });
+  }
+  out.stopping.sort((a, b) => a.floor - b.floor);
+  return out;
+}
+
 function verdictFor(lo, hi) {
   if (lo >= 1.4) return 'Comfortable. They should all come home.';
   if (lo >= 1.0) return 'Favourable, but the wasteland does not read forecasts.';
@@ -772,4 +824,4 @@ function verdictFor(lo, hi) {
   return 'They are not coming back. Do not send them.';
 }
 
-export default { launch, canLaunch, resolveExpedition, simulateDay, riskPreview, airlockCapacity };
+export default { launch, canLaunch, resolveExpedition, simulateDay, riskPreview, homeCost, airlockCapacity };
