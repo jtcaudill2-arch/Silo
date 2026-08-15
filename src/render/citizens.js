@@ -432,14 +432,19 @@ function errandFor(state, c, night, posted = false) {
  * was dealt a lane past the last one the room has, putting 568 sprites through
  * a wall over two thousand frames.
  *
- * Anybody in `group` who is not on the roster is laned behind it rather than
- * being given a lane out of range — and, like everyone else, is drawn only if
- * that lane falls inside the cap. A room and a citizen disagreeing about who
- * works there is a bug somewhere else; this refuses to draw it through a wall
- * rather than pretending it cannot happen.
+ * Anybody in `group` who is not on the roster is laned behind it — behind, and
+ * not merged into it, because a stray with a low id sorted into the middle
+ * would push every roster member after them across, which is the whole-bay
+ * slide this function exists to prevent. They are drawn only if that lane falls
+ * inside the cap, like everyone else; a room and a citizen disagreeing about
+ * who works there is a bug somewhere else, and this refuses to draw it through
+ * a wall rather than pretending it cannot happen.
  */
 function laneUp(group, roster, cap) {
-  const ids = [...new Set([...roster, ...group.map((g) => g.c.id)])].sort((a, b) => a - b);
+  const belongs = [...new Set(roster)].sort((a, b) => a - b);
+  const known = new Set(belongs);
+  const strays = group.map((g) => g.c.id).filter((id) => !known.has(id)).sort((a, b) => a - b);
+  const ids = [...belongs, ...strays];
   const laneOf = new Map(ids.map((id, i) => [id, i]));
   const lanes = Math.min(cap, ids.length);
   const take = group.filter((item) => laneOf.get(item.c.id) < cap);
