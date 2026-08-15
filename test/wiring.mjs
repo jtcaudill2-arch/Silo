@@ -2135,8 +2135,10 @@ console.log('');
   {
     const onScreen = s.citizenIds
       .map((id) => s.citizens[id])
-      .find((c) => c && c.status !== 'dead' && c.job &&
-        s.silo.rooms[c.job.roomId]?.floor <= range.to);
+      .find((c) => {
+        const f = c && c.status !== 'dead' && c.job ? s.silo.rooms[c.job.roomId]?.floor : null;
+        return f != null && f >= range.from && f <= range.to;
+      });
     if (!onScreen) noVictim = true;
     else store.dispatch({ type: 'CITIZEN_DIE', id: onScreen.id, cause: 'a test', text: 'a test death' });
   }
@@ -2172,7 +2174,8 @@ console.log('');
       const head = painted[2 * i + 1];
       const wx = Math.round(p.x);
       if (body.x !== wx || head.x !== wx) {
-        misplaced.push(`${p.c.id} painted at x${body.x}, listed at x${wx}`);
+        const wrong = body.x !== wx ? `body at x${body.x}` : `head at x${head.x}`;
+        misplaced.push(`${p.c.id} has its ${wrong}, listed at x${wx}`);
       } else if (body.y < p.y - 5 || body.y > p.y - 3 || head.y !== body.y - 2) {
         misplaced.push(`${p.c.id} painted at y${body.y} with a head at ${head.y}, standing at ${p.y}`);
       }
@@ -2203,8 +2206,16 @@ console.log('');
       `where the list puts that person (${misplaced.slice(0, 2).join('; ')}) — the draw step and ` +
       'the list it draws from disagree');
   }
-  if (noVictim) fail('fixture problem: nobody on a visible floor to bury, so no skull is checked');
-  if (!strays.size && !misplaced.length && !miscounted && !noVictim) {
+  // The outcome, not the candidate. Finding somebody to bury is not the same as
+  // a mark being drawn, and neither is the silo having people in it: without
+  // this the section can print "all 0 rectangles land on the 0 people and 0
+  // marks they belong to" and call it a pass.
+  const vacuous = noVictim ? 'nobody on a visible floor to bury'
+    : !people.length ? 'no people drawn at all'
+      : !marks.length ? 'no death mark drawn, so the skull is unchecked'
+        : null;
+  if (vacuous) fail(`fixture problem: ${vacuous}`);
+  if (!strays.size && !misplaced.length && !miscounted && !vacuous) {
     ok(`nobody is drawn outside the built part of their floor, and all ${painted.length} ` +
       `rectangles land on the ${people.length} people and ${marks.length} marks they belong to`);
   }
