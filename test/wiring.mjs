@@ -5684,14 +5684,29 @@ const ERRAND_ROOM = {
         const before = marks();
         outsider.job = { roomId: room.id };          // claims the room; not on its roster
         const after = marks();
+        // Where the stray itself ends up, not only what they did to everybody
+        // else. Their lane is clamped into the last one the room has, and
+        // without that they are drawn through the wall — measured at x140 in a
+        // room whose walls are 0 to 128, with the rest of this section green.
+        const at = after.get(outsider.id);
+        if (at && (at.x < room.slot * SLOT_W || at.x > (room.slot + room.width) * SLOT_W)) {
+          strayMoved.push(`${room.type}: the stray itself is at x${Math.round(at.x)}, outside ` +
+            `slots ${room.slot}-${room.slot + room.width}`);
+        }
         outsider.job = null;
+        // And a record that this room contributed a comparison at all. Skipping
+        // silently when nobody is in both frames is how a case reports success
+        // having asserted nothing.
+        let compared = 0;
         for (const id of room.staff) {
           if (!before.has(id) || !after.has(id)) continue;
+          compared++;
           if (Math.abs(after.get(id).x - before.get(id).x) > 0.5) {
             strayMoved.push(`${room.type} ${id}: ${Math.round(before.get(id).x)} -> ` +
               `${Math.round(after.get(id).x)}`);
           }
         }
+        if (!compared) broken.push(`fixture problem: no ${room.type} crew drawn either side`);
       }
       s.settings.reducedMotion = false;
     }

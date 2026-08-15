@@ -442,12 +442,15 @@ function errandFor(state, c, night, posted = false) {
  * early if the new room has gone, leaving a job that names a room which has
  * never heard of them.
  *
- * A stray past the last lane is drawn in it, sharing with whoever is there.
- * `citizenX` already treats an over-full post that way — "the lanes overlap, but
- * evenly, which reads as a full room rather than as a rendering fault" — and it
- * is the right trade here too: a room and a citizen disagreeing about who works
- * there is a bug somewhere else, and neither drawing them through a wall nor
- * silently leaving them out is a good way to find out about it.
+ * A stray is drawn if the cap reaches them and not if it does not, which is the
+ * same rule the roster gets: a room with more crew than `maxCitizensPerRoom`
+ * has always drawn the first few and left the rest out, and somebody sorted
+ * behind all of them is simply further down that queue. When they are drawn and
+ * the roster is short enough that their lane would fall past the last one, they
+ * share the last lane instead. `citizenX` already treats an over-full post that
+ * way — "the lanes overlap, but evenly, which reads as a full room rather than
+ * as a rendering fault" — and it beats the alternative, which is a sprite
+ * through a wall.
  */
 function laneUp(group, roster, cap) {
   const belongs = [...new Set(roster)].sort((a, b) => a - b);
