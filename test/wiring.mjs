@@ -5680,7 +5680,13 @@ const ERRAND_ROOM = {
           // first `maxCitizensPerRoom` are drawn, so an outsider sorting past
           // them would move nobody even under the merged scheme and the check
           // would quietly stop testing anything.
-          .find((c) => c && !c.job && c.status !== 'dead' && c.id < room.staff[drawn - 1]);
+          // Not somebody who is out on the surface. `citizensInView` skips an
+          // expeditioner entirely, so picking one as the stray would trip the
+          // "a stray the cap reaches is not drawn" branch below against a
+          // renderer that is behaving perfectly — a fixture accident reported
+          // as a bug. Same filter as `idlers` above.
+          .find((c) => c && !c.job && c.status !== 'dead' && c.status !== 'expedition' &&
+            c.id < room.staff[drawn - 1]);
         if (!outsider) { broken.push(`fixture problem: no stray for ${room.type}`); continue; }
         const before = marks();
         outsider.job = { roomId: room.id };          // claims the room; not on its roster
