@@ -5593,11 +5593,15 @@ const ERRAND_ROOM = {
     // bucketing loop drops them either way, and this needs it to be
     // deterministic rather than waiting for a journey to line up with a sample.
     s.settings.reducedMotion = true;
+    // x and y both: y is what says two people share a level, and the corridor
+    // case needs that. Asking the citizen record instead gives nothing for two
+    // jobless people — neither has a room to compare — so the guard that was
+    // meant to make this per-case answered "true" for the whole silo.
     const marks = () => {
       const m = new Map();
       cam.time = 0;
       cam.drawn = 0;
-      for (const p of citizensInView(s, cam)) if (!p.stair) m.set(p.c.id, p.x);
+      for (const p of citizensInView(s, cam)) if (!p.stair) m.set(p.c.id, { x: p.x, y: p.y });
       return m;
     };
 
@@ -5614,15 +5618,16 @@ const ERRAND_ROOM = {
       who.status = was;
       const whileIn = marks();
       const moved = [...whileOut]
-        .filter(([id, x]) => whileIn.has(id) && Math.abs(whileIn.get(id) - x) > 0.5)
-        .map(([id, x]) => `${id}: ${Math.round(x)} -> ${Math.round(whileIn.get(id))}`);
+        .filter(([id, p]) => whileIn.has(id) && Math.abs(whileIn.get(id).x - p.x) > 0.5)
+        .map(([id, p]) => `${id}: ${Math.round(p.x)} -> ${Math.round(whileIn.get(id).x)}`);
       // Per case, not silo-wide. `marks()` returns every sprite in the silo, so
       // the bay's crew keep both maps non-empty and a corridor case whose
       // subject was never drawn would sail through having asserted nothing.
       // The person being removed has to be drawn when they are present, and
       // somebody else has to share the floor with them.
-      const near = [...whileIn.keys()].filter(
-        (id) => id !== who.id && whileOut.has(id) && sameFloor(s, id, who.id)
+      const y = whileIn.get(who.id)?.y;
+      const near = [...whileIn].filter(
+        ([id, p]) => id !== who.id && whileOut.has(id) && p.y === y
       );
       if (!whileIn.has(who.id)) broken.push(`${what}: ${who.id} is never drawn even when present`);
       else if (!near.length) broken.push(`${what}: ${who.id} has no neighbour to be moved`);
@@ -5638,21 +5643,55 @@ const ERRAND_ROOM = {
     // sorted into it by id. Merged in, a low-numbered stray pushes every real
     // crew member after them across, which is the whole-bay slide this is all
     // for. The state is a bug somewhere else; it must not become a bug here.
-    let strayMoved = [];
+    // Both sides of the cap, and the small room is the one that matters.
+    //
+    // A stray changes two things — where the lanes are dealt from, and how many
+    // there are — and a bay whose roster is already past `maxCitizensPerRoom`
+    // pins the count at the cap and hides the second entirely. The first
+    // version of this ran only on the eight-person bay and could not see a
+    // stray widening a three-person room from three lanes to four, which slid
+    // its whole crew 37px.
+    const strayMoved = [];
     {
       s.settings.reducedMotion = true;
-      const before = marks();
-      const outsider = s.citizenIds
-        .map((id) => s.citizens[id])
-        .find((c) => c && !c.job && c.status !== 'dead' && c.id < big.staff[big.staff.length - 1]);
-      if (!outsider) broken.push('fixture problem: no low-numbered citizen to make a stray of');
+      const small = Object.values(s.silo.rooms)
+        .find((r) => r.id !== big.id && getRoom(r.type)?.staff && r.floor <= 22);
+      const crew = idlers.slice(1, 4).map((c) => c.id).sort((a, b) => a - b);
+      if (!small || crew.length < 3) broken.push('fixture problem: no second room to under-fill');
       else {
-        outsider.job = { roomId: big.id };          // claims the room; not on its roster
+        // Whoever was posted here has to let go of the room as well as be taken
+        // off its roster: a citizen still naming it is a stray, and enough of
+        // them push the lane count back up to the cap, which is exactly the
+        // thing this case exists to keep below it.
+        for (const c of Object.values(s.citizens)) {
+          if (c?.job?.roomId === small.id) c.job = null;
+        }
+        small.staff = crew;
+        for (const id of crew) s.citizens[id].job = { roomId: small.id };
+      }
+
+      for (const room of [big, small]) {
+        if (!room || !room.staff?.length) continue;
+        const drawn = Math.min(BAL.render.maxCitizensPerRoom, room.staff.length);
+        const outsider = s.citizenIds
+          .map((id) => s.citizens[id])
+          // Ahead of the last *drawn* lane, not the last roster entry: only the
+          // first `maxCitizensPerRoom` are drawn, so an outsider sorting past
+          // them would move nobody even under the merged scheme and the check
+          // would quietly stop testing anything.
+          .find((c) => c && !c.job && c.status !== 'dead' && c.id < room.staff[drawn - 1]);
+        if (!outsider) { broken.push(`fixture problem: no stray for ${room.type}`); continue; }
+        const before = marks();
+        outsider.job = { roomId: room.id };          // claims the room; not on its roster
         const after = marks();
-        strayMoved = big.staff
-          .filter((id) => before.has(id) && after.has(id) && Math.abs(after.get(id) - before.get(id)) > 0.5)
-          .map((id) => `${id}: ${Math.round(before.get(id))} -> ${Math.round(after.get(id))}`);
         outsider.job = null;
+        for (const id of room.staff) {
+          if (!before.has(id) || !after.has(id)) continue;
+          if (Math.abs(after.get(id).x - before.get(id).x) > 0.5) {
+            strayMoved.push(`${room.type} ${id}: ${Math.round(before.get(id).x)} -> ` +
+              `${Math.round(after.get(id).x)}`);
+          }
+        }
       }
       s.settings.reducedMotion = false;
     }
@@ -6087,22 +6126,6 @@ const ERRAND_ROOM = {
         `trade, and says so: "${order.text}"`);
     }
   }
-}
-
-/** Are these two people drawn on the same level? */
-function sameFloor(state, a, b) {
-  const at = (id) => {
-    const c = state.citizens[id];
-    const room = c?.job ? state.silo.rooms[c.job.roomId] : null;
-    return room ? room.floor : null;
-  };
-  const fa = at(a);
-  const fb = at(b);
-  // Two jobless people have no room to compare, and `idleFloor` is not exported
-  // — but the only citizens this is asked about are on the two floors the
-  // fixture built, so "neither has a post" is the corridor case and matches.
-  if (fa == null && fb == null) return true;
-  return fa === fb;
 }
 
 /** Working or standing watch — the same line economy.js and sprites.js draw. */

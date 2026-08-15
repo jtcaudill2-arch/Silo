@@ -432,24 +432,32 @@ function errandFor(state, c, night, posted = false) {
  * was dealt a lane past the last one the room has, putting 568 sprites through
  * a wall over two thousand frames.
  *
- * Anybody in `group` who is not on the roster is laned behind it — behind, and
- * not merged into it, because a stray with a low id sorted into the middle
- * would push every roster member after them across, which is the whole-bay
- * slide this function exists to prevent. They are drawn only if that lane falls
- * inside the cap, like everyone else; a room and a citizen disagreeing about
- * who works there is a bug somewhere else, and this refuses to draw it through
- * a wall rather than pretending it cannot happen.
+ * Anybody in `group` who is not on the roster is laned behind it, and the lane
+ * *count* is taken off the roster alone. Both halves matter and only the first
+ * was got right at the first attempt: `citizenX` divides the room's width by
+ * `lanes`, so a stray that widens the count moves everybody even when nobody's
+ * index changed — measured on a roster of three with one stray, the crew slid
+ * 37px against this file's five-pixel drift ceiling. It is a reachable state:
+ * `CITIZEN_ASSIGN` drops somebody from their old room's roster and then returns
+ * early if the new room has gone, leaving a job that names a room which has
+ * never heard of them.
+ *
+ * A stray past the last lane is drawn in it, sharing with whoever is there.
+ * `citizenX` already treats an over-full post that way — "the lanes overlap, but
+ * evenly, which reads as a full room rather than as a rendering fault" — and it
+ * is the right trade here too: a room and a citizen disagreeing about who works
+ * there is a bug somewhere else, and neither drawing them through a wall nor
+ * silently leaving them out is a good way to find out about it.
  */
 function laneUp(group, roster, cap) {
   const belongs = [...new Set(roster)].sort((a, b) => a - b);
   const known = new Set(belongs);
   const strays = group.map((g) => g.c.id).filter((id) => !known.has(id)).sort((a, b) => a - b);
-  const ids = [...belongs, ...strays];
-  const laneOf = new Map(ids.map((id, i) => [id, i]));
-  const lanes = Math.min(cap, ids.length);
+  const laneOf = new Map([...belongs, ...strays].map((id, i) => [id, i]));
+  const lanes = Math.min(cap, Math.max(1, belongs.length));
   const take = group.filter((item) => laneOf.get(item.c.id) < cap);
   for (const item of take) {
-    item.lane = laneOf.get(item.c.id);
+    item.lane = Math.min(laneOf.get(item.c.id), lanes - 1);
     item.lanes = lanes;
   }
   return take;
