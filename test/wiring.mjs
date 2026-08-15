@@ -2095,9 +2095,10 @@ console.log('');
   // "a test that guessed from geometry read one room citizen a frame as being
   // on the steps". The sprite carries `stair` for exactly this.
   //
-  // Positions come from the same call `drawCitizens` draws from, and `drawOne`
-  // offsets a body by six pixels against a tolerance of a whole slot, so
-  // nothing is lost by asking one step earlier.
+  // Positions come from the same call `drawCitizens` draws from, and it draws a
+  // body at `Math.round(x)` — the six-pixel offset is in the atlas path, which
+  // never runs here because wiring.mjs loads no atlas — so the x is the same
+  // number either way, and the drawing step is checked separately below.
   const strays = new Map();
   cam.drawn = 0;
   for (const p of citizensInView(s, cam)) {
@@ -2108,7 +2109,35 @@ console.log('');
       strays.set(p.c.id, { floorN, x: p.x });
     }
   }
-  if (strays.size) {
+  // And that the drawing step puts them where the list says.
+  //
+  // Reading `citizensInView` is what makes the check above able to tell a
+  // traveller from somebody in the rock, and on its own it stops covering the
+  // step that actually paints: moving `drawOne`'s rectangles 200px sideways
+  // passed the entire suite. So both — the list decides who is where, and this
+  // decides that what was painted matches the list.
+  const painted = [];
+  const ctx2 = {
+    set fillStyle(_v) {}, get fillStyle() { return ''; },
+    fillRect(x, y) { painted.push({ x, y }); },
+  };
+  cam.drawn = 0;
+  drawCitizens(ctx2, s, cam);
+  cam.drawn = 0;
+  const spots = citizensInView(s, cam).map((p) => ({ x: p.x, y: p.y }))
+    .concat(deathMarks(s, 1, 22).map((m) => ({ x: m.x, y: m.y })));
+  // A body is five pixels tall and a couple wide, drawn from a rounded x and a
+  // y a dozen or so above the mark, so a generous box still catches a sprite
+  // painted at the wrong person's position.
+  const misplaced = painted.filter(
+    (r) => !spots.some((sp) => Math.abs(sp.x - r.x) <= 8 && r.y <= sp.y && r.y >= sp.y - 20)
+  );
+
+  if (misplaced.length) {
+    fail(`${misplaced.length} of ${painted.length} rectangles were painted away from any citizen ` +
+      `(e.g. x ${Math.round(misplaced[0].x)}, y ${Math.round(misplaced[0].y)}) — the draw step and ` +
+      'the list it draws from disagree about where people are');
+  } else if (strays.size) {
     const first = [...strays.values()][0];
     fail(
       `${strays.size} people were drawn outside the built part of their floor ` +
