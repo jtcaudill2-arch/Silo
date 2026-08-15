@@ -646,8 +646,37 @@ export function directives(state) {
   // at five is worth doing before almost anything. It is the more expensive
   // failure of the two — a collapse breaches every room on the level and can
   // kill the shift standing in them — so it tops out slightly above a repair.
+  // Hoisted, because the research order further down has to know about it: the
+  // node that fixes this is one the labs must choose, and the only place the
+  // silo ever chooses a node on its own is the idle-labs order.
+  let alloyStarved = false;
   const worstFloor = strainedFloors(state)[0];
   if (worstFloor) {
+    // Shoring is the one bill a silo cannot stop paying: every floor below
+    // `shoringRequiredBelowFloor` decays whether or not anybody is on it, and
+    // the fix costs alloy. Alloy has exactly one tap — the Foundry, behind
+    // Alloy Refining — so a silo that dug past the line without either is on a
+    // clock it cannot read, and this order is the only thing it ever hears.
+    //
+    // Measured across twelve 600-day runs of a player doing exactly what the
+    // silo says: five of them spent between 19 and 200 days being told to shore
+    // a floor they could not afford, and on none of those days did anything
+    // name alloy, the Foundry, or the node it is behind.
+    //
+    // Said here rather than as an order of its own, and that is the whole
+    // lesson of the first attempt. A separate "Research Alloy Refining" order
+    // has to wait for the benches to be free and a "Build a Foundry" order for
+    // the room to be placeable, and measured against the same runs those two
+    // together fired on 2 days out of 196. This sentence is on screen every one
+    // of those days, because the order it is attached to is already the top of
+    // the list — an unfollowable order at least becomes a legible one.
+    const shoreCheck = canShore(state, worstFloor.n);
+    alloyStarved = !shoreCheck.ok && /alloy/i.test(shoreCheck.reason || '') &&
+      flow(state, 'alloy') <= 0 && count(state, 'foundry') === 0;
+    const gate = getRoom('foundry')?.unlock;
+    const alloyWhy = !alloyStarved ? ''
+      : ' Shoring it takes alloy the silo has none of and no way to make: a Foundry is the only ' +
+        `thing that makes any, and it is behind ${getResearch(gate)?.name || gate}.`;
     add({
       id: 'shore',
       text: `Shore floor ${worstFloor.n}`,
@@ -655,10 +684,11 @@ export function directives(state) {
       why:
         `The shoring is down to ${Math.round(worstFloor.integrity)} and the floor is carrying ` +
         `${worstFloor.load} bays. At zero it comes down: every room on it is wrecked and some of ` +
-        'the crew do not get out.',
+        'the crew do not get out.' + alloyWhy,
       panel: 'build',
       weight: BAL.directives.shoreTop - worstFloor.integrity,
     });
+
   }
 
   // ---- a level that came with something in it ----------------------------
@@ -878,21 +908,45 @@ export function directives(state) {
   // The tier gate wins when the silo has run out of room and that gate is what
   // is holding the next floor, because "we cannot dig any deeper" is a more
   // specific problem than "the labs are idle".
+  //
+  // And alloy wins over the tier gate, because it is the difference between
+  // growing and keeping. A silo below the shoring line with no Foundry pays a
+  // bill every day in a currency it cannot mint: the floors decay, the fix
+  // costs alloy, and the repairs it cannot afford take the rooms with them.
+  // Measured on seed 51966, following the silo's own orders: it held 3 alloy at
+  // zero income from day 405 with Alloy Refining unresearched, was told to
+  // shore on 89 days and to repair on 50 more, could do none of them, and 126
+  // people starved by day 688 with five research nodes finished.
+  //
+  // This is the only place the silo ever picks a node for itself. The order
+  // beside the shoring names the same node, but it has to stay silent while the
+  // benches are busy — telling somebody to research something is telling them
+  // to throw away the project in progress — and on that seed the benches were
+  // busy on Hydroponic Yield II for a hundred and sixty-seven cycles while the
+  // floors came apart. Naming it here is what makes the answer arrive the
+  // moment the labs can act on it.
   if (!state.research.active && has(state, 'laboratory')) {
     const open = availableResearch(state);
     if (open.length) {
       const dig = canExcavate(state);
-      const gate = dig.needsResearch && open.some((n) => n.id === dig.needsResearch)
-        ? dig.needsResearch
-        : null;
+      const alloyGate = alloyStarved ? getRoom('foundry')?.unlock : null;
+      const gate =
+        alloyGate && open.some((n) => n.id === alloyGate) ? alloyGate
+          : dig.needsResearch && open.some((n) => n.id === dig.needsResearch) ? dig.needsResearch
+            : null;
       const pick = gate ? getResearch(gate) : open[0];
+      const why = gate === alloyGate
+        ? 'The floors below the shoring line are coming apart and shoring them takes alloy the ' +
+          'silo has none of and no way to make. A Foundry is the only thing that makes any, and ' +
+          'it is behind this.'
+        : gate
+          ? `${dig.reason} It is the only thing standing between the silo and the next floor down.`
+          : `${Math.floor(state.research.points)} points are banked and nothing is being worked on.`;
       add({
         id: 'research',
         text: `Research ${pick.name}`,
         research: pick.id,
-        why: gate
-          ? `${dig.reason} It is the only thing standing between the silo and the next floor down.`
-          : `${Math.floor(state.research.points)} points are banked and nothing is being worked on.`,
+        why,
         panel: 'research',
         weight: 62,
       });

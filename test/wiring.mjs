@@ -49,10 +49,10 @@ import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/dat
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { streamFor } from '../src/core/rng.js';
-import { canRepair, repair, strainedFloors, canDemolish, canUpgrade } from '../src/sim/build.js';
+import { canRepair, repair, strainedFloors, canDemolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
 import { resolveExpedition, supplyCost, BANDS } from '../src/sim/expedition.js';
 import { inService } from '../src/sim/economy.js';
-import { tierUnlocked } from '../src/sim/research.js';
+import { tierUnlocked, available as availableResearch } from '../src/sim/research.js';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/core/migrations.js';
 import { NAMED_LEVELS } from '../src/data/levels.js';
 import { launchConquest, canLaunch, airlockCapacity } from '../src/sim/expedition.js';
@@ -6340,6 +6340,129 @@ const ERRAND_ROOM = {
       ok('a drifted silo relights its fuel supply out of a lower-ranked room of a different ' +
         `trade, and says so: "${order.text}"`);
     }
+  }
+}
+
+// ---- 69. the bill a silo cannot stop paying, and cannot read ---------------
+//
+// Shoring is the one cost that never goes away: every floor below
+// `shoringRequiredBelowFloor` decays whether or not anybody is standing on it,
+// and the fix is priced in alloy. Alloy has exactly one tap — the Foundry,
+// behind Alloy Refining — so a silo that dug past the line without either is on
+// a clock, and "Shore floor N" is the only thing it ever hears about it.
+//
+// Measured across twelve 600-day runs of a player doing exactly what the silo
+// says: five of them spent between 19 and 200 days being told to shore a floor
+// they could not afford, and on not one of those days did anything name alloy,
+// the Foundry, or the node it is behind. Seed 51966 was told to shore on 89
+// days and to repair on 50 more, could do none of them, and 126 people starved
+// by day 688 with five research nodes finished.
+{
+  const store = newStore(0xA110);
+  const s = store.state;
+  const deep = BAL.silo.excavation.shoringRequiredBelowFloor + 3;
+
+  // A deep floor with something on it, worn down to where the silo starts
+  // worrying, and no alloy anywhere.
+  const floor = s.silo.floors[deep - 1];
+  floor.excavated = true;
+  floor.shored = false;
+  floor.integrity = BAL.silo.strain.warnBelow - 20;
+  const donor = Object.values(s.silo.rooms)[0];
+  s.silo.rooms.deep_room = {
+    ...donor, id: 'deep_room', floor: deep, slot: 0,
+    powered: true, buildingUntilCycle: 0, staff: [],
+  };
+  floor.slots[0] = 'deep_room';
+  s.resources.alloy = 0;
+  s.resources.scrap = 5000;
+
+  const order = (directives(s) || []).find((d) => d.id === 'shore');
+  const check = canShore(s, deep);
+  const foundries = Object.values(s.silo.rooms).filter((r) => r.type === 'foundry').length;
+
+  if (foundries) {
+    fail('fixture problem: the opening silo already has a Foundry, so this measures nothing');
+  } else if (check.ok) {
+    fail(`fixture problem: shoring floor ${deep} is affordable at 0 alloy, so nothing is blocked`);
+  } else if (!/alloy/i.test(check.reason || '')) {
+    fail(`fixture problem: shoring is refused for "${check.reason}" rather than for alloy`);
+  } else if (!order) {
+    fail(`floor ${deep} is down to ${Math.round(floor.integrity)} and carrying a room, and the ` +
+      'silo raises no order about it at all');
+  } else if (!/Foundry/.test(order.why)) {
+    fail('the silo tells the player to shore a floor it cannot afford to shore and never says ' +
+      `why: "${order.why}" — alloy has one source and nothing names it`);
+  } else if (!/Alloy Refining/.test(order.why)) {
+    fail(`the order names the Foundry without naming the node it is behind: "${order.why}"`);
+  } else {
+    ok('a silo that cannot afford its own shoring is told what alloy comes from: ' +
+      `"…${order.why.slice(order.why.indexOf('Shoring it takes'))}"`);
+  }
+
+  // And the labs are pointed at the node, not at whatever is first in the tree.
+  //
+  // This is the only place the silo ever chooses a project for itself, and the
+  // choice matters more than it looks: the tier gate it already prefers is
+  // about *growing*, and alloy is about *keeping* — a silo whose floors are
+  // coming apart has to fix that before it digs another one. Measured, the
+  // preference fires once on each seed where the benches are free, and once is
+  // all it needs: the player starts the node and it is done.
+  {
+    const lab = Object.values(s.silo.rooms).find((r) => r.type === 'laboratory');
+    if (!lab) {
+      s.silo.rooms.a_lab = {
+        ...donor, id: 'a_lab', type: 'laboratory', floor: 3, slot: 3,
+        powered: true, buildingUntilCycle: 0, staff: [],
+      };
+    }
+    s.research.active = null;
+    const pick = (directives(s) || []).find((d) => d.id === 'research');
+    const open = availableResearch(s).map((n) => n.id);
+    if (!open.includes('alloy_refining')) {
+      fail('fixture problem: Alloy Refining is not available, so the choice cannot be made');
+    } else if (!pick) {
+      fail('idle labs in a silo whose floors are failing raise no research order at all');
+    } else if (pick.research !== 'alloy_refining') {
+      fail(`the labs are idle in a silo that cannot shore its floors and the order says to ` +
+        `research ${pick.research} — alloy is what it is short of, and this is the only place ` +
+        'the silo ever picks a node for itself');
+    } else {
+      ok(`and its idle labs are pointed at the node that fixes it: "${pick.text}"`);
+    }
+
+    // And it beats the tier gate, which is the choice that actually had to be
+    // made. Both are "the node the silo is blocked on"; the difference is that
+    // one is about digging the next floor and the other is about keeping the
+    // ones already dug. A silo whose floors are coming apart has no business
+    // opening another.
+    for (let n = 7; n <= 20; n++) s.silo.floors[n - 1].excavated = true;
+    const dug = canExcavate(s);
+    const both = (directives(s) || []).find((d) => d.id === 'research');
+    if (!dug.needsResearch) {
+      fail(`fixture problem: the silo can still dig (${dug.reason || 'no gate'}), so the two ` +
+        'gates never compete and the precedence is untested');
+    } else if (!both) {
+      fail('idle labs raise no research order with both gates open');
+    } else if (both.research !== 'alloy_refining') {
+      fail(`with the floors failing and the next tier locked, the labs are sent at ` +
+        `${both.research} — digging deeper is not the answer to a floor coming down`);
+    } else {
+      ok(`and keeping beats digging: ${dug.needsResearch} is waiting too, and the order still ` +
+        'says Alloy Refining');
+    }
+  }
+
+  // And once it can make alloy, the sentence goes away rather than nagging.
+  s.silo.rooms.a_foundry = {
+    ...donor, id: 'a_foundry', type: 'foundry', floor: 4, slot: 4,
+    powered: true, buildingUntilCycle: 0, staff: [],
+  };
+  const after = (directives(s) || []).find((d) => d.id === 'shore');
+  if (after && /Foundry/.test(after.why)) {
+    fail('a silo with a Foundry is still being told where alloy comes from');
+  } else {
+    ok('and a silo that has one is not told about it again');
   }
 }
 
