@@ -2210,11 +2210,22 @@ console.log('');
   // a mark being drawn, and neither is the silo having people in it: without
   // this the section can print "all 0 rectangles land on the 0 people and 0
   // marks they belong to" and call it a pass.
-  const vacuous = noVictim ? 'nobody on a visible floor to bury'
-    : !people.length ? 'no people drawn at all'
-      : !marks.length ? 'no death mark drawn, so the skull is unchecked'
-        : null;
-  if (vacuous) fail(`fixture problem: ${vacuous}`);
+  //
+  // Worded as what is missing rather than as "fixture problem", because these
+  // are the section's own subject and not its scaffolding: an empty
+  // `citizensInView` is the silo-drawn-empty bug this section's header is
+  // about, and calling that a fixture fault points the next reader at the wrong
+  // file. Only the burial is scaffolding, and it is consulted last — a mark
+  // from an earlier death can be in range with no living jobbed citizen left on
+  // screen, and that is a paired, asserted skull rather than a broken fixture.
+  const vacuous = !people.length
+    ? 'no people were drawn at all, so nothing about where they are drawn means anything'
+    : !marks.length
+      ? (noVictim
+        ? 'the fixture found nobody on a visible floor to bury, so the skull is unchecked'
+        : 'somebody died on a visible floor and no death mark was drawn')
+      : null;
+  if (vacuous) fail(vacuous);
   if (!strays.size && !misplaced.length && !miscounted && !vacuous) {
     ok(`nobody is drawn outside the built part of their floor, and all ${painted.length} ` +
       `rectangles land on the ${people.length} people and ${marks.length} marks they belong to`);
