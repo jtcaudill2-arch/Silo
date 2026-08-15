@@ -5416,10 +5416,8 @@ console.log('');
   // cannot fail however the code is broken. Somebody on an expedition still
   // holds their post and is not drawn, which reproduces it without waiting on a
   // journey to line up with the sweep.
-  let bigRoom = null;
   {
     const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
-    bigRoom = big;
     if (!big) {
       fail('fixture problem: no crewed room in view to widen');
     } else {
@@ -5575,37 +5573,63 @@ const ERRAND_ROOM = {
     big.staff = spare.map((c) => c.id).sort((a, b) => a - b);
     for (const c of spare) c.job = { roomId: big.id };
 
+    // A corridor as well as a bay. The jobless have no roster to be dealt from
+    // and were laned by their index among whoever was present — the same scheme
+    // the rooms were moved off, failing the same way, and half the population
+    // is jobless in a young silo. The first version of this section filtered on
+    // `p.c.job` and so tested only the half that had already been fixed.
+    const idlers = s.citizenIds
+      .map((id) => s.citizens[id])
+      .filter((c) => c && !c.job && c.status !== 'dead' && c.status !== 'expedition');
+
     const cam = {
       camY: -20, time: 0, drawn: 0, spriteBudget: 400,
       viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
     };
+    // Reduced motion returns the lane's home position with no drift and no
+    // walk, so any difference between the two frames is the lane scheme moving
+    // somebody and nothing else. It also switches journeys off, which is why
+    // the person who leaves does so by going on an expedition instead: the
+    // bucketing loop drops them either way, and this needs it to be
+    // deterministic rather than waiting for a journey to line up with a sample.
     s.settings.reducedMotion = true;
     const marks = () => {
       const m = new Map();
       cam.time = 0;
       cam.drawn = 0;
-      for (const p of citizensInView(s, cam)) if (p.c.job === undefined || p.c.job) m.set(p.c.id, p.x);
+      for (const p of citizensInView(s, cam)) if (!p.stair) m.set(p.c.id, p.x);
       return m;
     };
-    const away = s.citizens[big.staff[0]];
-    away.status = 'expedition';
-    const whileOut = marks();
-    away.status = 'working';
-    const whileIn = marks();
+
+    const cases = [
+      { what: 'a bay', who: s.citizens[big.staff[0]], peers: big.staff.length },
+      { what: 'a corridor', who: idlers[0], peers: idlers.length },
+    ];
+    const broken = [];
+    for (const { what, who, peers } of cases) {
+      if (!who || peers < 2) { broken.push(`${what}: fixture has nobody to remove`); continue; }
+      const was = who.status;
+      who.status = 'expedition';
+      const whileOut = marks();
+      who.status = was;
+      const whileIn = marks();
+      const moved = [...whileOut]
+        .filter(([id, x]) => whileIn.has(id) && Math.abs(whileIn.get(id) - x) > 0.5)
+        .map(([id, x]) => `${id}: ${Math.round(x)} -> ${Math.round(whileIn.get(id))}`);
+      if (!whileOut.size || !whileIn.size) broken.push(`${what}: nobody drawn either side`);
+      else if (moved.length) {
+        broken.push(`${what}: ${moved.length} move when one of ${peers} leaves ` +
+          `(${moved.slice(0, 2).join('; ')})`);
+      }
+    }
     s.settings.reducedMotion = false;
 
-    const moved = [...whileOut]
-      .filter(([id, x]) => whileIn.has(id) && Math.abs(whileIn.get(id) - x) > 0.5)
-      .map(([id, x]) => `${id}: ${Math.round(x)} -> ${Math.round(whileIn.get(id))}`);
-    if (!whileOut.size || !whileIn.size) {
-      fail('nobody was drawn either side of the change, so this measures nothing');
-    } else if (moved.length) {
-      fail(`${moved.length} people move when one colleague leaves the room ` +
-        `(${moved.slice(0, 3).join('; ')}) — lanes are being dealt from who is present rather ` +
-        'than from the roster, so a room re-shuffles every time somebody goes for their dinner');
+    if (broken.length) {
+      fail(`${broken.join(' | ')} — lanes are being dealt from who is present rather than from ` +
+        'the roster, so the line re-shuffles every time somebody goes for their dinner');
     } else {
-      ok(`one of ${big.staff.length} leaves the bay and the other ${whileIn.size - 1} stay exactly ` +
-        'where they were');
+      ok(`one of ${big.staff.length} leaves a bay and one of ${idlers.length} leaves a corridor, ` +
+        'and nobody else moves a pixel');
     }
   }
 }

@@ -72,11 +72,32 @@ export function citizensInView(state, cam) {
   const night = BAL.render.nightShifts.includes(state.clock.shift);
   const byFloor = new Map();
   const travellers = [];
+  // Who belongs on each floor with no post to stand at, whether or not they
+  // happen to be on the stair this instant.
+  //
+  // A room has a roster to deal lanes from and a corridor does not, so the
+  // jobless were laned by their index among whoever was *present* — the very
+  // scheme the roster replaced for rooms, and it fails the same way: measured
+  // over four thousand frames at day 120, ninety-six same-floor jumps of up to
+  // 48px among the jobless against none among the posted, on a drift ceiling of
+  // five. This is the corridor's roster. It is filled before the journey check
+  // so that somebody out on the steps still holds their place in the line.
+  const idleRoster = new Map();
   for (const id of state.citizenIds) {
     const c = state.citizens[id];
-    if (!c || c.status === 'dead' || c.status === 'expedition') continue;
+    if (!c || c.status === 'dead') continue;
     const room = c.job ? state.silo.rooms[c.job.roomId] : null;
     const floorN = room ? room.floor : idleFloor(state, c);
+    // Everybody living who has no post, including the ones who are not here:
+    // somebody on the stair is coming back, and so is somebody on the surface.
+    // A room already holds a place for both — `room.staff` keeps an
+    // expeditioner on the roster — and a corridor has to do the same or the
+    // line re-deals itself every time a squad walks out of the airlock.
+    if (!room) {
+      if (!idleRoster.has(floorN)) idleRoster.set(floorN, []);
+      idleRoster.get(floorN).push(c.id);
+    }
+    if (c.status === 'expedition') continue;
     // Posted or not. This read `!room` and so only ever put the jobless on the
     // steps, which in a silo at full employment means children: measured over
     // eight hundred frames of a day-150 silo, sixteen people used the stair, one
@@ -141,8 +162,7 @@ export function citizensInView(state, cam) {
         : BAL.render.maxCitizensPerRoom;
       let take;
       if (key === 'idle') {
-        take = group.slice(0, cap);
-        take.forEach((item, i) => { item.lane = i; item.lanes = take.length; });
+        take = laneUp(group, idleRoster.get(floorN) || [], cap);
       } else {
         // A room's lanes come off its roster, not off who happens to be inside
         // it this frame.
@@ -169,15 +189,7 @@ export function citizensInView(state, cam) {
         // dinner.
         const roster = (group[0].room?.staff || [])
           .filter((cid) => state.citizens[cid] && state.citizens[cid].status !== 'dead');
-        // Anybody drawn here who is somehow not on the roster still gets a
-        // lane rather than being dropped: a room and a citizen disagreeing
-        // about who works there is a bug elsewhere, and silently not drawing
-        // somebody is the worst way to find out about it.
-        const ids = [...new Set([...roster, ...group.map((g) => g.c.id)])].sort((a, b) => a - b);
-        const laneOf = new Map(ids.map((id, i) => [id, i]));
-        const lanes = Math.min(cap, ids.length);
-        take = group.filter((item) => laneOf.get(item.c.id) < cap);
-        take.forEach((item) => { item.lane = laneOf.get(item.c.id); item.lanes = lanes; });
+        take = laneUp(group, roster, cap);
       }
       shown.push(...take);
     }
@@ -400,6 +412,42 @@ function errandFor(state, c, night, posted = false) {
   if (posted) return null;
   const f = floorsWith(state, 'cafeteria', 'residences');
   return f.length ? { purpose: 'off shift', floors: f } : null;
+}
+
+/**
+ * Deal the drawn group into lanes, off a roster rather than off attendance.
+ *
+ * `roster` is everybody who belongs here — a room's staff, or the people whose
+ * idle floor this is — including anyone currently out on the stair. `group` is
+ * who is actually standing here this frame. Laning by position in `group` is
+ * what a first version did and it re-deals the whole line whenever one person
+ * leaves: measured at ninety-six same-floor jumps of up to 48px over four
+ * thousand frames, against a drift ceiling of five, so a colleague going for
+ * their dinner slid everybody behind them across the room.
+ *
+ * The cap applies to the roster and not to the drawn group. Capping the two
+ * separately was worse than not fixing it at all — `maxCitizensPerRoom` is five
+ * and a merged, upgraded bay holds eleven, so the sixth-numbered worker
+ * stepping in for an absent colleague matched nothing in the capped roster and
+ * was dealt a lane past the last one the room has, putting 568 sprites through
+ * a wall over two thousand frames.
+ *
+ * Anybody in `group` who is not on the roster is laned behind it rather than
+ * being given a lane out of range — and, like everyone else, is drawn only if
+ * that lane falls inside the cap. A room and a citizen disagreeing about who
+ * works there is a bug somewhere else; this refuses to draw it through a wall
+ * rather than pretending it cannot happen.
+ */
+function laneUp(group, roster, cap) {
+  const ids = [...new Set([...roster, ...group.map((g) => g.c.id)])].sort((a, b) => a - b);
+  const laneOf = new Map(ids.map((id, i) => [id, i]));
+  const lanes = Math.min(cap, ids.length);
+  const take = group.filter((item) => laneOf.get(item.c.id) < cap);
+  for (const item of take) {
+    item.lane = laneOf.get(item.c.id);
+    item.lanes = lanes;
+  }
+  return take;
 }
 
 /**
