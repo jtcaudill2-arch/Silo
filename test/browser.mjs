@@ -14,6 +14,7 @@
  */
 
 import { chromium } from 'playwright';
+import { browserPath } from './chromium.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ import { BAL } from '../src/config/balance.js';
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = 8137;
 const BASE = `http://localhost:${PORT}/`;
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = browserPath();
 const SHOTS = process.argv.includes('--shots');
 const SHOT_DIR = join(ROOT, '.shots');
 

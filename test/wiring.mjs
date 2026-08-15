@@ -32,7 +32,7 @@
  * Run: node test/wiring.mjs
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { Store } from '../src/core/store.js';
 import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
@@ -6723,6 +6723,60 @@ const ERRAND_ROOM = {
       ok(`a project nothing is working on is named, with the reason: "${dark.text}" — ` +
         `"${dark.why.slice(0, 72)}…"`);
     }
+  }
+}
+
+// ---- 72. every suite runs where it is supposed to run ----------------------
+//
+// The suite list now exists twice: once in `npm test`, and once in
+// `.github/workflows/test.yml`, split across a job with no browser and a job
+// with one. Two copies of a list is how a suite quietly stops being run —
+// somebody adds a file, wires it into `npm test`, and CI never learns about
+// it. That is exactly the failure this whole file exists for, and it would be
+// invisible: the workflow stays green because everything it knows about
+// passes.
+//
+// This checks the pair against each other and against the directory, so a new
+// suite has to be added to both or wiring.mjs goes red on the machine of
+// whoever wrote it.
+{
+  const script = JSON.parse(readSource('../package.json')).scripts?.test || '';
+  const suitesIn = (text) => new Set((text.match(/node\s+test\/([\w.-]+)\.mjs/g) || [])
+    .map((m) => m.replace(/.*test\//, '').replace(/\.mjs$/, '')));
+
+  const inNpm = suitesIn(script);
+  const inCI = suitesIn(readSource('../.github/workflows/test.yml'));
+
+  // Files that are suites, as opposed to the helpers they import. A suite is
+  // run; a helper is imported by one. `autopilot.mjs` and `chromium.mjs` are
+  // the second kind, and the test for it is the file's own shebang — every
+  // suite here starts with one and neither helper does.
+  const onDisk = new Set(
+    readdirSync(new URL('.', import.meta.url))
+      .filter((f) => f.endsWith('.mjs'))
+      .filter((f) => readSource('./' + f).startsWith('#!'))
+      .map((f) => f.replace(/\.mjs$/, ''))
+  );
+
+  const ciMissing = [...inNpm].filter((s) => !inCI.has(s));
+  const npmMissing = [...inCI].filter((s) => !inNpm.has(s));
+  const unrun = [...onDisk].filter((s) => !inNpm.has(s));
+
+  if (!inNpm.size || !inCI.size) {
+    fail(`fixture problem: read ${inNpm.size} suites from npm test and ${inCI.size} from the ` +
+      'workflow, so this section is comparing nothing');
+  } else if (ciMissing.length) {
+    fail(`${ciMissing.join(', ')} run under \`npm test\` and nowhere in CI — the workflow is ` +
+      'green on a subset and nobody is told which');
+  } else if (npmMissing.length) {
+    fail(`${npmMissing.join(', ')} run in CI and not under \`npm test\`, so a developer's green ` +
+      'run means less than the workflow\'s');
+  } else if (unrun.length) {
+    fail(`test/${unrun.join('.mjs, test/')}.mjs ${unrun.length === 1 ? 'is a suite that is' : 'are suites that are'} ` +
+      'never run by anything');
+  } else {
+    ok(`all ${inNpm.size} suites run both under \`npm test\` and in CI, and every suite on disk ` +
+      'is one of them');
   }
 }
 

@@ -19,6 +19,7 @@
  */
 
 import { chromium } from 'playwright';
+import { browserPath } from './chromium.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -28,7 +29,7 @@ const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = 8141;
 const MOUNT = '/Silo/'; // the repo name, as Pages would serve it
 const BASE = `http://localhost:${PORT}${MOUNT}`;
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = browserPath();
 const SHOTS = process.argv.includes('--shots');
 const SHOT_DIR = join(ROOT, '.shots');
 

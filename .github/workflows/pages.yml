@@ -23,7 +23,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The suite, first, and the deploy waits on it. Until this existed nothing in
+  # the repository ran `npm test`: every push published straight to Pages with
+  # no assertion having executed anywhere, which is a strange thing for a
+  # project that mutation-tests its own tests.
+  test:
+    uses: ./.github/workflows/test.yml
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,0 +1,82 @@
+name: Test
+
+# The suite, on every push and every pull request.
+#
+# It was not running anywhere. `pages.yml` builds dist/ and deploys it, and
+# nothing in this repository ran `npm test` — so fifteen suites and several
+# hundred assertions executed only when somebody typed the command on their own
+# machine, and every push published to GitHub Pages untested. This closes that,
+# and `pages.yml` now waits on it: a red suite does not deploy.
+#
+# Two jobs rather than one, because they need very different machines. Thirteen
+# of the suites are pure node with no dependencies at all and finish in
+# seconds; `browser` and `mobile` drive a real Chromium and need it downloaded
+# first. Splitting them means the fast half reports in under a minute and a
+# browser download that fails cannot be mistaken for the game being broken.
+
+# No `push` trigger, deliberately. `pages.yml` runs on push and calls this
+# workflow as its first job, so a push that also triggered this directly would
+# run the whole suite twice for one commit.
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  sim:
+    name: sim and wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No install step and none needed: the game has zero runtime dependencies
+      # and these suites import nothing but src/. `npm test` is deliberately not
+      # used here — it would run the two browser suites as well, in a job with
+      # no browser.
+      - name: Run the suites that need no browser
+        run: |
+          node test/reachability.mjs
+          node test/wiring.mjs
+          node test/atlas.mjs
+          node test/levels.mjs
+          node test/deep.mjs
+          node test/harness.mjs
+          node test/obedient.mjs
+          node test/unlocks.mjs
+          node test/catchup.mjs
+          node test/expedition.mjs
+          node test/conquest.mjs
+          node test/world.mjs
+          node test/order.mjs
+          node test/pacing.mjs
+          node test/campaign.mjs
+
+  browser:
+    name: browser and phone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # playwright is the one dependency, and it is dev-only — the shipped game
+      # still has none. `npm install` rather than `npm ci`: there is no lockfile
+      # in this repository, and adding one for a single pinned devDependency
+      # would be more machinery than it buys.
+      - name: Install playwright and its browser
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      # `test/chromium.mjs` finds the browser: nothing is set here, so it falls
+      # through to letting playwright resolve the one just installed. That
+      # fallback is the reason these two suites can run anywhere at all — they
+      # used to name an absolute path from one container image.
+      - name: Run the suites that drive a real browser
+        run: |
+          node test/browser.mjs
+          node test/mobile.mjs
