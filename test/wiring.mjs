@@ -2123,19 +2123,24 @@ console.log('');
   // in order, two rectangles a person from `drawOne` and three a skull from
   // `drawSkullFallback`, so the pairing is exact and the count is an assertion
   // in its own right.
+  const range = cam.visibleFloorRange();
+
   // A death on a floor in view, so the skull half of the pairing is live.
   // Without one this fixture has no marks at all and the three rectangles
   // `drawSkullFallback` paints are asserted about nothing — the count reads
-  // "0 marks" and every claim about them is vacuously true.
+  // "0 marks" and every claim about them is vacuously true. Against the
+  // camera's own range rather than a literal, or a narrower viewport buries the
+  // victim off screen and puts the vacuity straight back.
+  let noVictim = false;
   {
     const onScreen = s.citizenIds
       .map((id) => s.citizens[id])
-      .find((c) => c && c.status !== 'dead' && c.job && s.silo.rooms[c.job.roomId]?.floor <= 22);
-    if (!onScreen) fail('fixture problem: nobody on a visible floor to bury');
+      .find((c) => c && c.status !== 'dead' && c.job &&
+        s.silo.rooms[c.job.roomId]?.floor <= range.to);
+    if (!onScreen) noVictim = true;
     else store.dispatch({ type: 'CITIZEN_DIE', id: onScreen.id, cause: 'a test', text: 'a test death' });
   }
 
-  const range = cam.visibleFloorRange();
   cam.drawn = 0;
   const people = citizensInView(s, cam);
   const marks = deathMarks(s, range.from, range.to);
@@ -2147,31 +2152,43 @@ console.log('');
   cam.drawn = 0;
   drawCitizens(ctx2, s, cam);
 
+  // x *and* y. Pinning only x let every rectangle slide fifteen pixels up the
+  // screen with the suite still green, which is a silo of people standing in
+  // the ceiling.
+  //
+  // `drawOne` paints a body three to five tall from a rounded x, and the head
+  // exactly two above it; `drawSkullFallback` paints three rectangles at fixed
+  // offsets. Checking one of the skull's three was enough to let the two eyes
+  // be painted two hundred pixels away.
   const misplaced = [];
-  const want = people.length * 2 + marks.length * 3;
-  if (painted.length !== want) {
-    misplaced.push(`${painted.length} rectangles for ${people.length} people and ` +
-      `${marks.length} marks, which should be ${want}`);
-  } else {
+  const wanted = people.length * 2 + marks.length * 3;
+  const miscounted = painted.length !== wanted
+    ? `${painted.length} rectangles for ${people.length} people and ${marks.length} marks, ` +
+      `which should be ${wanted}`
+    : null;
+  if (!miscounted) {
     people.forEach((p, i) => {
-      for (const r of [painted[2 * i], painted[2 * i + 1]]) {
-        if (r.x !== Math.round(p.x)) {
-          misplaced.push(`${p.c.id} painted at x${Math.round(r.x)}, listed at x${Math.round(p.x)}`);
-        }
+      const body = painted[2 * i];
+      const head = painted[2 * i + 1];
+      const wx = Math.round(p.x);
+      if (body.x !== wx || head.x !== wx) {
+        misplaced.push(`${p.c.id} painted at x${body.x}, listed at x${wx}`);
+      } else if (body.y < p.y - 5 || body.y > p.y - 3 || head.y !== body.y - 2) {
+        misplaced.push(`${p.c.id} painted at y${body.y} with a head at ${head.y}, standing at ${p.y}`);
       }
     });
     marks.forEach((m, i) => {
-      const r = painted[people.length * 2 + i * 3];
-      if (r.x !== Math.round(m.x) - 3) {
-        misplaced.push(`a death mark painted at x${Math.round(r.x)}, listed at x${Math.round(m.x)}`);
-      }
+      const mx = Math.round(m.x);
+      const want = [{ x: mx - 3, y: m.y - 12 }, { x: mx - 2, y: m.y - 11 }, { x: mx, y: m.y - 11 }];
+      want.forEach((w, k) => {
+        const r = painted[people.length * 2 + i * 3 + k];
+        if (r.x !== w.x || r.y !== w.y) {
+          misplaced.push(`a death mark rectangle at ${r.x},${r.y} where ${w.x},${w.y} belongs`);
+        }
+      });
     });
   }
 
-  // Both reported, not the first of the two. These are different faults — one
-  // is a person standing where there is no floor, the other is a sprite painted
-  // away from the person it belongs to — and chaining them hides whichever
-  // comes second, in a section whose tick used to name only one of them.
   if (strays.size) {
     const first = [...strays.values()][0];
     fail(
@@ -2179,12 +2196,15 @@ console.log('');
       `(e.g. floor ${first.floorN} at x ${Math.round(first.x)}) — standing in unexcavated rock`
     );
   }
-  if (misplaced.length) {
+  if (miscounted) {
+    fail(`${miscounted} — the draw step and the list it draws from disagree about who is on screen`);
+  } else if (misplaced.length) {
     fail(`${misplaced.length} of ${painted.length} rectangles were painted somewhere other than ` +
       `where the list puts that person (${misplaced.slice(0, 2).join('; ')}) — the draw step and ` +
       'the list it draws from disagree');
   }
-  if (!strays.size && !misplaced.length) {
+  if (noVictim) fail('fixture problem: nobody on a visible floor to bury, so no skull is checked');
+  if (!strays.size && !misplaced.length && !miscounted && !noVictim) {
     ok(`nobody is drawn outside the built part of their floor, and all ${painted.length} ` +
       `rectangles land on the ${people.length} people and ${marks.length} marks they belong to`);
   }
