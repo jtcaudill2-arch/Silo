@@ -862,6 +862,12 @@ const militaryReducers = {
 
 const expeditionReducers = {
   EXPEDITION_LAUNCH(state, a) {
+    // A post is held for the whole trip: `job` and the room's `staff` roster
+    // both survive going outside, so the room runs short-crewed until they are
+    // back. Releasing the seat at launch and re-posting them on return was
+    // tried and measured over five 400-day campaigns — it moved research 79
+    // nodes to 80 and population 845 to 825, which is noise in one direction
+    // and a real loss in the other. Left alone: this is where somebody works.
     state.expeditions.active.push(a.expedition);
     state.expeditions.nextId++;
   },
@@ -903,7 +909,31 @@ const expeditionReducers = {
     for (const id of a.survivors || []) {
       const c = state.citizens[id];
       if (!c || c.status === 'dead') continue;
-      c.status = 'idle';
+      // Back to what they were doing, not to nothing.
+      //
+      // This said `idle` for everybody, and a post is not vacated by being
+      // walked away from: `job` and the room's `staff` roster both survive an
+      // expedition, so somebody who held a bench came home still holding it and
+      // never worked again. `roomCapability` counts only `working` and
+      // `training`, so the room produced nothing, and `autoAssign`'s pool is
+      // people with no job — it could not refill a seat that was taken. Nothing
+      // in the game ever moved them back.
+      //
+      // Measured across five 400-day campaigns: a project sat with its progress
+      // frozen on 283 days of 2000, the worst run 95 unbroken days on seed 4660
+      // — Decontamination Protocols three points from finished, in a laboratory
+      // whose one technician was a soldier standing idle in it since his last
+      // run. It is not only labs. The same silo had a Generator Hall held the
+      // same way, which is where its brownouts came from.
+      //
+      // The squad half is the same line. `sq.assignment` is set to 'garrison'
+      // ten lines up, so a returning squad is back on watch, and watch is
+      // `training` — the status `SQUAD_MEMBER` gives them when they enlist and
+      // the one `sprites.js:onDuty` reads to draw them as the silo's guard.
+      // Sent to `idle` instead, the whole garrison came home off duty.
+      c.status = c.job && state.silo.rooms[c.job.roomId] ? 'working'
+        : c.squadId != null && state.military.squads[c.squadId] ? 'training'
+          : 'idle';
       c.radiation = clamp(c.radiation + (a.radiation || 0), 0, BAL.citizens.radiation.max);
       c.history.push({ day: state.clock.day, text: `Came back from the ${exp.band} run.` });
       if (!c.traits.includes('veteran') && (state.stats.expeditionsReturned || 0) > 0) {

@@ -15,7 +15,7 @@
 
 import { BAL, TIME } from '../config/balance.js';
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 export const MIGRATIONS = {
   // 10 -> 11: Phase 2. Persistence added the catch-up bookkeeping, the audio
@@ -319,6 +319,40 @@ export const MIGRATIONS = {
         c.job = null;
         if (c.status === 'working' || c.status === 'training') c.status = 'idle';
       }
+    }
+    return state;
+  },
+
+  // Put the stranded back to work.
+  //
+  // `EXPEDITION_RESOLVE` sent every survivor to `idle` and left their `job` and
+  // their room's `staff` roster untouched, so anyone who held a post when they
+  // went outside came home still holding it and never worked again:
+  // `roomCapability` counts only `working` and `training`, and `autoAssign`'s
+  // pool is people with no job, so the seat produced nothing and could not be
+  // refilled. Every save from before that fix carries however many of those the
+  // silo accumulated — a 400-day campaign had two, in a laboratory and a
+  // generator hall.
+  //
+  // The repair is the state the reducer now writes, applied to what is already
+  // there: somebody holding a post is at it. Both sides are checked, because
+  // `job` and the roster are two records of one fact and only the pair of them
+  // agreeing means the post is really theirs — a job pointing at a room that
+  // does not list them is the stale half, and that person goes back in the pool
+  // instead. Re-running it changes nothing: after one pass there is no living
+  // citizen left who is idle and rostered.
+  20: (state) => {
+    for (const [key, room] of Object.entries(state.silo?.rooms || {})) {
+      for (const cid of room?.staff || []) {
+        const c = state.citizens?.[cid];
+        if (!c || c.status !== 'idle' || c.job?.roomId !== key) continue;
+        c.status = 'working';
+      }
+    }
+    for (const c of Object.values(state.citizens || {})) {
+      if (!c || c.status !== 'idle' || c.job?.roomId == null) continue;
+      const room = state.silo?.rooms?.[c.job.roomId];
+      if (!room || !(room.staff || []).includes(c.id)) c.job = null;
     }
     return state;
   },

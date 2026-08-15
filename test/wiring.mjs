@@ -42,7 +42,7 @@ import autopilot from './autopilot.mjs';
 import { directives } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
 import { gearStorageCap, craftableItems } from '../src/sim/military.js';
-import { computeCaps, staffSlots } from '../src/sim/economy.js';
+import { computeCaps, staffSlots, roomCapability } from '../src/sim/economy.js';
 import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
 import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
 import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/data/items.js';
@@ -6480,6 +6480,233 @@ const ERRAND_ROOM = {
     fail('a silo with a Foundry is still being told where alloy comes from');
   } else {
     ok('and a silo that has one is not told about it again');
+  }
+}
+
+// ---- 70. coming home is going back to work ---------------------------------
+//
+// A post is not vacated by walking away from it. `job` and the room's `staff`
+// roster both survive an expedition, and `EXPEDITION_RESOLVE` sent every
+// survivor to `idle` — so a technician who went outside came home still
+// holding the bench and never worked at it again. `roomCapability` counts only
+// `working` and `training`, so the room produced nothing, and `autoAssign`'s
+// pool is people with no job, so nothing could relieve them either. There is
+// no path in the game that recovers from it.
+//
+// Measured over ten 400-day campaigns before the fix: research stood still on
+// 619 days of 4000, worst run 139 unbroken days. Seed 4660 spent 95 days with
+// Decontamination Protocols three points from finished, in a laboratory whose
+// one technician was a soldier who had been standing idle in it since his last
+// run — and had a Generator Hall held the same way, which is where its
+// brownouts were coming from.
+//
+// Through the real reducer, because that is where the bug was: the sim
+// functions were all correct and the state transition was not.
+{
+  const store = newStore(9001);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+
+  const room = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.staff.length);
+  const worker = room ? s.citizens[room.staff[0]] : null;
+  if (!worker) {
+    fail('fixture problem: nobody in the opening silo holds a post, so there is none to come back to');
+  } else {
+    const squadId = 'sq_home';
+    s.military.squads[squadId] = {
+      id: squadId, name: 'Test squad', members: [worker.id], leaderId: worker.id,
+      assignment: 'expedition', deployed: true,
+    };
+    s.military.squadIds.push(squadId);
+
+    // Out, through the same two actions `expedition.js:launch` dispatches. The
+    // post is held for the trip, which is the game's existing rule and not what
+    // this section is arguing with.
+    const outing = (id, roster) => ({
+      id, squadId, band: 'near', purpose: 'salvage', target: null,
+      launchDay: s.clock.day, returnDay: s.clock.day + 3, roster,
+      leaderId: roster[0], resolved: false,
+    });
+    store.dispatch({ type: 'EXPEDITION_LAUNCH', expedition: outing('x1', [worker.id]) });
+    store.dispatch({ type: 'CITIZEN_STATUS', id: worker.id, status: 'expedition' });
+    const heldWhileOut = room.staff.includes(worker.id) && worker.job?.roomId === room.id;
+
+    // And home.
+    store.dispatch({
+      type: 'EXPEDITION_RESOLVE',
+      id: 'x1',
+      survivors: [worker.id],
+      casualties: [],
+      journal: [],
+      radiation: 5,
+    });
+
+    // The outcome the player sees is the room, not the status field: a bench
+    // with somebody sitting at it who contributes nothing is the whole bug,
+    // and a check on `status` alone would pass on a citizen whose job had been
+    // quietly dropped instead.
+    const cap = roomCapability(s, room);
+    if (!heldWhileOut) {
+      fail('fixture problem: the post was released when they went out, so there is nothing to ' +
+        'come back to and this section proves nothing');
+    } else if (!onDutyStatus(worker)) {
+      fail(`somebody came home from a run to a post they still hold and is "${worker.status}" — ` +
+        `${room.type} counts ${cap.toFixed(2)} of a crew and produces nothing, and no path in the ` +
+        'game puts them back to work');
+    } else if (cap <= 0) {
+      fail(`somebody came home to their post reading "${worker.status}" and their ${room.type} ` +
+        'still has no working crew');
+    } else {
+      ok(`somebody who comes home from a run goes back to the post they never gave up ` +
+        `(${room.type} at ${cap.toFixed(2)} of a crew)`);
+    }
+
+    // A survivor with no post is back on watch, not standing about. The squad
+    // is set back to 'garrison' four lines above this in the same reducer, and
+    // watch is `training` — the status enlisting gives them and the one
+    // `sprites.js:onDuty` reads to draw the silo's guard as guards.
+    const spare = s.citizenIds
+      .map((id) => s.citizens[id])
+      .find((c) => c && !c.job && c.status !== 'dead' && c.id !== worker.id);
+    if (!spare) {
+      fail('fixture problem: nobody in the silo is without a post, so the garrison half is unchecked');
+    } else {
+      s.military.squads[squadId].members.push(spare.id);
+      spare.squadId = squadId;
+      store.dispatch({ type: 'EXPEDITION_LAUNCH', expedition: outing('x2', [spare.id]) });
+      store.dispatch({ type: 'CITIZEN_STATUS', id: spare.id, status: 'expedition' });
+      store.dispatch({
+        type: 'EXPEDITION_RESOLVE',
+        id: 'x2',
+        survivors: [spare.id],
+        casualties: [],
+        journal: [],
+        radiation: 5,
+      });
+      if (spare.status !== 'training') {
+        fail(`a soldier with no post came home to "${spare.status}" while their squad went back on ` +
+          'garrison — the whole guard reads as off duty the moment it returns');
+      } else {
+        ok('and a soldier with no post comes home onto the watch their squad went back to');
+      }
+    }
+  }
+
+  // And a save that already has one of them gives that post back.
+  //
+  // Fixing the reducer does nothing for a campaign that has been running for
+  // four hundred days: those citizens are already idle on a roster, and there
+  // is still no path that recovers them. Step 20 writes the state the reducer
+  // now writes, to what is already there.
+  //
+  // Both sides, because `job` and the roster are two records of one fact and
+  // only the pair agreeing means the post is really theirs. A job pointing at
+  // a room that does not list them is the stale half, and putting *that*
+  // person to work would post somebody to a room with no seat for them.
+  {
+    const old = newStore(0x5710).state;
+    const donor3 = Object.values(old.silo.rooms).find((r) => getRoom(r.type)?.staff);
+    const back = old.citizens[old.citizenIds[3]];
+    const ghost = old.citizens[old.citizenIds[4]];
+    old.silo.rooms.old_lab = {
+      ...donor3, id: 'old_lab', type: 'laboratory', floor: 4, slot: 4, width: 1, level: 1,
+      powered: true, buildingUntilCycle: 0, staff: [back.id],
+    };
+    back.job = { roomId: 'old_lab' };
+    back.status = 'idle';
+    ghost.job = { roomId: 'old_lab' };   // holds a job the room never gave out
+    ghost.status = 'idle';
+
+    const fixed = MIGRATIONS[20](old) || old;
+    // Twice, because a migration has to be safe to re-run.
+    MIGRATIONS[20](fixed);
+
+    if (fixed.citizens[back.id].status !== 'working') {
+      fail(`a save's stranded technician is still "${fixed.citizens[back.id].status}" on the ` +
+        'roster of a lab that counts no crew — the fix does nothing for a campaign already ' +
+        'in progress');
+    } else if (fixed.citizens[ghost.id].job) {
+      fail('a citizen whose job points at a room that never listed them is left holding it, so ' +
+        'auto-assign still cannot pick them up');
+    } else if (roomCapability(fixed, fixed.silo.rooms.old_lab) <= 0) {
+      fail('the migrated laboratory still counts no working crew');
+    } else {
+      ok('and a save with somebody stranded on a post puts them back to work, twice over');
+    }
+  }
+}
+
+// ---- 71. research that has stopped says so ---------------------------------
+//
+// `research.simulateCycle` spends banked points on the active node and returns
+// nothing at all when there are none to spend, so a frozen project looks
+// exactly like a slow one: the same bar in the same place and no line anywhere
+// saying why. Measured over the same ten campaigns, with the post bug fixed:
+// research still stood still on 619 days of 4000, and on 342 of them the whole
+// directive list held one order or none. The silo was not saying the wrong
+// thing about it — it was saying nothing at all.
+//
+// Both halves are checked. An order that fires whenever there is a project is
+// noise, and would pass a test that only ever looked at the stalled case.
+{
+  const store = newStore(4242);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+
+  const donor = Object.values(s.silo.rooms)[0];
+  s.silo.rooms.lab_71 = {
+    ...donor, id: 'lab_71', type: 'laboratory', floor: 3, slot: 3, level: 1, width: 1,
+    powered: true, buildingUntilCycle: 0, staff: [], integrity: 100,
+  };
+  const lab = s.silo.rooms.lab_71;
+  const labDef = getRoom('laboratory');
+  const tech = s.citizenIds
+    .map((id) => s.citizens[id])
+    .find((c) => c && c.age >= 20 && c.age < 60 && c.status !== 'dead');
+  const project = availableResearch(s)[0];
+
+  if (!tech || !project) {
+    fail('fixture problem: the silo has nobody to staff a lab or nothing to research');
+  } else {
+    store.dispatch({ type: 'CITIZEN_ASSIGN', citizenId: tech.id, roomId: 'lab_71' });
+    s.research.active = { id: project.id, progress: 12, cycles: 40 };
+
+    const orderIn = (state) => (directives(state) || []).find((d) => d.id === 'research_stalled');
+
+    // Lit and crewed: nothing to say.
+    const quiet = orderIn(s);
+    const litCap = roomCapability(s, lab);
+
+    // Dark: the one thing that stops without a sound.
+    lab.powered = false;
+    const dark = orderIn(s);
+
+    // Empty: the other way it stops.
+    lab.powered = true;
+    store.dispatch({ type: 'CITIZEN_ASSIGN', citizenId: tech.id, roomId: null });
+    const empty = orderIn(s);
+
+    if (litCap <= 0) {
+      fail(`fixture problem: the lab reads ${litCap.toFixed(2)} of a crew while lit and staffed, ` +
+        'so every case below is the stalled one');
+    } else if (quiet) {
+      fail(`a working lab with a project on the bench raises "${quiet.text}" — an order that ` +
+        'fires whenever there is any research at all is noise, not news');
+    } else if (!dark) {
+      fail(`a crewed laboratory with no power holds ${project.name} at 12 points for ever and the ` +
+        'silo raises no order about it');
+    } else if (!dark.why.includes(project.name)) {
+      fail(`the silo says research has stopped without saying which project: "${dark.why}"`);
+    } else if (!/power/i.test(dark.why)) {
+      fail(`the labs are dark for want of power and the order never says so: "${dark.why}"`);
+    } else if (!empty) {
+      fail('a laboratory with nobody at a bench holds the project just as still, and raises nothing');
+    } else if (!/crew|nobody/i.test(empty.why)) {
+      fail(`the benches are empty and the order blames something else: "${empty.why}"`);
+    } else {
+      ok(`a project nothing is working on is named, with the reason: "${dark.text}" — ` +
+        `"${dark.why.slice(0, 72)}…"`);
+    }
   }
 }
 
