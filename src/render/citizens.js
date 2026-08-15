@@ -139,8 +139,9 @@ export function citizensInView(state, cam) {
       const cap = key === 'idle'
         ? BAL.render.maxIdleCitizensPerFloor
         : BAL.render.maxCitizensPerRoom;
-      const take = group.slice(0, cap);
+      let take;
       if (key === 'idle') {
+        take = group.slice(0, cap);
         take.forEach((item, i) => { item.lane = i; item.lanes = take.length; });
       } else {
         // A room's lanes come off its roster, not off who happens to be inside
@@ -152,16 +153,31 @@ export function citizensInView(state, cam) {
         // across — a whole room twitching sideways because somebody went for
         // their dinner. It was rare while only the jobless travelled; it is
         // every fifty seconds in an eight-person bay now that the posted do.
-        const roster = (take[0].room?.staff || [])
-          .filter((cid) => state.citizens[cid] && state.citizens[cid].status !== 'dead')
-          .sort((a, b) => a - b)
-          .slice(0, cap);
-        const lanes = Math.max(take.length, roster.length);
-        take.forEach((item) => {
-          const i = roster.indexOf(item.c.id);
-          item.lane = i >= 0 ? i : roster.length;
-          item.lanes = lanes;
-        });
+        //
+        // The cap is applied to the *roster* and not to the drawn group, which
+        // is the half that has to be got right. Capping the two independently
+        // put a worker in a lane the room does not have: `maxCitizensPerRoom`
+        // is five and a merged, upgraded bay holds eleven, so as soon as one of
+        // the five lowest-numbered staff stepped onto the stair the sixth took
+        // their place in the drawn group, matched nothing in the capped roster,
+        // and was posted a lane past the last one — measured at 568 sprites
+        // drawn outside their own room's walls over two thousand frames.
+        //
+        // Capping by roster position instead means an absent worker leaves
+        // their station empty rather than shuffling the queue, which is what
+        // the room actually looks like when somebody is off getting their
+        // dinner.
+        const roster = (group[0].room?.staff || [])
+          .filter((cid) => state.citizens[cid] && state.citizens[cid].status !== 'dead');
+        // Anybody drawn here who is somehow not on the roster still gets a
+        // lane rather than being dropped: a room and a citizen disagreeing
+        // about who works there is a bug elsewhere, and silently not drawing
+        // somebody is the worst way to find out about it.
+        const ids = [...new Set([...roster, ...group.map((g) => g.c.id)])].sort((a, b) => a - b);
+        const laneOf = new Map(ids.map((id, i) => [id, i]));
+        const lanes = Math.min(cap, ids.length);
+        take = group.filter((item) => laneOf.get(item.c.id) < cap);
+        take.forEach((item) => { item.lane = laneOf.get(item.c.id); item.lanes = lanes; });
       }
       shown.push(...take);
     }

@@ -268,11 +268,16 @@ function buildReport({ state, before, after, entries, elapsedMs, simulatedMs, mo
   {
     const grads = finished.filter((f) => f.data?.graduated);
     if (grads.length > 1) {
+      // Spliced in where the first of them was, not appended. Every other line
+      // in this section is in the order it happened and the report prints the
+      // day beside it, so pushing the summary onto the end puts a day-2 class
+      // below a day-5 research node.
+      const at = finished.findIndex((f) => f.data?.graduated);
       for (let i = finished.length - 1; i >= 0; i--) {
         if (finished[i].data?.graduated) finished.splice(i, 1);
       }
-      finished.push({
-        day: grads[grads.length - 1].day,
+      finished.splice(at, 0, {
+        day: grads[0].day,
         text: `${grads.length} children finished school.`,
       });
     }

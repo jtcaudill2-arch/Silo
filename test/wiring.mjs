@@ -5405,12 +5405,46 @@ console.log('');
     s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
     for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
   }
+  // A bay with a bigger roster than the silo will draw at once, and one of its
+  // crew away on the surface.
+  //
+  // `maxCitizensPerRoom` is five and a merged, upgraded room holds up to
+  // eleven, so the drawn group and the roster are routinely different sets of
+  // people — and that difference is the only thing the lane arithmetic can get
+  // wrong. Without it this section runs on a thirty-day silo whose rooms are
+  // all under the cap, where every lane scheme agrees and the check below
+  // cannot fail however the code is broken. Somebody on an expedition still
+  // holds their post and is not drawn, which reproduces it without waiting on a
+  // journey to line up with the sweep.
+  let bigRoom = null;
+  {
+    const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
+    bigRoom = big;
+    if (!big) {
+      fail('fixture problem: no crewed room in view to widen');
+    } else {
+      big.width = Math.max(big.width, 3);
+      big.level = 5;
+      const spare = s.citizenIds
+        .map((id) => s.citizens[id])
+        .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin)
+        .slice(0, BAL.render.maxCitizensPerRoom + 3);
+      big.staff = spare.map((c) => c.id).sort((a, b) => a - b);
+      for (const c of spare) c.job = { roomId: big.id };
+      // The lowest-numbered of them is outside, so the roster and the drawn
+      // group differ by exactly one at the front.
+      const away = s.citizens[big.staff[0]];
+      away.status = 'expedition';
+    }
+  }
+
   const cam = {
     camY: -20, time: 0, drawn: 0, spriteBudget: 400,
     viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
   };
   // `cam.time` is milliseconds; sampling it in seconds looks like a frozen
   // silo and is how the first run of this measurement fooled its author.
+  const outside = [];
   const track = (reduced) => {
     s.settings.reducedMotion = reduced;
     const xs = new Map();
@@ -5418,6 +5452,24 @@ console.log('');
     for (let k = 0; k <= 240; k++) {
       cam.time = k * 250;
       for (const p of citizensInView(s, cam)) {
+        // Inside the room they are posted to, always.
+        //
+        // `citizenX` deals a lane out of the room's own width, so a lane index
+        // past the number of lanes puts somebody through the wall — which is
+        // what happened when the drawn group and the roster were capped
+        // independently: `maxCitizensPerRoom` is five, a merged and upgraded
+        // bay holds eleven, and the sixth-lowest-numbered worker stepping in
+        // for a colleague on the stair matched nothing and was posted a lane
+        // past the last. Measured at 568 sprites outside their own walls over
+        // two thousand frames, and invisible to every other check here because
+        // they were still moving, still animating, and still on the right floor.
+        if (!p.stair && p.c.job) {
+          const room = s.silo.rooms[p.c.job.roomId];
+          if (room && (p.x < room.slot * SLOT_W || p.x > (room.slot + room.width) * SLOT_W)) {
+            outside.push(`${p.c.id} at x${Math.round(p.x)}, room ${room.type} slots ` +
+              `${room.slot}-${room.slot + room.width}`);
+          }
+        }
         if (!onDutyStatus(p.c)) continue;
         if (!xs.has(p.c.id)) { xs.set(p.c.id, []); acts.set(p.c.id, new Set()); }
         xs.get(p.c.id).push(p.x);
@@ -5435,7 +5487,11 @@ console.log('');
 
   const stuck = live.ranges.filter((r) => r < 2).length;
   const median = [...live.ranges].sort((a, b) => a - b)[Math.floor(live.ranges.length / 2)] || 0;
-  if (!live.n) {
+  if (outside.length) {
+    fail(`${outside.length} sprites are drawn outside the room they are posted to ` +
+      `(${[...new Set(outside)].slice(0, 3).join('; ')}) — a lane index past the room's lane ` +
+      'count puts a worker through the wall');
+  } else if (!live.n) {
     fail('no working citizens were drawn at all, so this measures nothing');
   } else if (stuck > live.n * 0.2) {
     fail(`${stuck} of ${live.n} people at posts never moved over a simulated minute — the walk ` +
@@ -5482,6 +5538,77 @@ const ERRAND_ROOM = {
   // "arrives at a floor with some generator hall on it" would pass for a
   // mechanic heading to the wrong generator hall.
 };
+
+// ---- 65b. a colleague going for their dinner does not move anybody else -----
+//
+// Lanes were the index within the group *currently drawn*, so the moment one
+// worker stepped onto the stair every colleague behind them slid a lane across
+// — a whole bay twitching sideways because somebody went to eat. It was rare
+// while only the jobless travelled and it is every fifty seconds in a busy room
+// now that the posted do.
+//
+// Reduced motion is the instrument: it returns the lane's home position with no
+// drift and no walk, so any difference between the two frames below is the lane
+// scheme moving somebody and nothing else. Somebody on an expedition stands in
+// for the traveller — they hold their post and are not drawn, which is the same
+// shape without waiting for a journey to line up.
+{
+  const store = newStore(0x11FE);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let d = 0; d < 30; d++) {
+    game.runDays(1);
+    s.meta.playedMs = s.clock.cycle * BAL.time.TICK_MS * TIME.ticksPerCycle;
+    for (let i = 0; i < 3; i++) store.dispatchAll(autopilot(s));
+  }
+  const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
+  const spare = s.citizenIds
+    .map((id) => s.citizens[id])
+    .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin)
+    .slice(0, BAL.render.maxCitizensPerRoom + 3);
+  if (!big || spare.length < BAL.render.maxCitizensPerRoom + 3) {
+    fail('fixture problem: not enough crew to over-fill a room');
+  } else {
+    big.width = Math.max(big.width, 3);
+    big.level = 5;
+    big.staff = spare.map((c) => c.id).sort((a, b) => a - b);
+    for (const c of spare) c.job = { roomId: big.id };
+
+    const cam = {
+      camY: -20, time: 0, drawn: 0, spriteBudget: 400,
+      viewWorldH: () => 838, visibleFloorRange: () => ({ from: 1, to: 22 }),
+    };
+    s.settings.reducedMotion = true;
+    const marks = () => {
+      const m = new Map();
+      cam.time = 0;
+      cam.drawn = 0;
+      for (const p of citizensInView(s, cam)) if (p.c.job === undefined || p.c.job) m.set(p.c.id, p.x);
+      return m;
+    };
+    const away = s.citizens[big.staff[0]];
+    away.status = 'expedition';
+    const whileOut = marks();
+    away.status = 'working';
+    const whileIn = marks();
+    s.settings.reducedMotion = false;
+
+    const moved = [...whileOut]
+      .filter(([id, x]) => whileIn.has(id) && Math.abs(whileIn.get(id) - x) > 0.5)
+      .map(([id, x]) => `${id}: ${Math.round(x)} -> ${Math.round(whileIn.get(id))}`);
+    if (!whileOut.size || !whileIn.size) {
+      fail('nobody was drawn either side of the change, so this measures nothing');
+    } else if (moved.length) {
+      fail(`${moved.length} people move when one colleague leaves the room ` +
+        `(${moved.slice(0, 3).join('; ')}) — lanes are being dealt from who is present rather ` +
+        'than from the roster, so a room re-shuffles every time somebody goes for their dinner');
+    } else {
+      ok(`one of ${big.staff.length} leaves the bay and the other ${whileIn.size - 1} stay exactly ` +
+        'where they were');
+    }
+  }
+}
 
 // ---- 66. a hundred and forty-four floors with traffic between them ----------
 //
