@@ -5418,19 +5418,27 @@ console.log('');
   // journey to line up with the sweep.
   {
     const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
+    const spare = s.citizenIds
+      .map((id) => s.citizens[id])
+      // Not the deployed: this fixture puts one of them on an expedition
+      // deliberately, and starting from somebody already out there makes that
+      // a no-op and the case a no-op with it.
+      .filter((c) => c && c.status !== 'dead' && c.status !== 'expedition' &&
+        c.age >= BAL.citizens.workingAgeMin)
+      .slice(0, BAL.render.maxCitizensPerRoom + 3);
+    // The roster has to end up *past* the draw cap, or `lanes` is just the
+    // roster length, every lane index is inside it by construction, and the
+    // wall check below cannot fail however the code is broken — while still
+    // printing a tick. A short pool is a fixture problem and has to be reported
+    // as one rather than quietly making the section decorative.
     if (!big) {
       fail('fixture problem: no crewed room in view to widen');
+    } else if (spare.length <= BAL.render.maxCitizensPerRoom) {
+      fail(`fixture problem: only ${spare.length} citizens free to crew a bay, which is not past ` +
+        `the ${BAL.render.maxCitizensPerRoom} the silo draws — the lane check cannot fail`);
     } else {
       big.width = Math.max(big.width, 3);
       big.level = 5;
-      const spare = s.citizenIds
-        .map((id) => s.citizens[id])
-        // Not the deployed: this fixture puts one of them on an expedition
-        // deliberately, and starting from somebody already out there makes that
-        // a no-op and the case a no-op with it.
-        .filter((c) => c && c.status !== 'dead' && c.status !== 'expedition' &&
-          c.age >= BAL.citizens.workingAgeMin)
-        .slice(0, BAL.render.maxCitizensPerRoom + 3);
       big.staff = spare.map((c) => c.id).sort((a, b) => a - b);
       for (const c of spare) c.job = { roomId: big.id };
       // The lowest-numbered of them is outside, so the roster and the drawn
