@@ -5416,6 +5416,7 @@ console.log('');
   // cannot fail however the code is broken. Somebody on an expedition still
   // holds their post and is not drawn, which reproduces it without waiting on a
   // journey to line up with the sweep.
+  let bay = null;
   {
     const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
     const spare = s.citizenIds
@@ -5445,6 +5446,7 @@ console.log('');
       // group differ by exactly one at the front.
       const away = s.citizens[big.staff[0]];
       away.status = 'expedition';
+      bay = big;
     }
   }
 
@@ -5455,6 +5457,7 @@ console.log('');
   // `cam.time` is milliseconds; sampling it in seconds looks like a frozen
   // silo and is how the first run of this measurement fooled its author.
   const outside = [];
+  const backfilled = new Set();
   const track = (reduced) => {
     s.settings.reducedMotion = reduced;
     const xs = new Map();
@@ -5480,6 +5483,19 @@ console.log('');
               `${room.slot}-${room.slot + room.width}`);
           }
         }
+        // Nobody beyond the room's drawn lanes may be backfilled into an
+        // absent colleague's place.
+        //
+        // This is the property that tells roster-capping from
+        // drawn-group-capping apart, and the wall check above cannot see it: the
+        // lane clamp keeps a backfilled worker inside the room, so the bug the
+        // whole scheme exists to prevent looks perfectly fine in x. With the
+        // roster capped, the away crew member's lane simply stands empty and
+        // the sixth-lowest-numbered worker is not drawn at all.
+        if (bay && p.c.job?.roomId === bay.id &&
+            bay.staff.indexOf(p.c.id) >= BAL.render.maxCitizensPerRoom) {
+          backfilled.add(p.c.id);
+        }
         if (!onDutyStatus(p.c)) continue;
         if (!xs.has(p.c.id)) { xs.set(p.c.id, []); acts.set(p.c.id, new Set()); }
         xs.get(p.c.id).push(p.x);
@@ -5497,7 +5513,12 @@ console.log('');
 
   const stuck = live.ranges.filter((r) => r < 2).length;
   const median = [...live.ranges].sort((a, b) => a - b)[Math.floor(live.ranges.length / 2)] || 0;
-  if (outside.length) {
+  if (backfilled.size) {
+    fail(`${backfilled.size} of the bay's crew are drawn from past the ` +
+      `${BAL.render.maxCitizensPerRoom} lanes it has (${[...backfilled].slice(0, 3).join(', ')}) — ` +
+      'somebody stepped into the place of a colleague who is away, which means lanes are being ' +
+      'dealt from who is present rather than from the roster');
+  } else if (outside.length) {
     fail(`${outside.length} sprites are drawn outside the room they are posted to ` +
       `(${[...new Set(outside)].slice(0, 3).join('; ')}) — a lane index past the room's lane ` +
       'count puts a worker through the wall');
