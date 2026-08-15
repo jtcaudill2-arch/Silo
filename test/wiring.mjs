@@ -6699,6 +6699,22 @@ const ERRAND_ROOM = {
       fail(`the silo says research has stopped without saying which project: "${dark.why}"`);
     } else if (!/power/i.test(dark.why)) {
       fail(`the labs are dark for want of power and the order never says so: "${dark.why}"`);
+    } else if (dark.panel !== 'resources') {
+      // The panel that names the problem is not the panel that solves it. The
+      // research panel shows the frozen bar and offers no way to unfreeze it;
+      // the power priority list in `ui/panels/resources.js` shows the lab
+      // sitting below the line generation runs out at, and lets it be moved.
+      // `shell.js:125` opens `panel` on a tap whether or not the order is a
+      // hold, so this field is the whole route to it.
+      fail(`a lab shed by a brownout sends the player to the "${dark.panel}" panel — the one that ` +
+        'names the problem, not the priority list that can do something about it');
+    } else if (!dark.wait) {
+      // And no button. Every room moved up that list pushes another down, and
+      // the panel's own note is that moving the water reclaimer down is how
+      // silos die — an action here would be the game reshuffling the shed
+      // order for research and handing back a dark hydroponics.
+      fail('the silo offers a one-tap action for a dark lab, which can only mean moving something ' +
+        'else below the cutline on the player\'s behalf');
     } else if (!empty) {
       fail('a laboratory with nobody at a bench holds the project just as still, and raises nothing');
     } else if (!/crew|nobody/i.test(empty.why)) {

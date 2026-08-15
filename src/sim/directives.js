@@ -911,12 +911,28 @@ export function directives(state) {
   // list held one order or none. The silo was not saying the wrong thing about
   // it. It was saying nothing at all.
   //
-  // `wait: true` because there is no button that discharges this. When the
-  // answer is crew, `staff` at 72 owns it and outranks this; when it is power,
-  // `power` at 92 owns it and outranks this too — and both of those go quiet
-  // exactly when the silo is short of people, which is when this fires most.
-  // What it adds is the sentence neither of them says: the thing you are
-  // paying for with that shortage is the project on the bench.
+  // A hold, pointed at the panel that can do something about it.
+  //
+  // Those are two separate decisions and both were wrong in the first version,
+  // which sent the player to the research panel — the screen that shows the
+  // frozen bar and offers no way to unfreeze it. The panel that names the
+  // problem is not the panel that solves it. `ui/panels/resources.js` carries
+  // the power priority list, drag-to-reorder, with a "GENERATION RUNS OUT
+  // HERE" cutline drawn through it: it shows the laboratory sitting below the
+  // line and lets the player move it. `shell.js:125` opens `panel` when the
+  // order bar is tapped whether or not it is a hold, so pointing it there is
+  // the whole route.
+  //
+  // And still a hold, deliberately, because there is no move the game should
+  // make on the player's behalf. Every room raised up that list is another
+  // pushed down, and the panel's own note is "moving the water reclaimer down
+  // is how silos die" — an action button here would be the game reshuffling
+  // the shed order for research and handing back a dark hydroponics. The two
+  // orders that do own actions cover the safe ones: `staff` at 72 when the
+  // answer is crew, `power` at 92 when it is generation. Both go quiet exactly
+  // when the silo is short of people, which is when this fires most. What it
+  // adds then is the sentence neither says — the thing the shortage is costing
+  // you is the project on the bench — and the way to the list that shows it.
   {
     const active = state.research.active;
     const node = active ? getResearch(active.id) : null;
@@ -938,13 +954,15 @@ export function directives(state) {
           text: dark ? 'The labs are dark' : 'The benches are empty',
           why: dark
             ? `${node.name} is ${done}% done and has not moved since the ` +
-              `${labs.length === 1 ? 'laboratory' : 'laboratories'} last had power. Research is the ` +
-              'one thing in the silo that stops without a sound: nothing spoils, nothing dies, and ' +
-              'the bar simply stays where it is. More generation, or more people in the halls that ' +
-              'have it, is the way back.'
+              `${labs.length === 1 ? 'laboratory' : 'laboratories'} last had power. Rooms shut off ` +
+              'from the bottom of the priority list up, and a laboratory sits near the bottom of ' +
+              'it — so research is the first thing a brownout takes and the one thing in the silo ' +
+              'that stops without a sound. The list is here, with the line generation runs out at ' +
+              'drawn through it: move the labs above it and something else goes below, or build ' +
+              'the generation to carry them both.'
             : `${node.name} is ${done}% done and nobody is at a bench. Points come from the crew, ` +
               'so an empty laboratory makes none and the project stands exactly where it is.',
-          panel: 'research',
+          panel: dark ? 'resources' : 'research',
           // The same weight as the idle-labs order below, because it is the
           // same problem seen from the other side and the two can never both
           // fire: one wants a project chosen, this one has a project nobody is
