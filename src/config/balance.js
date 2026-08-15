@@ -413,6 +413,31 @@ export const BAL = {
       // it wherever it sits. What decided research was never the shed rank.
       // It was whether anybody was standing in the room, and that is now
       // `jobs.staffingPriority`'s question to answer.
+      //
+      // Re-measured after the expedition and crewing work, because a claim
+      // that stops anyone touching this list has to still be true. Fifteen
+      // seeds at 400 days, Laboratory at nineteenth against thirteenth:
+      // research 268 nodes against 270, and eleven of the fifteen campaigns
+      // finish on exactly the same number. Population moves 2704 to 2739. Both
+      // are noise, and the first ten seeds of that sweep read +1.8% research
+      // on their own — which is what fifteen are for.
+      //
+      // The one figure that does move is brownout-days, 612 down to 499, and
+      // it is not the improvement it looks like. A brownout is flagged when a
+      // room with crew in it goes unpowered; raising the Laboratory pushes the
+      // shedding onto the depot, the suit bay and the airlock, which are
+      // often uncrewed and so never register. The silo is exactly as short of
+      // power either way. It just stops saying so, which is the opposite of
+      // what this project wants.
+      //
+      // While measuring: brownouts land on 14% of days across those campaigns
+      // at a mean generation-to-demand of 1.19, so the plant is not undertuned
+      // either — but the spread runs from 0 days to 172, and day 201-300 is
+      // the crunch at 29% against 8-10% on both sides of it. A per-campaign
+      // situation rather than a number that is wrong, which is the case for
+      // telling the player when their labs go dark rather than retuning under
+      // them. `directives.js:research_stalled` and the launch screen's
+      // "what the silo gives up" are that.
       'water_reclaimer',
       'air_filtration',
       'hydroponics',
