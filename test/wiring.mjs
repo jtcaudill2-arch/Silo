@@ -5425,7 +5425,11 @@ console.log('');
       big.level = 5;
       const spare = s.citizenIds
         .map((id) => s.citizens[id])
-        .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin)
+        // Not the deployed: this fixture puts one of them on an expedition
+        // deliberately, and starting from somebody already out there makes that
+        // a no-op and the case a no-op with it.
+        .filter((c) => c && c.status !== 'dead' && c.status !== 'expedition' &&
+          c.age >= BAL.citizens.workingAgeMin)
         .slice(0, BAL.render.maxCitizensPerRoom + 3);
       big.staff = spare.map((c) => c.id).sort((a, b) => a - b);
       for (const c of spare) c.job = { roomId: big.id };
@@ -5563,7 +5567,13 @@ const ERRAND_ROOM = {
   const big = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff && r.floor <= 22);
   const spare = s.citizenIds
     .map((id) => s.citizens[id])
-    .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin)
+    // Not the deployed, either. `citizensInView` skips an expeditioner, and
+    // the bay case removes `big.staff[0]` and expects the frames to differ —
+    // if that citizen is already out on the surface, removing them is a no-op,
+    // the two frames are identical, and a correct renderer is reported as
+    // never drawing them. It passes on this seed by luck.
+    .filter((c) => c && c.status !== 'dead' && c.status !== 'expedition' &&
+      c.age >= BAL.citizens.workingAgeMin)
     .slice(0, BAL.render.maxCitizensPerRoom + 3);
   if (!big || spare.length < BAL.render.maxCitizensPerRoom + 3) {
     fail('fixture problem: not enough crew to over-fill a room');
