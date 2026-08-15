@@ -2109,13 +2109,36 @@ console.log('');
       strays.set(p.c.id, { floorN, x: p.x });
     }
   }
-  // And that the drawing step puts them where the list says.
+  // And that the drawing step puts each person where the list says *they* are.
   //
-  // Reading `citizensInView` is what makes the check above able to tell a
-  // traveller from somebody in the rock, and on its own it stops covering the
-  // step that actually paints: moving `drawOne`'s rectangles 200px sideways
-  // passed the entire suite. So both — the list decides who is where, and this
-  // decides that what was painted matches the list.
+  // Reading `citizensInView` is what lets the check above tell a traveller from
+  // somebody in the rock, and on its own it stops covering the step that
+  // actually paints: moving `drawOne`'s rectangles 200px sideways passed the
+  // entire suite. So both — the list decides who is where, and this decides
+  // that what was painted matches it.
+  //
+  // Paired by index rather than by nearness, because "near *somebody*" is not
+  // the claim: rotating every sprite onto a neighbour's mark on the same floor
+  // satisfies it and is exactly as broken. `drawCitizens` walks the same list
+  // in order, two rectangles a person from `drawOne` and three a skull from
+  // `drawSkullFallback`, so the pairing is exact and the count is an assertion
+  // in its own right.
+  // A death on a floor in view, so the skull half of the pairing is live.
+  // Without one this fixture has no marks at all and the three rectangles
+  // `drawSkullFallback` paints are asserted about nothing — the count reads
+  // "0 marks" and every claim about them is vacuously true.
+  {
+    const onScreen = s.citizenIds
+      .map((id) => s.citizens[id])
+      .find((c) => c && c.status !== 'dead' && c.job && s.silo.rooms[c.job.roomId]?.floor <= 22);
+    if (!onScreen) fail('fixture problem: nobody on a visible floor to bury');
+    else store.dispatch({ type: 'CITIZEN_DIE', id: onScreen.id, cause: 'a test', text: 'a test death' });
+  }
+
+  const range = cam.visibleFloorRange();
+  cam.drawn = 0;
+  const people = citizensInView(s, cam);
+  const marks = deathMarks(s, range.from, range.to);
   const painted = [];
   const ctx2 = {
     set fillStyle(_v) {}, get fillStyle() { return ''; },
@@ -2123,28 +2146,47 @@ console.log('');
   };
   cam.drawn = 0;
   drawCitizens(ctx2, s, cam);
-  cam.drawn = 0;
-  const spots = citizensInView(s, cam).map((p) => ({ x: p.x, y: p.y }))
-    .concat(deathMarks(s, 1, 22).map((m) => ({ x: m.x, y: m.y })));
-  // A body is five pixels tall and a couple wide, drawn from a rounded x and a
-  // y a dozen or so above the mark, so a generous box still catches a sprite
-  // painted at the wrong person's position.
-  const misplaced = painted.filter(
-    (r) => !spots.some((sp) => Math.abs(sp.x - r.x) <= 8 && r.y <= sp.y && r.y >= sp.y - 20)
-  );
 
-  if (misplaced.length) {
-    fail(`${misplaced.length} of ${painted.length} rectangles were painted away from any citizen ` +
-      `(e.g. x ${Math.round(misplaced[0].x)}, y ${Math.round(misplaced[0].y)}) — the draw step and ` +
-      'the list it draws from disagree about where people are');
-  } else if (strays.size) {
+  const misplaced = [];
+  const want = people.length * 2 + marks.length * 3;
+  if (painted.length !== want) {
+    misplaced.push(`${painted.length} rectangles for ${people.length} people and ` +
+      `${marks.length} marks, which should be ${want}`);
+  } else {
+    people.forEach((p, i) => {
+      for (const r of [painted[2 * i], painted[2 * i + 1]]) {
+        if (r.x !== Math.round(p.x)) {
+          misplaced.push(`${p.c.id} painted at x${Math.round(r.x)}, listed at x${Math.round(p.x)}`);
+        }
+      }
+    });
+    marks.forEach((m, i) => {
+      const r = painted[people.length * 2 + i * 3];
+      if (r.x !== Math.round(m.x) - 3) {
+        misplaced.push(`a death mark painted at x${Math.round(r.x)}, listed at x${Math.round(m.x)}`);
+      }
+    });
+  }
+
+  // Both reported, not the first of the two. These are different faults — one
+  // is a person standing where there is no floor, the other is a sprite painted
+  // away from the person it belongs to — and chaining them hides whichever
+  // comes second, in a section whose tick used to name only one of them.
+  if (strays.size) {
     const first = [...strays.values()][0];
     fail(
       `${strays.size} people were drawn outside the built part of their floor ` +
       `(e.g. floor ${first.floorN} at x ${Math.round(first.x)}) — standing in unexcavated rock`
     );
-  } else {
-    ok('nobody is drawn outside the built part of their floor');
+  }
+  if (misplaced.length) {
+    fail(`${misplaced.length} of ${painted.length} rectangles were painted somewhere other than ` +
+      `where the list puts that person (${misplaced.slice(0, 2).join('; ')}) — the draw step and ` +
+      'the list it draws from disagree');
+  }
+  if (!strays.size && !misplaced.length) {
+    ok(`nobody is drawn outside the built part of their floor, and all ${painted.length} ` +
+      `rectangles land on the ${people.length} people and ${marks.length} marks they belong to`);
   }
 }
 
