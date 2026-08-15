@@ -5652,6 +5652,7 @@ const ERRAND_ROOM = {
     // stray widening a three-person room from three lanes to four, which slid
     // its whole crew 37px.
     const strayMoved = [];
+    const strayDrawn = [];
     {
       s.settings.reducedMotion = true;
       const small = Object.values(s.silo.rooms)
@@ -5688,9 +5689,17 @@ const ERRAND_ROOM = {
         // else. Their lane is clamped into the last one the room has, and
         // without that they are drawn through the wall — measured at x140 in a
         // room whose walls are 0 to 128, with the rest of this section green.
+        //
+        // And whether they are drawn at all, which has to be asserted rather
+        // than assumed: a stray behind an over-full roster is correctly left
+        // out, but one the cap does reach must appear, or the clamp above is
+        // never exercised and can be deleted with the suite still green.
         const at = after.get(outsider.id);
-        if (at && (at.x < room.slot * SLOT_W || at.x > (room.slot + room.width) * SLOT_W)) {
-          strayMoved.push(`${room.type}: the stray itself is at x${Math.round(at.x)}, outside ` +
+        const reached = room.staff.length < BAL.render.maxCitizensPerRoom;
+        if (reached && !at) {
+          strayDrawn.push(`${room.type}: a stray the cap reaches is not drawn at all`);
+        } else if (at && (at.x < room.slot * SLOT_W || at.x > (room.slot + room.width) * SLOT_W)) {
+          strayDrawn.push(`${room.type}: the stray is drawn at x${Math.round(at.x)}, outside ` +
             `slots ${room.slot}-${room.slot + room.width}`);
         }
         outsider.job = null;
@@ -5717,7 +5726,10 @@ const ERRAND_ROOM = {
     } else if (strayMoved.length) {
       fail(`a citizen whose job names the bay but who is not on its roster moved ` +
         `${strayMoved.length} of its crew (${strayMoved.slice(0, 2).join('; ')}) — a stray belongs ` +
-        'behind the roster, not sorted into the middle of it');
+        'behind the roster, not sorted into the middle of it, and must not widen the lane count');
+    } else if (strayDrawn.length) {
+      fail(`${strayDrawn.join('; ')} — a stray gets the lane behind the roster, clamped into the ` +
+        'last one the room has');
     } else {
       ok(`one of ${big.staff.length} leaves a bay and one of ${idlers.length} leaves a corridor, ` +
         'and nobody else moves a pixel');
