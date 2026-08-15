@@ -45,6 +45,8 @@ import {
   shoreFloor,
 } from '../sim/build.js';
 import { autoAssign } from '../sim/jobs.js';
+import { canStart as canStartResearch } from '../sim/research.js';
+import { getResearch } from '../data/research.js';
 import { liveResourceKeys, newlyUnlocked, unlockedIds, lockReason, announce } from '../sim/unlocks.js';
 
 /** Resources shown in the top strip, in this order. */
@@ -612,6 +614,9 @@ export class Shell {
     if (d.id === 'shore' && d.floor) return { label: 'Shore', run: () => this.doShore(d.floor) };
     if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
     if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
+    // Both orders that name a node put it on the bench. "Open" left the player
+    // in front of the whole tree holding the name of one of them.
+    if (d.research) return { label: 'Start', run: () => this.doResearch(d.research) };
     const panel = this.panels.get(d.panel);
     if (panel && !panel.locked?.(state)) return { label: 'Open', run: () => this.openDirective() };
     // A locked panel says why it is locked, rather than nothing at all.
@@ -684,6 +689,38 @@ export class Shell {
     this.store.dispatchAll(shoreFloor(this.state, n));
     toast(`Floor ${n} shored. The supports are new.`);
     this.focusFloor(n);
+  }
+
+  /**
+   * Start the project the order named.
+   *
+   * "Research Rack Density" used to fall through to the generic panel button
+   * and open the Research screen, which is not the same thing: the order names
+   * a node and the tap put the player in front of forty-eight of them. Playing
+   * a session on a phone and doing exactly what the standing order said,
+   * every time, finished 120 days with 78 people and no research at all — the
+   * order came back seven times and was never once carried out.
+   *
+   * test/obedient.mjs had been obeying it by starting the named node directly
+   * for as long as the order has existed, so the suite was proving the advice
+   * followable in a way the game did not offer. Now they agree.
+   *
+   * On refusal it opens the panel anyway rather than only complaining, because
+   * the reason is usually something the player can act on there — artifacts
+   * short, a prerequisite unfinished — and the screen that says which is the
+   * one it was going to open before.
+   */
+  doResearch(id) {
+    const check = canStartResearch(this.state, id);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      this.openDirective();
+      return;
+    }
+    this.store.dispatchAll([
+      { type: 'RESEARCH_SET_ACTIVE', active: { id, progress: 0, cycles: 0 } },
+    ]);
+    toast(`${getResearch(id)?.name || 'The project'} is on the bench.`);
   }
 
   doExcavate() {

@@ -6726,6 +6726,71 @@ const ERRAND_ROOM = {
   }
 }
 
+// ---- 74. the order that names a node explains the right one, and starts it -
+//
+// Both halves came out of playing a session on a phone and doing exactly what
+// the standing order said, every time. 120 days, 78 people, and no research at
+// all: the order came back seven times and was never once carried out.
+//
+// Why it was never carried out: it named a node and its button read "Open",
+// because nothing in `directiveAction` matched it and it fell through to the
+// generic panel case. One tap put the player in front of forty-eight nodes
+// holding the name of one of them. test/obedient.mjs had been obeying it by
+// starting the named node for as long as the order existed, so the suite
+// proved the advice followable in a way the game did not offer — which is the
+// gap this file exists to close.
+//
+// And what it said while doing it: `gate === alloyGate` with both null, so a
+// silo with no alloy problem and no dig gate — the ordinary case — was told
+// "the floors below the shoring line are coming apart and shoring them takes
+// alloy" about whatever node came first in the tree. The banked-points
+// sentence underneath it had never been shown to anybody.
+{
+  const store = newStore(0x0dd5);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+  const donor4 = Object.values(s.silo.rooms)[0];
+  s.silo.rooms.lab_74 = {
+    ...donor4, id: 'lab_74', type: 'laboratory', floor: 3, slot: 3, width: 1, level: 1,
+    powered: true, buildingUntilCycle: 0, staff: [], integrity: 100,
+  };
+  s.research.active = null;
+
+  const order = (directives(s) || []).find((d) => d.id === 'research');
+  const shoring = strainedFloors(s).length;
+
+  if (!order) {
+    fail('a silo with idle labs and nodes available raises no research order at all');
+  } else if (shoring) {
+    fail(`fixture problem: ${shoring} floors are already strained, so this cannot tell the ` +
+      'ordinary case from the alloy one');
+  } else if (/alloy/i.test(order.why)) {
+    fail(`a silo whose floors are sound is told to research ${order.research} because "the floors ` +
+      `below the shoring line are coming apart": "${order.why}"`);
+  } else if (!/points/i.test(order.why)) {
+    fail(`the ordinary case explains itself with "${order.why}", which is neither the banked-points ` +
+      'sentence nor a gate');
+  } else {
+    ok(`a silo with nothing blocking it is told why in its own words: "${order.why}"`);
+  }
+
+  // And the tap starts it. Read off `shell.js` rather than by driving the DOM,
+  // the way §73's second half reads the airlock panel: the claim is that the
+  // order's own `research` field reaches an action, and a button labelled
+  // "Open" is the failure.
+  const shell = codeIn(readSource('../src/ui/shell.js'));
+  const hasStart = /d\.research\)?\s*return\s*\{\s*label:\s*'Start'/.test(shell) ||
+    /if\s*\(d\.research\)[\s\S]{0,120}doResearch/.test(shell);
+  if (!hasStart) {
+    fail('the standing order names a research node and the shell has no action for it, so the ' +
+      'button falls through to "Open" and one tap lands the player in front of the whole tree');
+  } else if (!/doResearch\s*\([\s\S]{0,400}RESEARCH_SET_ACTIVE/.test(shell)) {
+    fail('the shell offers a button for a research order that never puts the node on the bench');
+  } else {
+    ok('and its button puts that node on the bench rather than opening the tree');
+  }
+}
+
 // ---- 73. the launch screen says what the silo gives up ---------------------
 //
 // The forecast was entirely about the ground: strength against the enemy,

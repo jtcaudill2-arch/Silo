@@ -17,6 +17,7 @@
  */
 
 import { chromium } from 'playwright';
+import { browserPath } from './chromium.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const OUT = join(ROOT, '.shots');
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = browserPath();
 const PORT = 8794;
 const SHEET = process.argv.includes('--sheet');
 

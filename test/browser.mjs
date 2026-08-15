@@ -14,7 +14,7 @@
  */
 
 import { chromium } from 'playwright';
-import { browserPath } from './chromium.mjs';
+import { browserPath } from '../tools/chromium.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

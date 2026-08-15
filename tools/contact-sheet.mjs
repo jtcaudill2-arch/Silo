@@ -25,12 +25,13 @@
  */
 
 import { chromium } from 'playwright';
+import { browserPath } from './chromium.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = browserPath();
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {

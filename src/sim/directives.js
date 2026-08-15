@@ -1015,7 +1015,19 @@ export function directives(state) {
           : dig.needsResearch && open.some((n) => n.id === dig.needsResearch) ? dig.needsResearch
             : null;
       const pick = gate ? getResearch(gate) : open[0];
-      const why = gate === alloyGate
+      // `gate &&` is load-bearing. Without it this read `gate === alloyGate`,
+      // and both are null whenever there is no gate at all — so `null === null`
+      // picked the alloy sentence for a silo with no alloy problem, pinned to
+      // whatever node happened to be first in the tree. Playing a session on a
+      // phone hit it seven times in 120 days: "Research Rack Density", because
+      // "the floors below the shoring line are coming apart and shoring them
+      // takes alloy" — about a node that has nothing to do with alloy, in a
+      // silo whose floors were fine.
+      //
+      // It also meant the third branch had never once been shown. The banked-
+      // points sentence is the ordinary case, the one most silos see most of
+      // the time, and it was unreachable from the day it was written.
+      const why = gate && gate === alloyGate
         ? 'The floors below the shoring line are coming apart and shoring them takes alloy the ' +
           'silo has none of and no way to make. A Foundry is the only thing that makes any, and ' +
           'it is behind this.'

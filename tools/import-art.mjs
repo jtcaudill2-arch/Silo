@@ -31,6 +31,7 @@
  */
 
 import { chromium } from 'playwright';
+import { browserPath } from './chromium.mjs';
 import { readdir, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +40,7 @@ import { existsSync } from 'node:fs';
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const SRC = join(ROOT, 'art-src');
 const OUT = join(ROOT, 'assets', 'art');
-const EXEC = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const EXEC = browserPath();
 
 const args = new Set(process.argv.slice(2));
 

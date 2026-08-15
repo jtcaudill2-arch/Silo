@@ -11,6 +11,7 @@
     "test": "node test/reachability.mjs && node test/wiring.mjs && node test/atlas.mjs && node test/levels.mjs && node test/deep.mjs && node test/harness.mjs && node test/obedient.mjs && node test/unlocks.mjs && node test/catchup.mjs && node test/expedition.mjs && node test/conquest.mjs && node test/world.mjs && node test/order.mjs && node test/pacing.mjs && node test/browser.mjs && node test/campaign.mjs && node test/mobile.mjs",
     "test:mobile": "node test/mobile.mjs",
     "test:atlas": "node test/atlas.mjs",
+    "playthrough": "node tools/playthrough.mjs",
     "test:sim": "node test/harness.mjs",
     "test:catchup": "node test/catchup.mjs",
     "test:expedition": "node test/expedition.mjs",
