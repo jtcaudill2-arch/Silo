@@ -366,6 +366,55 @@ function comparable(state) {
   else ok(`slot summary: ${summary.siloName}, day ${summary.day}, ${summary.population} residents`);
 }
 
+// ---------------------------------------------------------------------------
+// A class of school-leavers is one line in the report, not one line each
+// ---------------------------------------------------------------------------
+//
+// "Finished while you were out" leads the return report and is drawn uncapped,
+// and it exists to surface what a returning player wants first: a research node
+// done, a floor opened, a panel unlocked. Graduations land in the same bin, and
+// there is one per child coming of age — measured at a population of 332, a
+// single real day away produced eight graduations and eight `finished` lines in
+// total, so the section was *entirely* school and the research it was
+// restructured to show would have been below the fold. A bigger silo is worse.
+{
+  const { store, game } = freshSilo();
+  const s = store.state;
+  const C = BAL.citizens;
+
+  // A schoolhouse, and a class all of whom come of age while the player is out.
+  const donor = Object.values(s.silo.rooms)[0];
+  s.silo.rooms.leavers_school = {
+    ...donor, id: 'leavers_school', type: 'schoolhouse',
+    powered: true, buildingUntilCycle: 0, staff: [],
+  };
+  const class_ = s.citizenIds.slice(0, 5);
+  for (const id of class_) {
+    const c = s.citizens[id];
+    c.age = C.schoolMaxAge + 1;
+    c.status = 'school';
+    c.job = null;
+  }
+
+  s.meta.lastSaveTs = s.meta.lastSaveTs ?? T0;
+  const before = s.clock.day;
+  const report = runCatchup(store, game, { now: (s.meta.lastSaveTs || T0) + HOUR });
+  const finished = report?.finished || [];
+  const grads = finished.filter((f) => /finished school|children finished/i.test(f.text));
+
+  if (!grads.length) {
+    fail(`five school-leavers came of age over an hour away (day ${before} onwards) and the ` +
+      'report says nothing — the best return in the game, and a player who was out never hears it');
+  } else if (grads.length > 1) {
+    fail(`${grads.length} of the report's ${finished.length} "finished" lines are one graduation ` +
+      'each, so a silo with any children in it buries its research under a class list');
+  } else if (!/\d+ children finished school/.test(grads[0].text)) {
+    fail(`several graduations collapsed to one line that does not say how many: "${grads[0].text}"`);
+  } else {
+    ok(`a class of leavers is one line in the report: "${grads[0].text}"`);
+  }
+}
+
 console.log('');
 if (failures.length) {
   for (const f of failures) console.error(`  FAIL  ${f}`);

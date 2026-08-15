@@ -284,7 +284,7 @@ export function manageSchool(state) {
             text:
               `${c.firstName} ${c.lastName} finished school at ${Math.floor(c.age)}. ` +
               `Best subject ${top.skill} at ${Math.round(top.value)}.`,
-            data: { citizenId: id, skill: top.skill, value: Math.round(top.value) },
+            data: { citizenId: id, skill: top.skill, value: Math.round(top.value), graduated: true },
           },
         });
       }

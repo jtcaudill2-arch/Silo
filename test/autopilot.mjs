@@ -515,7 +515,14 @@ export function autopilot(state) {
         ? staffSlots(shortDef, shortRoom) - shortRoom.staff.filter((id) => id != null).length - claimed
         : 0;
       if (donor && shortRoom && room > 0) {
-        const who = donor.staff.filter((id) => id != null && state.citizens[id]?.status === 'working')[0];
+        // And not somebody `autoAssign` is already moving. Two assigns for one
+        // person in one batch is not two transfers: the second overwrites the
+        // first, so the dark room the transfer was for is still dark and the
+        // silo has spent its one move a pass on nothing.
+        const spokenFor = new Set(actions.map((a) => a.citizenId));
+        const who = donor.staff.filter(
+          (id) => id != null && !spokenFor.has(id) && state.citizens[id]?.status === 'working'
+        )[0];
         if (who) actions.push({ type: 'CITIZEN_ASSIGN', citizenId: who, roomId: shortRoom.id });
       }
     }
@@ -709,7 +716,7 @@ function runSurface(state) {
   // indoors for a breach that cannot happen is a squad that has stopped
   // salvaging for nothing.
   {
-    const doorOpen = Object.values(state.world.silos).some((x) => x.conquest?.stage === 'breach');
+    const doorOpen = doorStandsOpen(state);
     const gate = BAL.conquest.breachPierce;
     const fixable =
       craftableItems(state).some((i) => i.kind === 'weapon' && (i.stats?.pierce || 0) >= gate) ||
@@ -735,6 +742,23 @@ function runSurface(state) {
     }
   }
   return actions;
+}
+
+/**
+ * Is there a silo standing at the breach stage that anybody could still force?
+ *
+ * Filtered the same way the target list is, and that matters: `collapseSilo` in
+ * sim/world.js sets `status: 'collapsed'` and `contact: 'none'` and never
+ * touches `conquest.stage`, so a silo that falls over on its own while it was
+ * being undermined leaves the marker set for the rest of the campaign. Read
+ * unfiltered, that is a door that is open for ever — the stand-by rule below
+ * would hold the salvage squad indoors permanently and the surface programme
+ * would simply stop.
+ */
+function doorStandsOpen(state) {
+  return Object.values(state.world?.silos || {}).some(
+    (x) => x.conquest?.stage === 'breach' && x.status !== 'collapsed' && x.contact !== 'satellite'
+  );
 }
 
 /** Pierce of a rack entry, 0 for nothing and for anything that is not a weapon. */
@@ -797,19 +821,22 @@ function conquer(state) {
   // before the second-squad checks below on purpose: `breachPierce` is a mean
   // over every ready squad, so the garrison holds the door shut just as firmly
   // as the conquest party does, and it is worth arming while the party is out.
-  if (
-    Object.values(state.world.silos).some((x) => x.conquest?.stage === 'breach') &&
-    pierceWhenHome(state) < BAL.conquest.breachPierce
-  ) {
-    // Only people who are here — a soldier six days out on the Scar cannot be
-    // handed a rifle — but judged against `pierceWhenHome`, so arming the
-    // garrison counts towards a gate the conquest party will meet later.
-    const worst = readySquads(state)
-      .flatMap((sid) => squadMembers(state, sid))
-      .sort((a, b) => pierceCarried(state, a) - pierceCarried(state, b))[0];
-    const held = worst ? pierceCarried(state, worst) : 0;
+  // Only people who are here — a soldier six days out on the Scar cannot be
+  // handed a rifle — but judged against `pierceWhenHome`, so arming the
+  // garrison counts towards a gate the conquest party will meet later.
+  //
+  // And only when there is somebody to arm. With every squad deployed, or
+  // before the first one exists, there is no `worst`, the issue branch cannot
+  // fire, and the bench branch would compare against a held pierce of zero and
+  // forge a weapon every single pass — spending the silo's alloy for ever, and
+  // returning before the branches below that would have raised the squad which
+  // ends the condition.
+  const atHome = readySquads(state).flatMap((sid) => squadMembers(state, sid));
+  if (atHome.length && doorStandsOpen(state) && pierceWhenHome(state) < BAL.conquest.breachPierce) {
+    const worst = atHome.sort((a, b) => pierceCarried(state, a) - pierceCarried(state, b))[0];
+    const held = pierceCarried(state, worst);
     const spare = unassignedGear(state, 'weapon').sort((a, b) => pierceOfGear(b) - pierceOfGear(a))[0];
-    if (worst && spare && pierceOfGear(spare) > held) {
+    if (spare && pierceOfGear(spare) > held) {
       return [{ type: 'GEAR_ASSIGN', gearId: spare.id, citizenId: worst.id, slot: 'weapon' }];
     }
     const bench = craftableItems(state)

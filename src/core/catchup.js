@@ -247,7 +247,34 @@ function buildReport({ state, before, after, entries, elapsedMs, simulatedMs, mo
     } else if (bin === 'alerts') {
       alerts.push({ day: e.day, text: e.text, kind: e.kind });
     } else if (bin && bins[bin]) {
-      bins[bin].push({ day: e.day, text: e.text });
+      bins[bin].push({ day: e.day, text: e.text, data: e.data });
+    }
+  }
+
+  // A class of school-leavers is one line, not one line each.
+  //
+  // "Finished while you were out" leads the report and is drawn uncapped, and
+  // it exists to surface the things a returning player wants first: a research
+  // node done, a floor opened, a panel unlocked. Graduations land in the same
+  // bin and there are as many of them as the silo has children coming of age —
+  // measured at a population of 332, a single real day away produced eight
+  // graduations and eight `finished` lines in total, so the section was
+  // *entirely* school and the research it was restructured to show would have
+  // been below the fold. A bigger silo is worse.
+  //
+  // One is still written out in full, because one school-leaver with a name and
+  // a best subject is exactly the kind of line this report is for. Several
+  // become a count, and the log still holds every one of them by name.
+  {
+    const grads = finished.filter((f) => f.data?.graduated);
+    if (grads.length > 1) {
+      for (let i = finished.length - 1; i >= 0; i--) {
+        if (finished[i].data?.graduated) finished.splice(i, 1);
+      }
+      finished.push({
+        day: grads[grads.length - 1].day,
+        text: `${grads.length} children finished school.`,
+      });
     }
   }
 

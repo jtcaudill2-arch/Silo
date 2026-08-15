@@ -296,18 +296,28 @@ export const MIGRATIONS = {
   // `idle` with no job, which is the state `autoAssign` picks people up from
   // on its next pass. Safe to re-run: a room with an empty roster and citizens
   // with no schoolhouse job are what it leaves behind.
+  // Keyed on the map key rather than `room.id`, per the contract at the top of
+  // this file: a step may not assume a field exists. A room without one would
+  // put `undefined` into the set, and `undefined` matches `c.job?.roomId` for
+  // every citizen who has no job at all — which would strip a working citizen
+  // out of a post they were correctly holding.
+  //
+  // And `training` counts alongside `working`. Somebody may hold a schoolhouse
+  // post while on the range; leaving them at `training` with no job is a state
+  // `autoAssign` never picks anyone up from, which is the same stranding this
+  // step exists to undo.
   19: (state) => {
     const schools = new Set();
-    for (const room of Object.values(state.silo?.rooms || {})) {
+    for (const [key, room] of Object.entries(state.silo?.rooms || {})) {
       if (room?.type !== 'schoolhouse') continue;
-      schools.add(room.id);
+      schools.add(key);
       room.staff = [];
     }
     if (schools.size) {
       for (const c of Object.values(state.citizens || {})) {
-        if (!c || !schools.has(c.job?.roomId)) continue;
+        if (!c || c.job?.roomId == null || !schools.has(c.job.roomId)) continue;
         c.job = null;
-        if (c.status === 'working') c.status = 'idle';
+        if (c.status === 'working' || c.status === 'training') c.status = 'idle';
       }
     }
     return state;

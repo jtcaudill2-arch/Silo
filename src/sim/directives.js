@@ -796,13 +796,21 @@ export function directives(state) {
   // starved on day 274. `reassignmentAvailable` asks the question the button
   // will answer, so the order is offered exactly when pressing it does
   // something.
-  const drifted = !spare && reassignmentAvailable(state);
-  const empty = spare || drifted
-    ? Object.values(state.silo.rooms).filter((r) => {
-        const def = getRoom(r.type);
-        return def?.staff && r.staff.length === 0 && r.buildingUntilCycle === 0 && inService(r);
-      })
-    : [];
+  //
+  // The dark rooms are counted first and the transfer is only asked about when
+  // there is one, which is not tidiness — `directives` is read from
+  // `renderChrome` on a rAF, `spare` is zero in the steady state, and
+  // `reassignmentAvailable` runs the whole assignment pass. Asked
+  // unconditionally it would walk every open post against every room on every
+  // frame, and answer "no" almost every time. A silo with no dark room has
+  // nothing for the transfer to do by construction, so the cheap census is a
+  // sound gate rather than a guess.
+  const darkRooms = Object.values(state.silo.rooms).filter((r) => {
+    const def = getRoom(r.type);
+    return def?.staff && r.staff.length === 0 && r.buildingUntilCycle === 0 && inService(r);
+  });
+  const drifted = !spare && darkRooms.length > 0 && reassignmentAvailable(state);
+  const empty = spare || drifted ? darkRooms : [];
   if (empty.length) {
     const def = getRoom(empty[0].type);
     add({

@@ -140,7 +140,29 @@ export function citizensInView(state, cam) {
         ? BAL.render.maxIdleCitizensPerFloor
         : BAL.render.maxCitizensPerRoom;
       const take = group.slice(0, cap);
-      take.forEach((item, i) => { item.lane = i; item.lanes = take.length; });
+      if (key === 'idle') {
+        take.forEach((item, i) => { item.lane = i; item.lanes = take.length; });
+      } else {
+        // A room's lanes come off its roster, not off who happens to be inside
+        // it this frame.
+        //
+        // Indexing the drawn group meant the lane a person stood in depended on
+        // how many colleagues were currently elsewhere, so the moment one of
+        // them stepped onto the stair every worker behind them slid a lane
+        // across — a whole room twitching sideways because somebody went for
+        // their dinner. It was rare while only the jobless travelled; it is
+        // every fifty seconds in an eight-person bay now that the posted do.
+        const roster = (take[0].room?.staff || [])
+          .filter((cid) => state.citizens[cid] && state.citizens[cid].status !== 'dead')
+          .sort((a, b) => a - b)
+          .slice(0, cap);
+        const lanes = Math.max(take.length, roster.length);
+        take.forEach((item) => {
+          const i = roster.indexOf(item.c.id);
+          item.lane = i >= 0 ? i : roster.length;
+          item.lanes = lanes;
+        });
+      }
       shown.push(...take);
     }
 
