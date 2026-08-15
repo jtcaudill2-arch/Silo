@@ -2089,7 +2089,18 @@ console.log('');
     fillRect(x, y) {
       const floorN = Math.floor(y / FLOOR_H) + 1;
       const span = builtSpan(floorN);
-      if (span && (x < span.lo - SLOT_W || x > span.hi + SLOT_W)) strays.push({ floorN, x });
+      // The shaft is not rock. Travellers are drawn in the stair column on
+      // whatever floor they have reached, and a floor whose rooms all sit to
+      // one side has a built span that does not contain it — so somebody on the
+      // steps reads as somebody standing in the wall. It passed while only the
+      // jobless travelled and only by luck of how many were on the stairs at
+      // once: raising the traveller share to 0.30 against an unmodified
+      // renderer reports two people in unexcavated rock, both of them on the
+      // stair, and posted workers use it now too.
+      const onStair = x >= stairLeft() - 8 && x <= stairLeft() + BAL.render.stairWidth + 8;
+      if (span && !onStair && (x < span.lo - SLOT_W || x > span.hi + SLOT_W)) {
+        strays.push({ floorN, x });
+      }
     },
   };
   cam.drawn = 0;
@@ -5492,7 +5503,14 @@ console.log('');
         // whole scheme exists to prevent looks perfectly fine in x. With the
         // roster capped, the away crew member's lane simply stands empty and
         // the sixth-lowest-numbered worker is not drawn at all.
-        if (bay && p.c.job?.roomId === bay.id &&
+        // Somebody on the steps is not in a lane at all: travellers come from
+        // a separate list that never goes through `laneUp`, and a bay staffer
+        // past the drawn lanes is perfectly entitled to be out on an errand.
+        // Without this the check reports a backfill that never happened —
+        // demonstrated against an unmodified renderer by raising
+        // `postedTravellerFraction` to 0.30, where roster indices 5, 6 and 7
+        // appear only ever on the stair and never in a room.
+        if (!p.stair && bay && p.c.job?.roomId === bay.id &&
             bay.staff.indexOf(p.c.id) >= BAL.render.maxCitizensPerRoom) {
           backfilled.add(p.c.id);
         }
