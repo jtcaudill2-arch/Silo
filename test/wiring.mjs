@@ -2083,32 +2083,36 @@ console.log('');
     }
     return hi > lo ? { lo, hi } : null;
   };
-  const strays = [];
-  const ctx2 = {
-    set fillStyle(_v) {}, get fillStyle() { return ''; },
-    fillRect(x, y) {
-      const floorN = Math.floor(y / FLOOR_H) + 1;
-      const span = builtSpan(floorN);
-      // The shaft is not rock. Travellers are drawn in the stair column on
-      // whatever floor they have reached, and a floor whose rooms all sit to
-      // one side has a built span that does not contain it — so somebody on the
-      // steps reads as somebody standing in the wall. It passed while only the
-      // jobless travelled and only by luck of how many were on the stairs at
-      // once: raising the traveller share to 0.30 against an unmodified
-      // renderer reports two people in unexcavated rock, both of them on the
-      // stair, and posted workers use it now too.
-      const onStair = x >= stairLeft() - 8 && x <= stairLeft() + BAL.render.stairWidth + 8;
-      if (span && !onStair && (x < span.lo - SLOT_W || x > span.hi + SLOT_W)) {
-        strays.push({ floorN, x });
-      }
-    },
-  };
+  // Off `citizensInView` rather than off `fillRect`, for two reasons that the
+  // first version got wrong in both directions.
+  //
+  // It counted rectangles and reported them as people: `drawOne` draws a body
+  // and a head at the same x, so one citizen in the rock read as two, and a
+  // skull marker would have read as three. And excluding somebody on the stair
+  // — which it has to, since the shaft is not rock and a floor whose rooms all
+  // sit to one side has a built span that does not contain it — meant guessing
+  // from geometry, which citizens.js documents as unreliable in as many words:
+  // "a test that guessed from geometry read one room citizen a frame as being
+  // on the steps". The sprite carries `stair` for exactly this.
+  //
+  // Positions come from the same call `drawCitizens` draws from, and `drawOne`
+  // offsets a body by six pixels against a tolerance of a whole slot, so
+  // nothing is lost by asking one step earlier.
+  const strays = new Map();
   cam.drawn = 0;
-  drawCitizens(ctx2, s, cam);
-  if (strays.length) {
+  for (const p of citizensInView(s, cam)) {
+    if (p.stair) continue;
+    const floorN = Math.floor(p.y / FLOOR_H) + 1;
+    const span = builtSpan(floorN);
+    if (span && (p.x < span.lo - SLOT_W || p.x > span.hi + SLOT_W)) {
+      strays.set(p.c.id, { floorN, x: p.x });
+    }
+  }
+  if (strays.size) {
+    const first = [...strays.values()][0];
     fail(
-      `${strays.length} people were drawn outside the built part of their floor ` +
-      `(e.g. floor ${strays[0].floorN} at x ${Math.round(strays[0].x)}) — standing in unexcavated rock`
+      `${strays.size} people were drawn outside the built part of their floor ` +
+      `(e.g. floor ${first.floorN} at x ${Math.round(first.x)}) — standing in unexcavated rock`
     );
   } else {
     ok('nobody is drawn outside the built part of their floor');
@@ -5514,6 +5518,14 @@ console.log('');
             bay.staff.indexOf(p.c.id) >= BAL.render.maxCitizensPerRoom) {
           backfilled.add(p.c.id);
         }
+        // A shift is worked in a room, so the stair does not count towards it.
+        // A traveller's x is the shaft column, a hundred and sixty pixels from
+        // most posts, so one errand during the sweep hands a completely frozen
+        // worker an enormous "shift": measured with `postRound` pinned to its
+        // mark, three of twenty-seven were rescued from the stuck list by stair
+        // samples alone, and the section only still failed because the
+        // threshold is a fifth.
+        if (p.stair) continue;
         if (!onDutyStatus(p.c)) continue;
         if (!xs.has(p.c.id)) { xs.set(p.c.id, []); acts.set(p.c.id, new Set()); }
         xs.get(p.c.id).push(p.x);
