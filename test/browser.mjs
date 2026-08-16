@@ -335,53 +335,39 @@ try {
       floors: document.querySelectorAll('.floor-pip').length,
     };
   });
-  if (catalogue.total < 10) fail(`build catalogue shows only ${catalogue.total} rooms`);
-  if (catalogue.buildable === 0) fail('nothing at all is buildable on the opening floor');
-  if (catalogue.locked !== catalogue.withReasons) {
-    fail(`${catalogue.locked - catalogue.withReasons} locked rooms give no reason why`);
-  }
+  // THE SILO HAS NO CONSTRUCTION. Every level of Silo 12 was fitted out and is
+  // standing behind its seal; the game is opening levels and restoring what is
+  // on them, so there is nothing to build and nowhere to put it. This section
+  // used to click the first buildable room in the catalogue and assert a room
+  // appeared — with nothing buildable it read `null.querySelector` and took the
+  // whole suite down, which is the right kind of failure for a test whose
+  // subject was removed from the game.
+  //
+  // What it checks now is that the replacement is actually reachable: the panel
+  // opens on the level you would unseal next, says what is behind the seal, and
+  // offers the one verb that exists.
   if (catalogue.bays !== BAL.silo.slotsPerFloor) {
     fail(`floor shows ${catalogue.bays} bays, expected ${BAL.silo.slotsPerFloor}`);
   }
-  // Read from balance: how deep the silo starts is a design decision that has
-  // already moved once (14 -> 6, so that digging is how the silo grows rather
-  // than something to get round to), and a pinned number fails for the change
-  // rather than for a defect.
   if (catalogue.floors !== BAL.silo.startExcavatedFloors) {
-    fail(
-      `floor strip shows ${catalogue.floors} floors, expected ${BAL.silo.startExcavatedFloors}`
-    );
+    fail(`floor strip shows ${catalogue.floors} floors, expected ${BAL.silo.startExcavatedFloors}`);
   }
-  ok(`build catalogue: ${catalogue.buildable} buildable, ${catalogue.locked} locked (all explained)`);
-  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'build.png') });
 
-  const constructed = await page.evaluate(async () => {
-    const { store } = window.DEEPWATER;
-    const before = Object.keys(store.state.silo.rooms).length;
-    const scrapBefore = store.state.resources.scrap;
-    // Click the first buildable room in the catalogue.
-    const row = [...document.querySelectorAll('.build-row')].find((r) => !r.classList.contains('locked'));
-    const name = row.querySelector('.build-name').textContent;
-    row.click();
-    await new Promise((r) => setTimeout(r, 150));
-    // A multi-bay choice opens a modal; take the first option if so.
-    const opt = document.querySelector('.modal .row.tappable');
-    if (opt) {
-      opt.click();
-      await new Promise((r) => setTimeout(r, 150));
-    }
-    return {
-      name,
-      before,
-      after: Object.keys(store.state.silo.rooms).length,
-      spent: scrapBefore - store.state.resources.scrap,
-    };
-  });
-  if (constructed.after <= constructed.before && constructed.spent <= 0) {
-    fail(`building "${constructed.name}" did nothing (rooms ${constructed.before} → ${constructed.after})`);
+  const sealed = await page.evaluate(() => ({
+    title: document.querySelector('.excavate-title')?.textContent || '',
+    sub: document.querySelector('.excavate-sub')?.textContent || '',
+    note: document.querySelector('.excavate-note')?.textContent || '',
+    button: document.querySelector('.excavate .btn')?.textContent || '',
+  }));
+  if (!/^Open floor \d+/.test(sealed.title)) {
+    fail(`the Build panel leads with "${sealed.title}", not an offer to open the next level`);
+  } else if (!sealed.note || !sealed.sub) {
+    fail(`opening floor is offered with no description of what is behind it ` +
+      `(sub "${sealed.sub}", note "${sealed.note}")`);
   } else {
-    ok(`built a ${constructed.name} from the panel (${Math.round(constructed.spent)} scrap spent)`);
+    ok(`the panel offers the next seal and says what is behind it: "${sealed.title}" — ${sealed.sub}`);
   }
+  if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'build.png') });
   await page.click('.panel-close');
 
   // ---- 6d. research panel -------------------------------------------------
@@ -395,17 +381,28 @@ try {
 
   await page.evaluate(async () => {
     const { store, game } = window.DEEPWATER;
-    const { build, allPlacements } = await import('./src/sim/build.js');
-    // Find a bay rather than naming floor 13. The opening used to come with
-    // fourteen floors already excavated; it starts at six now and digs, so a
-    // hardcoded floor is one the silo has not reached.
-    store.state.resources.scrap += 500;
-    store.state.resources.parts += 60;
-    const spot = allPlacements(store.state, 'laboratory')[0];
-    if (!spot) throw new Error('browser fixture: nowhere to build a laboratory');
-    store.dispatchAll(build(store.state, spot.floor, spot.slot, 'laboratory'));
-    game.runCycles(10); // let construction finish and points accrue
+    // Placed, not built. The silo has no construction any more — every level
+    // was fitted out by the builders and is standing behind its seal — so the
+    // way a player gets a Laboratory is to open a Technical Level and restore
+    // the one on it. That is seven openings from the start, which is a fine
+    // game and a terrible fixture, so this puts one on an open floor directly.
+    // Opened and commissioned, which is the only route there is. There are no
+    // spare bays to place one into either — every level in the silo arrives
+    // furnished, so a floor with a free slot does not exist.
+    const { manifestFor } = await import('./src/data/sections.js');
+    let target = null;
+    for (let n = 1; n <= 40 && !target; n++) {
+      if (manifestFor(n).some((r) => r.type === 'laboratory')) target = n;
+    }
+    if (!target) throw new Error('browser fixture: no Technical Level in the first forty floors');
+    for (let n = store.state.silo.floors.filter((f) => f.excavated).length + 1; n <= target; n++) {
+      store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
+    }
+    const lab = Object.values(store.state.silo.rooms).find((r) => r.type === 'laboratory');
+    store.dispatch({ type: 'ROOM_PATCH', id: lab.id, patch: { found: false, condition: 100, powered: true } });
+    game.runCycles(1);
   });
+  await page.waitForTimeout(300);
 
   await page.click('.nav-btn[data-panel="research"]');
   await page.waitForSelector('.node-row', { timeout: 4000 });

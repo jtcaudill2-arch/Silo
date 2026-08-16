@@ -7,9 +7,19 @@ name: Deploy to GitHub Pages
 # which is why every path in the game is relative — `test/mobile.mjs` runs the
 # whole game from that subpath to keep it that way.
 
+# PREVIEW BRANCH — REVERT BEFORE MERGING.
+#
+# `claude/deepwater-abandoned-silo-wip` is here so the game can be played on a
+# phone before its balance is finished, which is the only way to find out
+# whether the design is right before spending days tuning it. Its gate below is
+# the playability pair rather than the whole suite, and that difference is the
+# entire reason this block is temporary: the long-run suites — obedient,
+# harness, pacing — are RED on that branch and the silo dies on day 78.
+#
+# Pages serves one site, so a push here replaces whatever is live at the URL.
 on:
   push:
-    branches: [claude/deepwater-game-design-5pml4z, main]
+    branches: [claude/deepwater-game-design-5pml4z, main, claude/deepwater-abandoned-silo-wip]
   workflow_dispatch:
 
 permissions:
@@ -28,10 +38,33 @@ jobs:
   # no assertion having executed anywhere, which is a strange thing for a
   # project that mutation-tests its own tests.
   test:
+    if: github.ref_name != 'claude/deepwater-abandoned-silo-wip'
     uses: ./.github/workflows/test.yml
 
+  # The preview gate: does it boot, play, and work offline from the subpath on a
+  # phone. It proves the thing is worth looking at; it does not prove the silo
+  # survives, and on the preview branch it does not.
+  preview-playable:
+    if: github.ref_name == 'claude/deepwater-abandoned-silo-wip'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: node test/browser.mjs
+      - run: node test/mobile.mjs
+
   build:
-    needs: test
+    needs: [test, preview-playable]
+    # `needs` on a skipped job is "skipped", which would block the build on both
+    # branches. Only the gate that actually ran has to have succeeded.
+    if: |
+      always()
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

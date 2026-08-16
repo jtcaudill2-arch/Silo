@@ -898,6 +898,28 @@ export function directives(state) {
     // the silo restored a cupboard on day 2, was down to 17 scrap on day 3, and
     // starved on day 41. `staffingPriority` is the silo's own answer to which
     // rooms matter, and it already governs who gets crewed first.
+    // Nothing the plant cannot carry. A level arrives with three to five rooms
+    // on it and this order fires once a shift, so without a ceiling the silo
+    // commissions the whole level inside a week and browns out everything
+    // including the generator that was keeping it alive.
+    //
+    // Measured, without it: the opening went from 33 demand against 32
+    // generated on day 0 to 58 against 32 by day 6, generation decayed to 4 as
+    // the hall wore out with no scrap left to repair it, the air reached zero
+    // on day 54 and the silo was dead on day 78 — having been told to restore
+    // something every single day of it.
+    //
+    // The check sits HERE rather than in `add`, and that is the whole reason it
+    // took two goes to find: `add` only sees orders carrying a room TYPE, and
+    // this order carries a room ID. Every "Build a X" order routes through
+    // `add` and was gated correctly; this one, the order that actually does
+    // most of the restoring, went round the outside.
+    .filter((c) => {
+      const def = getRoom(c.room.type);
+      if ((def?.produces?.power || 0) > 0) return true; // generation is always worth lighting
+      const wants = (def?.consumes?.power || 0) * c.room.width;
+      return wants <= (state.power?.generation || 0) - (state.power?.demand || 0);
+    })
     .sort((a, b) => staffingRank(a.room.type) - staffingRank(b.room.type)
       || (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
   if (restorable) {
