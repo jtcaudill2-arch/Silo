@@ -824,6 +824,31 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
  * The two swatches are the whole point. The numbers say how many are working;
  * the swatches say which figures on the screen those are, which is what makes
  * the cross-section readable instead of decorative. */
+/* Zoom, on the right edge and vertically centred.
+ *
+ * Bottom right is taken. The crew readout holds the bottom left and the
+ * tutorial coach's Skip button holds the bottom right — test/mobile.mjs found
+ * the overlap by probing the button's edges and getting `tut-skip` back, which
+ * is a collision a screenshot would not have shown and a thumb would have
+ * found on the first session. Halfway up the right edge is clear of both, and
+ * is where a map's zoom lives anyway. */
+.zoom-pad {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 4;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.zoom-btn {
+  /* The same 44px floor as every other control in the game. */
+  width: var(--tap); height: var(--tap); box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 20px; line-height: 1;
+  color: var(--bone-faint);
+  background: color-mix(in srgb, var(--concrete-deeper) 88%, transparent);
+  border: 1px solid var(--hairline); border-radius: var(--radius);
+  cursor: pointer; touch-action: manipulation;
+}
+.zoom-btn:active { background: var(--concrete-deep); color: var(--bone); }
+.zoom-btn[disabled] { opacity: 0.35; cursor: default; }
+
 .crew-readout {
   position: absolute; left: 8px; bottom: 8px; z-index: 4;
   display: flex; align-items: center; gap: 8px;

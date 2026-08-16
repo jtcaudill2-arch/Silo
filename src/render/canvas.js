@@ -61,12 +61,20 @@ export class SiloRenderer {
     this.w = 0;
     this.h = 0;
     this.scale = 1;
+    this.fitScale = 1;
+    this.zoom = 1;
 
     // Camera is expressed in world Y (pixels down from the top of floor 1).
     this.camY = 0;
     this.targetY = 0;
     this.fling = 0; // world units per ms of coast left after a flick
+    // Real milliseconds, for anything that belongs to the interface: the
+    // placement pulse, the lamp flicker. Those are affordances the player is
+    // looking at, and they should not race when the clock is turned up.
     this.time = 0;
+    // Silo milliseconds, for anything that belongs to the world. A citizen's
+    // walk is the silo's time passing, so it runs at the silo's rate.
+    this.worldTime = 0;
     this.spriteBudget = BAL.render.maxSpritesPerFrame;
     this.drawn = 0;
     this.hoverRoom = null;
@@ -87,8 +95,59 @@ export class SiloRenderer {
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
     // Fit the six slots across with a margin, but never shrink below legible.
-    this.scale = Math.max(0.42, Math.min(1.6, (this.w * 0.96) / WORLD_W));
+    // This is the *fitted* scale — the whole width of the silo on screen — and
+    // it is the anchor the zoom multiplies, so a resize or a rotation keeps
+    // whatever magnification the player chose instead of throwing it away.
+    this.fitScale = Math.max(0.42, Math.min(1.6, (this.w * 0.96) / WORLD_W));
+    this.applyZoom();
     this.ctx.imageSmoothingEnabled = false;
+  }
+
+  /**
+   * How close the player is standing.
+   *
+   * There was no zoom at all, and on a phone the cross-section is six slots
+   * wide in about 380 pixels — a citizen is twelve pixels tall and a room
+   * fixture is forty. Everything the game spent its art budget on was too
+   * small to look at, which is most of "it's hard to stay engaged": there was
+   * nothing to lean into.
+   *
+   * Multiplied onto the fitted scale rather than replacing it, so 1 always
+   * means "the whole silo across the screen" whatever the device, and the
+   * clamp is in units a player can reason about: all the way out is the fit,
+   * all the way in is three times that.
+   */
+  applyZoom() {
+    this.zoom = Math.max(1, Math.min(BAL.render.maxZoom, this.zoom || 1));
+    this.scale = this.fitScale * this.zoom;
+  }
+
+  /**
+   * Zoom about a point on the glass, so what is under the fingers stays under
+   * them. Without that anchoring a pinch drags the silo out from under the
+   * hand that is pinching it, which reads as the camera fighting back.
+   */
+  setZoom(next, anchorClientY = null) {
+    const before = this.zoom;
+    this.zoom = next;
+    this.applyZoom();
+    if (this.zoom === before) return;
+
+    if (anchorClientY != null) {
+      const rect = this.canvas.getBoundingClientRect();
+      const y = anchorClientY - rect.top;
+      // World point under the anchor before the change, held there after it.
+      const world = y / (this.fitScale * before) + this.camY;
+      this.targetY = this.clampCamera(world - y / this.scale);
+      this.camY = this.targetY;
+    } else {
+      // No anchor: hold the middle of the screen.
+      const mid = this.camY + this.h / (this.fitScale * before) / 2;
+      this.targetY = this.clampCamera(mid - this.viewWorldH() / 2);
+      this.camY = this.targetY;
+    }
+    this.fling = 0;
+    this.onZoom?.(this.zoom);
   }
 
   /** Centre the camera on a floor. */
@@ -125,10 +184,11 @@ export class SiloRenderer {
 
   // ------------------------------------------------------------- render ---
 
-  render(dt) {
+  render(dt, simDt = dt) {
     const ctx = this.ctx;
     const state = this.state;
     this.time += dt;
+    this.worldTime += simDt;
     this.drawn = 0;
 
     // Coast from a flick, before the easing — the fling moves the *target*, so
@@ -291,7 +351,32 @@ export class SiloRenderer {
     let lastT = 0;
     let velocity = 0; // world units per ms, smoothed across recent moves
 
+    // Live pointers, so a second finger can be told from a second tap. A pinch
+    // is the only two-finger gesture the cross-section has, and while one is
+    // in progress the one-finger drag is suspended rather than fighting it.
+    const points = new Map();
+    let pinch = null; // { gap, zoom, midY }
+
+    const midpointOf = () => {
+      const ys = [...points.values()].map((p) => p.y);
+      return (ys[0] + ys[1]) / 2;
+    };
+    const gapOf = () => {
+      const p = [...points.values()];
+      return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    };
+
     const down = (e) => {
+      points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (points.size === 2) {
+        // Second finger down: the drag becomes a pinch, and whatever coast was
+        // running stops — two fingers on the glass is not a flick.
+        dragging = false;
+        this.fling = 0;
+        pinch = { gap: gapOf(), zoom: this.zoom, midY: midpointOf() };
+        return;
+      }
+      if (points.size > 2) return;
       dragging = true;
       moved = 0;
       lastY = e.clientY;
@@ -302,6 +387,12 @@ export class SiloRenderer {
       this.canvas.setPointerCapture?.(e.pointerId);
     };
     const move = (e) => {
+      if (points.has(e.pointerId)) points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && points.size >= 2) {
+        const gap = gapOf();
+        if (pinch.gap > 8) this.setZoom(pinch.zoom * (gap / pinch.gap), midpointOf());
+        return;
+      }
       if (!dragging) return;
       const dy = e.clientY - lastY;
       lastY = e.clientY;
@@ -319,6 +410,15 @@ export class SiloRenderer {
       this.fling = 0; // a new touch kills any coast in progress
     };
     const up = (e) => {
+      points.delete(e.pointerId);
+      if (pinch) {
+        // Lifting one of two fingers ends the pinch. The remaining finger does
+        // not silently become a drag: it has been still relative to the other
+        // one and its `lastY` is stale, so treating it as a drag would jump the
+        // camera by whatever the pinch moved.
+        if (points.size < 2) { pinch = null; dragging = false; }
+        return;
+      }
       if (!dragging) return;
       dragging = false;
       this.canvas.releasePointerCapture?.(e.pointerId);
@@ -347,11 +447,20 @@ export class SiloRenderer {
     this.canvas.addEventListener('pointerdown', down);
     this.canvas.addEventListener('pointermove', move);
     this.canvas.addEventListener('pointerup', up);
-    this.canvas.addEventListener('pointercancel', () => (dragging = false));
+    this.canvas.addEventListener('pointercancel', (e) => {
+      points.delete(e.pointerId);
+      dragging = false;
+      if (points.size < 2) pinch = null;
+    });
     this.canvas.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault();
+        // Ctrl-wheel is the desktop pinch, and it is what a trackpad sends.
+        if (e.ctrlKey) {
+          this.setZoom(this.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientY);
+          return;
+        }
         this.targetY = this.clampCamera(this.targetY + e.deltaY / this.scale);
       },
       { passive: false }

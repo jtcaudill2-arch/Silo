@@ -188,6 +188,35 @@ async function main() {
   };
   shell.onAlertFloor = (floor, kind) => gauge.flag(floor, kind);
   shell.onFocusFloor = (n) => renderer.focusFloor(n);
+
+  // Zoom. Pinch is bound on the canvas itself; these are the visible half,
+  // because nothing on a phone advertises that a canvas can be pinched.
+  {
+    const zin = document.getElementById('zoom-in');
+    const zout = document.getElementById('zoom-out');
+    // Guarded, because the boot path may not fail over a control. The first
+    // version of this dereferenced both straight away, so deleting the markup
+    // threw here and the game never got past the title screen — a missing zoom
+    // button taking the whole silo with it. Pinch still works without them.
+    if (!zin || !zout) {
+      console.warn('[boot] no zoom controls in the markup; pinch still works');
+    } else {
+    const sync = () => {
+      zin.disabled = renderer.zoom >= BAL.render.maxZoom - 0.001;
+      zout.disabled = renderer.zoom <= 1.001;
+    };
+    const step = (mult) => {
+      renderer.setZoom(renderer.zoom * mult);
+      sync();
+    };
+    zin.addEventListener('click', () => step(1.5));
+    zout.addEventListener('click', () => step(1 / 1.5));
+    // The pinch changes it too, and the buttons have to agree about whether
+    // they are at the end of their travel.
+    renderer.onZoom = sync;
+    sync();
+    }
+  }
   document
     .getElementById('btn-settings')
     .addEventListener('click', () => openSettings(store, game, shell));
@@ -243,8 +272,8 @@ async function main() {
   autosave.start();
 
   // ---- run ----------------------------------------------------------------
-  game.onFrame((dt) => {
-    renderer.render(dt);
+  game.onFrame((dt, simDt) => {
+    renderer.render(dt, simDt);
     gauge.render(dt);
   });
 

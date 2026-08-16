@@ -1911,6 +1911,19 @@ export const BAL = {
     floorWidth: 384, // 6 slots * 64
     slotWidth: 64,
     maxSpritesPerFrame: 400,
+
+    /**
+     * How far in a pinch can go, as a multiple of "the whole silo across the
+     * screen".
+     *
+     * There was no zoom at all. On a phone the cross-section is six slots in
+     * about 380 pixels, so a citizen is twelve pixels tall and a room fixture
+     * forty — every one of the 522 baked frames drawn too small to look at.
+     * Three is the point where a single floor fills the view and a citizen is
+     * a person rather than a mark, which is what makes the art worth having
+     * and the silo worth leaning into.
+     */
+    maxZoom: 3,
     citizenFloorsRendered: 3,
     // ---- what people are doing when they are not at a post ----------------
     //
@@ -2207,9 +2220,18 @@ export const BAL = {
     // Twenty-nine rows, thirteen of them greyed, is three thousand pixels of
     // scrolling on a phone to find the sixteen things that can actually be
     // built. The locked ones are still worth *knowing about* — they are the
-    // shape of the game ahead — so they are kept, collapsed behind one line
-    // that says how many there are and what they are waiting on.
-    lockedRowsCollapsed: true,
+    // shape of the game ahead — so they were kept, collapsed behind one line
+    // that said how many there were and what they were waiting on.
+    //
+    // Open now, because the player asked for it in as many words: "on
+    // construction I still want to see what we can build, just have something
+    // at the bottom that shows why it can't be built". That is what a locked
+    // row already is — `catalogueRow` puts the reason under the name — and the
+    // fold was hiding the answer along with the question. The scrolling cost is
+    // real and was measured honestly; it is a price worth paying for a
+    // catalogue that reads as the whole game rather than as sixteen things and
+    // a closed door.
+    lockedRowsCollapsed: false,
     // A room that has more free bays than this is not interesting enough to
     // print a number for; below it, the count is a warning that the silo
     // needs digging. It used to print "24 bays free" on every row,

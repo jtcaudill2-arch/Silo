@@ -95,8 +95,18 @@ export class Loop {
     if (dt < 0) dt = 0;
     if (dt > 5000) dt = 5000;
 
-    if (!this.paused) this.advance(dt * this.speed);
-    this.onFrame(dt);
+    // Two clocks, and the renderer needs both.
+    //
+    // `dt` is real milliseconds and is what camera physics runs on: a flick
+    // should coast for the same length of time at 4x as at 1x, because it is
+    // the player's finger and not the silo's calendar. `simDt` is how much of
+    // the *silo's* time passed, which is what everything happening inside it
+    // has to move on. Passing only `dt` meant the people walked and worked at
+    // wall-clock speed however fast the game was running: turn the clock up
+    // and the numbers raced while the silo on screen carried on strolling.
+    const simDt = this.paused ? 0 : dt * this.speed;
+    if (!this.paused) this.advance(simDt);
+    this.onFrame(dt, simDt);
     this.schedule();
   }
 

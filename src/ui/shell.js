@@ -96,6 +96,15 @@ const CHANGE_WEIGHT = {
  * player's finger mid-tap, so presses get silently swallowed.
  */
 const PANEL_REFRESH_MS = 500;
+/**
+ * How long a panel is left alone after it last scrolled.
+ *
+ * A momentum scroll on a phone runs well past the finger lifting, and a
+ * rebuild landing inside one stops it dead. Long enough to cover an ordinary
+ * flick settling, short enough that a panel is never more than about a second
+ * stale while the player is reading a moving list.
+ */
+const PANEL_SCROLL_QUIET_MS = 400;
 
 export class Shell {
   constructor(store, game) {
@@ -157,11 +166,22 @@ export class Shell {
     // Never rebuild a panel out from under a finger or a focused control.
     this.pointerDown = false;
     this.lastPanelRender = 0;
+    this.lastScrollAt = 0;
     this.host.addEventListener('pointerdown', () => (this.pointerDown = true));
     window.addEventListener('pointerup', () => {
       this.pointerDown = false;
     });
     window.addEventListener('pointercancel', () => (this.pointerDown = false));
+
+    // ...or out from under a surface that is still moving.
+    //
+    // `pointerDown` goes false the instant the finger leaves the glass, and on
+    // a phone that is the moment the interesting part starts: the momentum
+    // scroll runs for another half second or more. A rebuild landing in the
+    // middle of one stops it dead, which is what "scrolling is rough, it
+    // doesn't flow" is. Scroll does not bubble, so this listens in the capture
+    // phase to catch every scroller in the panel at once.
+    this.host.addEventListener('scroll', () => { this.lastScrollAt = performance.now(); }, true);
 
     this.store.subscribe(() => this.markDirty());
     document.addEventListener('keydown', (e) => this.onKey(e));
@@ -272,6 +292,7 @@ export class Shell {
     const now = performance.now();
     if (!force) {
       if (this.pointerDown) return;
+      if (now - this.lastScrollAt < PANEL_SCROLL_QUIET_MS) return;
       if (now - this.lastPanelRender < PANEL_REFRESH_MS) return;
       // Don't yank a control the player is typing in or tabbing through.
       if (this.host.contains(document.activeElement) && document.activeElement !== document.body) {
@@ -280,12 +301,54 @@ export class Shell {
     }
     this.lastPanelRender = now;
 
-    const scroller = this.host.querySelector('.panel-body');
-    const scrollTop = scroller ? scroller.scrollTop : 0;
+    const next = this.panelFrame(panel);
+
+    // Say nothing when there is nothing to say.
+    //
+    // This rebuilt and swapped the whole panel twice a second regardless, and
+    // the great majority of those rebuilds were identical to what was already
+    // on screen — the silo does not change much in five hundred milliseconds.
+    // Every one of them destroyed and recreated every node in the panel, and
+    // that is the flicker: not a paint bug, the DOM being replaced under the
+    // player about a hundred times a minute.
+    //
+    // `isEqualNode` is a deep structural compare — tags, attributes, text,
+    // children. It ignores listeners and scroll positions, which is exactly
+    // right here: if the built tree is identical then the tree already on
+    // screen is just as correct, carries live listeners of its own, and has
+    // the player's scroll position in it. Building the frame and throwing it
+    // away is cheaper than the reflow that swapping it would cost.
+    const current = this.host.firstElementChild;
+    if (current && current.isEqualNode(next)) return;
+
+    // Every scroller, not one. The old code restored `.panel-body`'s scrollTop
+    // and nothing else, so the horizontal strip of building categories was
+    // yanked back to the left twice a second — which reads, correctly, as the
+    // list refusing to scroll. Keyed by position in document order, which
+    // holds because the tree that replaces this one is nearly always the same
+    // shape; a rebuild that really did change shape has no right answer and
+    // gets the closest one.
+    const scrolls = [];
+    let i = 0;
+    for (const node of this.host.querySelectorAll('*')) {
+      if (node.scrollTop || node.scrollLeft) {
+        scrolls.push({ i, top: node.scrollTop, left: node.scrollLeft });
+      }
+      i++;
+    }
+
     clear(this.host);
-    this.host.appendChild(this.panelFrame(panel));
-    const next = this.host.querySelector('.panel-body');
-    if (next && scrollTop) next.scrollTop = scrollTop;
+    this.host.appendChild(next);
+
+    if (scrolls.length) {
+      const nodes = this.host.querySelectorAll('*');
+      for (const s of scrolls) {
+        const node = nodes[s.i];
+        if (!node) continue;
+        if (s.top) node.scrollTop = s.top;
+        if (s.left) node.scrollLeft = s.left;
+      }
+    }
     this.settleTabs();
   }
 

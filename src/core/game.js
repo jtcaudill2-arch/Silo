@@ -36,7 +36,7 @@ export class Game {
       onTick: (t) => this.tick(t),
       onCycle: (c) => this.cycle(c),
       onDay: (d) => this.day(d),
-      onFrame: (dt) => this.frame(dt),
+      onFrame: (dt, simDt) => this.frame(dt, simDt),
       onSpill: (n) => this.spill(n),
     });
     this.loop.setTick(store.state.clock.tick);
@@ -420,9 +420,10 @@ export class Game {
   }
 
   // ------------------------------------------------------------ frame ----
-  frame(dt) {
+  frame(dt, simDt = dt) {
+    // Played time is time the player sat there, so it is the real clock.
     this.store.dispatch({ type: 'PLAYED_MS', ms: dt, emit: false });
-    for (const fn of this.frameHooks) fn(dt);
+    for (const fn of this.frameHooks) fn(dt, simDt);
     this.store.flush();
   }
 

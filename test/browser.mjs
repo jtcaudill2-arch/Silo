@@ -571,6 +571,154 @@ try {
     console.log(`  screenshots → ${SHOT_DIR}`);
   }
 
+  // ---- 7b. the four things a player reported about handling ---------------
+  //
+  // All four came back from a session on a real phone and none of them were
+  // things the suite could have asked about, because none of them are about
+  // what the game computes — they are about what it feels like under a thumb.
+  // Asserted here because this is the only file with a real browser, a real
+  // frame loop and a real finger.
+  {
+    // The panel rebuilt itself wholesale every 500ms whether anything had
+    // changed or not, which is the flicker; and it restored exactly one scroll
+    // position, `.panel-body`'s, so the horizontal strip of building
+    // categories was yanked back to the left twice a second. That reads as the
+    // list refusing to scroll, and it is what "it keeps getting stuck" was.
+    // Whatever the section above left open, closed — a room panel sits over
+    // the navbar and swallows the tap that opens Build.
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(120);
+    }
+    await page.click('.nav-btn:has-text("Build")').catch(() => {});
+    const catUp = await page
+      .waitForSelector('.chip-row', { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!catUp) fail('the Build panel would not open, so none of the handling checks below ran');
+    else {
+    const churn = await page.evaluate(async () => {
+      const host = document.querySelector('.chip-row').closest('#panel, .panel, div');
+      const root = document.getElementById('panel-host') || host?.parentElement || document.body;
+      let swaps = 0;
+      const obs = new MutationObserver((ms) => { for (const m of ms) if (m.removedNodes.length) swaps++; });
+      obs.observe(root, { childList: true });
+      const row = document.querySelector('.chip-row');
+      row.scrollLeft = 40;
+      await new Promise((r) => setTimeout(r, 2400));
+      const idleSwaps = swaps;
+      // Now cause a real one. An idle panel that never rebuilds proves nothing
+      // about whether a rebuild keeps the player's place — and a forced render
+      // will not do it either, because an identical tree is correctly skipped.
+      // Picking a category is the genuine article: it changes which rows are
+      // listed, so the panel really is replaced, and it is the exact gesture
+      // that was reported as getting stuck.
+      const chips = document.querySelectorAll('.chip-row .chip');
+      chips[chips.length - 1]?.click();
+      await new Promise((r) => setTimeout(r, 120));
+      obs.disconnect();
+      return {
+        swaps: idleSwaps,
+        forced: swaps > idleSwaps,
+        kept: document.querySelector('.chip-row')?.scrollLeft ?? -1,
+      };
+    });
+    if (churn.swaps > 2) {
+      fail(`the panel replaced its own DOM ${churn.swaps} times in 2.4 idle seconds — that is the flicker`);
+    } else if (!churn.forced) {
+      fail('forcing a render did not rebuild the panel, so nothing here tests whether a rebuild ' +
+        'keeps the player\'s place');
+    } else if (churn.kept !== 40) {
+      fail(`the building-category strip was scrolled to 40 and a rebuild put it back at ` +
+        `${churn.kept} — the player's place is thrown away, which reads as the list refusing ` +
+        'to scroll');
+    } else {
+      ok(`an idle panel rebuilds ${churn.swaps} times in 2.4s, and a forced rebuild keeps the ` +
+        'sideways scroll');
+    }
+
+    // Back to All — the check above ends on whichever category it tapped, and
+    // one category is not the catalogue.
+    await page.evaluate(async () => {
+      document.querySelector('.chip-row .chip')?.click();
+      await new Promise((r) => setTimeout(r, 120));
+    });
+
+    // Every room the silo knows about is on the list, and the ones it cannot
+    // build carry the reason. Asked for in as many words: "I still want to see
+    // what we can build, just have something at the bottom that shows why it
+    // can't be built."
+    const cat = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.build-row').length,
+      locked: document.querySelectorAll('.build-row.locked').length,
+      reasons: document.querySelectorAll('.build-row.locked .build-why').length,
+      folded: document.querySelectorAll('.build-row.folded').length,
+    }));
+    if (cat.folded) {
+      fail(`${cat.folded} row(s) of the catalogue are folded away behind a summary`);
+    } else if (!cat.locked) {
+      fail('no locked rooms are listed at all, so nothing says what is coming');
+    } else if (cat.reasons !== cat.locked) {
+      fail(`${cat.locked} rooms cannot be built and only ${cat.reasons} say why`);
+    } else {
+      ok(`the catalogue shows all ${cat.rows} rooms, ${cat.locked} of them locked and every one ` +
+        'carrying its reason');
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+
+    // The people walk at the silo's speed, not the wall clock's. The renderer
+    // was handed real milliseconds while the sim advanced by `dt * speed`, so
+    // turning the clock up made the numbers race and left the silo strolling.
+    //
+    // Driven through `game.frame` rather than by setting a speed and holding a
+    // stopwatch. A stopwatch was tried and is not reliable here: `on('crisis')`
+    // pauses the silo and restores the speed it captured, crises fire while the
+    // suite is running, and the measurement came back 1x with the loop reading
+    // 1 — a real property of this fixture and nothing to do with the renderer.
+    // One frame with the two clocks visibly different says the thing exactly.
+    const clocks = await page.evaluate(() => {
+      const r = window.DEEPWATER.renderer, g = window.DEEPWATER.game;
+      const t0 = r.time, w0 = r.worldTime;
+      // Through the Loop's own hook, not `game.frame` — the wiring that was
+      // broken is the arrow between them, and calling `frame` directly steps
+      // over exactly the line that was wrong.
+      g.loop.onFrame(16, 64); // one 16ms frame of a silo running at 4x
+      return { real: Math.round(r.time - t0), world: Math.round(r.worldTime - w0) };
+    });
+    if (clocks.world !== 64) {
+      fail(`a 16ms frame at 4x advanced the silo's clock by ${clocks.world}ms — the renderer is ` +
+        'still being handed wall-clock time, so the people do not move faster when the clock is ' +
+        'turned up');
+    } else if (clocks.real !== 16) {
+      fail(`the same frame moved the interface clock by ${clocks.real}ms rather than 16 — the ` +
+        'placement pulse and the lamp flicker would race with the game speed');
+    } else {
+      ok('the people run on the silo\'s clock and the interface runs on the wall clock ' +
+        `(one 16ms frame at 4x: ${clocks.world}ms of silo, ${clocks.real}ms of interface)`);
+    }
+
+    // And there is a way to get closer. A citizen is twelve pixels tall on a
+    // phone; without this every frame of baked art is too small to look at.
+    const zoom = await page.evaluate(() => {
+      const r = window.DEEPWATER.renderer;
+      const before = r.scale;
+      document.getElementById('zoom-in')?.click();
+      const after = r.scale;
+      document.getElementById('zoom-out')?.click();
+      return { before, after, back: r.scale, hasButtons: !!document.getElementById('zoom-in') };
+    });
+    if (!zoom.hasButtons) {
+      fail('there is no zoom control on the cross-section');
+    } else if (!(zoom.after > zoom.before)) {
+      fail(`zooming in left the scale at ${zoom.after} from ${zoom.before}`);
+    } else if (Math.abs(zoom.back - zoom.before) > 0.001) {
+      fail(`zooming in and out again left the scale at ${zoom.back}, not back at ${zoom.before}`);
+    } else {
+      ok(`the cross-section zooms: ${zoom.before.toFixed(2)} to ${zoom.after.toFixed(2)} and back`);
+    }
+    }
+  }
+
   // ---- 8. service worker installs -----------------------------------------
   const swState = await page.evaluate(async () => {
     const reg = await navigator.serviceWorker.getRegistration();

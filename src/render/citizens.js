@@ -55,7 +55,11 @@ export function citizensInView(state, cam) {
   const to = range.to;
   if (to < from) return out;
 
-  const t = cam.time * 0.001;
+  // The silo's clock, not the wall clock. `cam.worldTime` runs at the speed
+  // the game is set to, so turning the clock up makes the people walk faster
+  // instead of leaving them strolling under racing numbers. Falls back to
+  // `time` for the fixtures in test/, which build a camera by hand.
+  const t = (cam.worldTime ?? cam.time) * 0.001;
   const reduced = state.settings.reducedMotion;
 
   // Bucket the workforce by floor so we walk the roster once, not per floor.
@@ -557,7 +561,7 @@ export function deathMarkAt(state, worldX, worldY) {
 export function drawCitizens(ctx, state, cam) {
   const people = citizensInView(state, cam);
   for (const p of people) {
-    const frame = sprites.citizenFrame(p.c, cam.time, p.action);
+    const frame = sprites.citizenFrame(p.c, cam.worldTime ?? cam.time, p.action);
     if (!sprites.drawAt(ctx, frame, Math.round(p.x) - 6, p.y - 15, 1)) {
       drawOne(ctx, p.c, p.x, p.y);
     }
