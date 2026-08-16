@@ -10,7 +10,7 @@ import { BAL } from '../../config/balance.js';
 import { getRoom, SKILLS } from '../../data/rooms.js';
 import { fullName, topSkill } from '../../sim/population.js';
 import { employmentSummary, autoAssign } from '../../sim/jobs.js';
-import { portraitCanvas } from '../../render/portraits.js';
+import { facePortrait } from '../../render/portraits.js';
 import { openCitizen } from '../citizenCard.js';
 import { el, clear, humanise, button, emptyState, toast, chip } from '../dom.js';
 
@@ -179,7 +179,7 @@ function rosterRow(state, c, shell) {
   if (c.status === 'idle' && c.age >= BAL.citizens.workingAgeMin) flags.push(chip('idle', 'warn'));
   if (c.pregnantUntilDay != null) flags.push(chip('expecting', 'good'));
 
-  const portrait = portraitCanvas(c, 2);
+  const portrait = facePortrait(c, 32, state);
   portrait.className = 'portrait-sm';
 
   return el(

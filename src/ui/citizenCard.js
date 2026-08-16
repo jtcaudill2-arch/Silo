@@ -10,9 +10,8 @@ import { BAL } from '../config/balance.js';
 import { getRoom, SKILLS } from '../data/rooms.js';
 import { TRAITS } from '../data/traits.js';
 import { fullName, topSkill, workFactor } from '../sim/population.js';
-import { portraitCanvas } from '../render/portraits.js';
+import { facePortrait } from '../render/portraits.js';
 import { citizenArt, artImage } from './artwork.js';
-import * as sprites from '../render/sprites.js';
 import { el, modal, button, meter, chip, sectionLabel, humanise, emptyState, row } from './dom.js';
 
 const STAT_LABEL = { str: 'Strength', agi: 'Agility', int: 'Intellect', end: 'Endurance', cha: 'Charisma' };
@@ -176,19 +175,22 @@ export function openCitizen(store, citizenId, opts = {}) {
 }
 
 function header(state, c) {
-  // A drawn figure when one has been imported for this citizen's role, the
-  // procedural portrait otherwise. The procedural one is not a placeholder —
-  // it is per-citizen and always right — so this is a swap, not a repair.
-  // Imported art, then the atlas figure for their role, then the procedural
-  // portrait. All three are real answers — the procedural one is per-citizen
-  // and always correct — so this is preference, not repair.
+  // Imported art if somebody has drawn this citizen, otherwise their face.
+  //
+  // This used to reach for `portrait_<role>` off the sheet directly, which
+  // meant the one screen in the game dedicated to a single person showed the
+  // portrait of their JOB — one of eleven pictures, shared by everybody who
+  // did the same work — while the roster you tapped to get here drew a
+  // per-citizen face. Tapping a name changed what they looked like.
+  // `facePortrait` repaints that same drawn portrait in this person's
+  // colouring, so the card keeps the better art and the two screens agree.
   const drawn = citizenArt(c, state);
   let figure;
   if (drawn) {
     figure = artImage(drawn, fullName(c));
     figure.className = 'portrait-lg portrait-art';
   } else {
-    figure = sprites.frameCanvas(`portrait_${sprites.citizenRole(c)}`, 2) || portraitCanvas(c, 4);
+    figure = facePortrait(c, 64, state);
     figure.className = 'portrait-lg';
     figure.setAttribute('aria-hidden', 'true');
   }

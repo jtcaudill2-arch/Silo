@@ -13,7 +13,7 @@ import { POLICY_LIST, POLICIES } from '../../data/policies.js';
 import { policyCapacity, canTogglePolicy, deliverVerdict } from '../../sim/order.js';
 import { lockReason } from '../../sim/unlocks.js';
 import { fullName, isDissident } from '../../sim/population.js';
-import { portraitCanvas } from '../../render/portraits.js';
+import { facePortrait } from '../../render/portraits.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise } from '../dom.js';
 
 export const policyPanel = {
@@ -190,7 +190,7 @@ function investigationCard(state, shell, inv) {
       el(
         'div.suspect',
         (() => {
-          const p = portraitCanvas(s.c, 2);
+          const p = facePortrait(s.c, 32, state);
           p.className = 'portrait-sm';
           return p;
         })(),

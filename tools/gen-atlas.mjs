@@ -26,7 +26,7 @@ import {
   ROOM_FIXTURES, ROOM_FIXTURES_LEVELLED, fixtureName, MAX_FIXTURE_LEVEL, ROOM_CUTAWAYS, FIXTURE_SIZE, CUTAWAY_SIZE,
 } from './art/rooms.mjs';
 import {
-  drawCitizen, drawPortrait, ACTIONS, ROLES, CONSUMER_ACTIONS, CONSUMER_ROLES,
+  drawCitizen, drawPortrait, tonesUsed, ACTIONS, ROLES, CONSUMER_ACTIONS, CONSUMER_ROLES,
   W as CIT_W, H as CIT_H, PORTRAIT as PORTRAIT_SIZE,
 } from './art/citizens.mjs';
 import {
@@ -74,6 +74,72 @@ for (const [id, draw] of Object.entries(ROOM_CUTAWAYS)) {
 
 // --------------------------------------------------------------- citizens ---
 
+/**
+ * Which pixels of a baked portrait are skin, which are hair, and how each tone
+ * sits against its family — so the renderer can repaint one face as six
+ * hundred.
+ *
+ * There are eleven portraits on this sheet, one per role, and there is no
+ * arrangement of a sprite baker that makes that a face per citizen: baking
+ * even a hundred is a hundred times 32×32 for a population that grows past
+ * that by day 90. The alternative is to repaint the one good drawing at
+ * display time, which needs exactly two things — the list of tones that are
+ * somebody's colouring rather than their coveralls, and how much darker or
+ * lighter each one is than its family's base.
+ *
+ * Both come out of the provenance map the art library already keeps. `tone()`
+ * records every colour it mixes against the PAL entry it came from, so
+ * "skinShade@-0.4" is the mouth, "hair@0.34" is the lit crown, and nothing
+ * here has to recognise a colour by its value. That matters more than the
+ * convenience: if the art's skin tone changes, this key changes with it, and
+ * an RGB triple typed into src/ would not have.
+ *
+ * `k` is the art's own shade() parameter, recovered from the pair rather than
+ * read off the provenance string, because skin and skinShade are two separate
+ * PAL entries and the step between them has no single number in the source.
+ * Negative is a mix toward black, positive toward bone, which is exactly what
+ * shade() means — so a dark-skinned face gets the same jaw shadow the baked
+ * one has, in its own colour, rather than a beige one laid over the top.
+ *
+ * Roles that wear a sealed hood contribute no skin at all, and roles with no
+ * hair contribute no hair. Both come back as an absent family rather than an
+ * empty one, and the renderer skips what is not there.
+ */
+function faceTones(scope) {
+  const BONE = (PAL.bone[0] + PAL.bone[1] + PAL.bone[2]) / 3;
+  const mean = (rgb) => rgb.split(',').reduce((a, b) => a + Number(b), 0) / 3;
+  const shadeK = (tone, base) => {
+    const t = mean(tone);
+    const b = mean(base);
+    if (t <= b) return b ? -(1 - t / b) : 0;
+    return BONE > b ? (t - b) / (BONE - b) : 0;
+  };
+
+  const fam = { skin: [], hair: [] };
+  for (const [rgb, prov] of scope) {
+    const entry = prov.split('@')[0];
+    if (entry === 'skin' || entry === 'skinShade') fam.skin.push({ rgb, entry });
+    else if (entry === 'hair') fam.hair.push({ rgb, entry });
+  }
+
+  const out = {};
+  for (const [family, list] of Object.entries(fam)) {
+    if (!list.length) continue;
+    // Skin's base is the tone mixed from PAL.skin — the lit plane of the face.
+    // Hair has one PAL entry and two tones, so its base is the darker.
+    const base = family === 'skin'
+      ? (list.find((e) => e.entry === 'skin') || list[0]).rgb
+      : list.reduce((a, e) => (mean(e.rgb) < mean(a.rgb) ? e : a)).rgb;
+    const tones = {};
+    for (const e of list) tones[e.rgb] = Number(shadeK(e.rgb, base).toFixed(3));
+    out[family] = { base, tones };
+  }
+  return out;
+}
+
+/** Per role, the skin and hair the baker put on the sheet. See faceTones. */
+const faces = {};
+
 // Every role in every action. The renderer only asks for a subset today, but
 // the panels ask for more and the cost of a 12×16 sprite is negligible.
 for (const role of ROLES) {
@@ -87,6 +153,7 @@ for (const role of ROLES) {
   drawPortrait(sheet.sprite(`portrait_${role}`, PORTRAIT_SIZE, PORTRAIT_SIZE), {
     role, seed: hash(`portrait:${role}`), age: 30, gender: 'f',
   });
+  faces[role] = faceTones(tonesUsed());
 }
 
 /**
@@ -220,7 +287,7 @@ await mkdir(OUT, { recursive: true });
 await writeFile(join(OUT, 'atlas.png'), png);
 await writeFile(
   join(OUT, 'atlas.json'),
-  JSON.stringify({ width: SIZE, height: usedHeight, tile: TILE, frames: sheet.frames }, null, 1)
+  JSON.stringify({ width: SIZE, height: usedHeight, tile: TILE, frames: sheet.frames, faces }, null, 1)
 );
 
 // The interface's copy of the ui_ frames, as base64 PNGs inside a generated

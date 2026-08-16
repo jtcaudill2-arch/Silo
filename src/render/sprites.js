@@ -85,6 +85,25 @@ export function frame(name) {
 }
 
 /**
+ * Which tones in a role's baked portrait are that person's colouring.
+ *
+ * The sheet carries eleven portraits and the silo carries six hundred people,
+ * so the card and the roster were showing one of eleven faces to everybody who
+ * held the same job — and, worse, disagreeing with each other, because the
+ * lists drew the per-citizen procedural portrait and the card drew the baked
+ * one. Tapping a row changed a person's face.
+ *
+ * gen-atlas.mjs emits this from the art library's own provenance map: the skin
+ * and hair tones the baker actually mixed, each with the shade() step that
+ * separates it from its family's base. See `faceTones` there. Absent — an
+ * older atlas, or no atlas at all — every caller falls back to what it drew
+ * before, which is why this returns null rather than a default.
+ */
+export function faceTones(role) {
+  return table?.faces?.[role] || null;
+}
+
+/**
  * Draw a frame, stretched to fit a destination box. Nearest-neighbour is
  * enforced by the caller setting imageSmoothingEnabled = false.
  */

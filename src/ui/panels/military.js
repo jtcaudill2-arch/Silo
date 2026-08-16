@@ -17,7 +17,7 @@ import { employableCitizens } from '../../sim/jobs.js';
 import { lockReason } from '../../sim/unlocks.js';
 import { DOCTRINES, NODE_LIST as DOCTRINE_NODES } from '../../data/doctrine.js';
 import { ledger, spent as doctrineSpent, has as doctrineHas } from '../../sim/doctrine.js';
-import { portraitCanvas } from '../../render/portraits.js';
+import { facePortrait } from '../../render/portraits.js';
 import { frameCanvas } from '../../render/sprites.js';
 import { openCitizen } from '../citizenCard.js';
 import { el, button, row, sectionLabel, emptyState, meter, chip, toast, modal, humanise, fmtDelta } from '../dom.js';
@@ -149,7 +149,7 @@ function renderSquads(state, body, shell) {
         el(
           'div.squad-members',
           ...members.map((c) => {
-            const p = portraitCanvas(c, 2);
+            const p = facePortrait(c, 32, state);
             p.className = 'portrait-sm';
             return el(
               'button.squad-member',

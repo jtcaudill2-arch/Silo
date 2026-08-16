@@ -1026,6 +1026,111 @@ try {
   else ok(`Continue dismisses the report and resumes at ${resumed}×`);
   await returning.close();
 
+  // ---- 7c. six hundred people are not eleven faces -------------------------
+  //
+  // The sheet carries one portrait per role and the citizen card asked for it
+  // by role, so every farmer in the silo had the same face and the roster —
+  // which drew the per-citizen procedural portrait — disagreed with the card
+  // about what any of them looked like. `facePortrait` repaints the drawn
+  // portrait in each person's own colouring, so this checks the three things
+  // that has to be true of: the drawn art is what is on screen, two people of
+  // the SAME role differ, and the card and the list agree about one person.
+  //
+  // In a real browser because every part of it is: the atlas is fetched, the
+  // frame is read back through getImageData, and node has neither.
+  {
+    const faces = await page.evaluate(async () => {
+      const p = await import('./src/render/portraits.js');
+      const s = await import('./src/render/sprites.js');
+      if (!s.isLoaded()) return { atlas: false };
+
+      const bytes = (cv) => {
+        const c = document.createElement('canvas');
+        c.width = cv.width; c.height = cv.height;
+        const cx = c.getContext('2d');
+        cx.imageSmoothingEnabled = false;
+        cx.drawImage(cv, 0, 0);
+        return [...cx.getImageData(0, 0, c.width, c.height).data].join(',');
+      };
+      const person = (seed) => ({
+        portraitSeed: seed, age: 34, traits: [], radiation: 0,
+        health: 90, status: 'working', job: null,
+      });
+
+      // Everybody in the roster, at the size the People panel draws them.
+      //
+      // `_jobSkill` is cleared first, and that is the whole point of the role
+      // half of this check. The cross-section stamps it on every citizen it
+      // draws, every frame, and leaves it there — so asking a citizen their
+      // role right after a frame answers from the renderer's leftovers and
+      // says nothing about whether a PANEL can resolve one. Cleared, this
+      // measures the path a person off the visible floors actually takes.
+      const drawn = new Map();
+      const roles = new Set();
+      for (const c of Object.values(window.DEEPWATER.store.state.citizens)) {
+        if (c.status === 'dead') continue;
+        c._jobSkill = null;
+        drawn.set(c.id, bytes(p.facePortrait(c, 32, window.DEEPWATER.store.state)));
+        roles.add(s.citizenRole(c));
+      }
+
+      // Same role, same age, different people.
+      const spread = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((n) => bytes(p.facePortrait(person(n * 977), 32))));
+
+      // One person, two screens. Different sizes, so compare the colours each
+      // one used rather than the pixels: the card must not be a different
+      // person from the row that opened it.
+      const one = Object.values(window.DEEPWATER.store.state.citizens).find((c) => c.status !== 'dead');
+      const palette = (cv) => {
+        const c = document.createElement('canvas');
+        c.width = cv.width; c.height = cv.height;
+        const cx = c.getContext('2d');
+        cx.drawImage(cv, 0, 0);
+        const d = cx.getImageData(0, 0, c.width, c.height).data;
+        const seen = new Set();
+        for (let i = 0; i < d.length; i += 4) seen.add(`${d[i]},${d[i + 1]},${d[i + 2]}`);
+        return seen;
+      };
+      const st = window.DEEPWATER.store.state;
+      const inList = palette(p.facePortrait(one, 32, st));
+      const onCard = palette(p.facePortrait(one, 64, st));
+
+      return {
+        atlas: true,
+        people: drawn.size,
+        distinct: new Set(drawn.values()).size,
+        sameRole: spread.size,
+        roles: [...roles].sort(),
+        shared: [...inList].filter((k) => onCard.has(k)).length,
+        listOnly: [...inList].filter((k) => !onCard.has(k)).length,
+      };
+    });
+
+    if (!faces.atlas) {
+      fail('the atlas did not load, so nothing here looked at the drawn portraits');
+    } else if (faces.sameRole < 8) {
+      fail(`eight citizens of the same role and age drew ${faces.sameRole} distinct faces — the ` +
+        'card is still showing everybody their job rather than themselves');
+    } else if (faces.distinct < faces.people * 0.9) {
+      fail(`${faces.people} people in the silo have ${faces.distinct} faces between them`);
+    } else if (faces.listOnly > 0) {
+      fail(`${faces.listOnly} colours are in a citizen's roster portrait and not on their card — ` +
+        'the two screens are drawing different people');
+    } else if (!faces.roles.some((r) => ['farmer', 'mechanic', 'medic', 'deputy', 'militia'].includes(r))) {
+      // A panel does not walk the rooms, so nothing there stamped the job's
+      // skill onto a citizen and `citizenRole` fell through to plain coveralls
+      // for everybody on shift. Eight of the eleven drawn portraits — the
+      // apron, the goggles, the medic's cross, the deputy's badge — could be
+      // reached from the cross-section and from nowhere a player looks at a
+      // person. `roleFor` is what resolves it.
+      fail(`the whole roster resolved to ${faces.roles.join('/')} — nobody's job reached their ` +
+        'portrait, so every drawn role but the plain one is unreachable from the panels');
+    } else {
+      ok(`${faces.people} people, ${faces.distinct} faces across ${faces.roles.length} roles ` +
+        `(${faces.roles.join(', ')}); card and roster agree on all ${faces.shared} colours`);
+    }
+  }
+
   // ---- 12. manifest is installable ----------------------------------------
   const manifest = await page.evaluate(async () => {
     const res = await fetch('./manifest.webmanifest');
