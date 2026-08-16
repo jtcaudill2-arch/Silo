@@ -6726,6 +6726,66 @@ const ERRAND_ROOM = {
   }
 }
 
+// ---- 75. a repair order says what the wear actually costs -----------------
+//
+// It ranked every room by condition alone and said one sentence about all of
+// them: "a room that reaches zero stops, and if it is making power the rest of
+// the silo stops with it". Measured over ten 400-day campaigns, the room it
+// named was unstaffed on 75 of the 76 days it fired, and 54 of those were the
+// Airlock — a room with no crew, making nothing, described as though the lights
+// depended on it, named again the next day and for as long as fourteen days
+// running.
+//
+// Not a weight problem, which is worth writing down because it was the obvious
+// next move. Scaling an idle room's urgency down was tried and measured and
+// changed nothing at all: on the days this order is top the directive list is
+// nearly empty, so there is nothing for a lower weight to lose to. What was
+// wrong was the sentence.
+{
+  const store = newStore(0xfeed1);
+  const s = store.state;
+  store.dispatchAll(autoAssign(s));
+
+  const donor5 = Object.values(s.silo.rooms).find((r) => getRoom(r.type)?.staff);
+  if (!donor5) {
+    fail('fixture problem: no staffed room type in the opening silo');
+  } else {
+    // Two rooms of the same type at the same condition: one crewed, one not.
+    // The only difference is whether anybody is standing in it, so the only
+    // difference in what the silo says has to come from that.
+    const wornOf = (crewed) => {
+      for (const r of Object.values(s.silo.rooms)) r.condition = 100;
+      const room = s.silo.rooms.worn_75 = {
+        ...donor5, id: 'worn_75', type: donor5.type, floor: 5, slot: 5, width: 1, level: 1,
+        powered: true, buildingUntilCycle: 0, found: false, condition: 20,
+        staff: crewed ? [...donor5.staff] : [],
+      };
+      void room;
+      return (directives(s) || []).find((d) => d.id === 'repair');
+    };
+
+    const empty = wornOf(false);
+    const manned = wornOf(true);
+
+    if (!empty || !manned) {
+      fail('a room at 20 condition raises no repair order at all');
+    } else if (empty.why === manned.why) {
+      fail(`the silo says the same thing about a worn room whether or not anybody is in it: ` +
+        `"${empty.why}"`);
+    } else if (/making power/.test(empty.why)) {
+      fail(`an empty room's wear is explained as though the lights depended on it: "${empty.why}"`);
+    } else if (!/nobody is posted|costing nothing/i.test(empty.why)) {
+      fail(`an empty room's repair order does not say the wear is costing nothing today: "${empty.why}"`);
+    } else if (!/making power/.test(manned.why)) {
+      fail(`a crewed room's repair order lost the reason it matters: "${manned.why}"`);
+    } else {
+      ok('a repair order tells an empty room from a working one: ' +
+        `"${empty.why.slice(0, 70)}…"`);
+    }
+    delete s.silo.rooms.worn_75;
+  }
+}
+
 // ---- 74. the order that names a node explains the right one, and starts it -
 //
 // Both halves came out of playing a session on a phone and doing exactly what

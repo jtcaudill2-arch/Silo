@@ -627,14 +627,37 @@ export function directives(state) {
     .sort((a, b) => a.condition - b.condition)[0];
   if (worst && worst.condition <= BAL.alerts.conditionWarnAt) {
     const def = getRoom(worst.type);
+    // What the wear is actually costing, which is not the same for every room.
+    //
+    // This ranked every room by condition alone and said the same sentence
+    // about all of them: "a room that reaches zero stops, and if it is making
+    // power the rest of the silo stops with it". Measured over ten 400-day
+    // campaigns, the room it named was unstaffed on 75 of the 76 days it fired,
+    // and 54 of those were the Airlock — a room with no crew, making nothing,
+    // being described as though the lights depended on it. It named the same
+    // room for up to fourteen days running.
+    //
+    // A room nobody is standing in has already stopped; its decay costs the
+    // silo nothing today and something the day it is needed. So it is still
+    // worth saying and it is not worth saying loudly, and the sentence changes
+    // to the true one.
+    const idle = def?.staff && (worst.staff?.length || 0) === 0;
     add({
       id: 'repair',
       text: `Repair the ${def?.name || worst.type} on floor ${worst.floor}`,
       roomId: worst.id,
-      why:
-        `It is at ${Math.round(worst.condition)} condition. A room that reaches zero stops, ` +
-        'and if it is making power the rest of the silo stops with it.',
+      why: idle
+        ? `It is at ${Math.round(worst.condition)} condition and nobody is posted to it, so the ` +
+          'wear is costing nothing today. It will cost the day the silo needs the room and finds ' +
+          'it has rotted through.'
+        : `It is at ${Math.round(worst.condition)} condition. A room that reaches zero stops, ` +
+          'and if it is making power the rest of the silo stops with it.',
       panel: 'build',
+      // The weight is condition alone, still. Scaling it down for an idle room
+      // was the obvious next move and was measured: it changed nothing at all,
+      // because on the days this order is top the directive list is nearly
+      // empty and there is nothing for a lower weight to lose to. A knob that
+      // moves no number is a knob that reads as a fix and is not one.
       weight: 85 - worst.condition,
     });
   }
