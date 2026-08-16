@@ -21,7 +21,7 @@
 import { chromium } from 'playwright';
 import { browserPath } from '../tools/chromium.mjs';
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -61,6 +61,51 @@ const run = (args) =>
 // ---- build the tree a host would receive -----------------------------------
 await run([join(ROOT, 'tools/build-site.mjs')]);
 ok('dist/ builds and its precache list checks out');
+
+// The worker's version has to move when the game does.
+//
+// `VERSION` names the cache, and `sw.js` only differs between builds when its
+// generated content does — so a version that never changes is a worker that
+// never installs. It was the literal `'deepwater-v1'` and nothing wrote it, so
+// the activate handler that deletes every cache but the current one had never
+// deleted anything, and a returning player got the previous build on this
+// launch and the current one on the next. Every content-only change reached
+// them a session late.
+//
+// Checked by editing a precached file and regenerating, because the failure is
+// specifically that a *content* change is invisible: adding or removing one is
+// the case that already worked.
+{
+  const swPath = join(ROOT, 'sw.js');
+  const victim = join(ROOT, 'src', 'ui', 'dom.js');
+  const readVersion = async () =>
+    (await readFile(swPath, 'utf8')).match(/const VERSION = '([^']*)';/)?.[1] ?? null;
+
+  const before = await readVersion();
+  const original = await readFile(victim, 'utf8');
+  let after = null;
+  try {
+    await writeFile(victim, original + '\n// touched by test/mobile.mjs\n', 'utf8');
+    await run([join(ROOT, 'tools/gen-precache.mjs')]);
+    after = await readVersion();
+  } finally {
+    await writeFile(victim, original, 'utf8');
+    await run([join(ROOT, 'tools/gen-precache.mjs')]);
+  }
+  const restored = await readVersion();
+
+  if (!before) {
+    fail('sw.js carries no VERSION line, so nothing names the cache');
+  } else if (after === before) {
+    fail(`editing a precached module left the worker versioned ${before} — sw.js is byte-identical ` +
+      'between builds, so no new worker installs and returning players keep the build they had');
+  } else if (restored !== before) {
+    fail(`the version is not a function of the content: it was ${before}, and putting the file ` +
+      `back gave ${restored}`);
+  } else {
+    ok(`the worker is versioned by what it caches (${before} → ${after} on a one-line edit)`);
+  }
+}
 
 const server = spawn(
   process.execPath,

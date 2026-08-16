@@ -17,6 +17,7 @@
  * Usage: node tools/build-site.mjs [--out dist]
  */
 
+import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir, rm, readdir, stat, cp } from 'node:fs/promises';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,6 +126,33 @@ if (unlisted.length) {
   console.error('build-site: shipped files missing from PRECACHE (offline would 503):');
   for (const m of unlisted) console.error(`  ${m}`);
   console.error('Run `npm run precache`.');
+  process.exit(1);
+}
+
+/* And the version has to describe what is actually in the box.
+ *
+ * `VERSION` names the cache, and `sw.js` only differs between builds when its
+ * generated content does — so a stale version is not a cosmetic problem, it is
+ * a worker that never installs. Every returning player keeps the build they
+ * already had until the background revalidate happens to replace each file, a
+ * session late and silently. The list being right and the version being wrong
+ * is exactly the state this catches: `npm run precache` writes both, and the
+ * checks above pass without it.
+ *
+ * Recomputed the same way gen-precache computes it — over the precached files'
+ * own bytes, in list order — so this is the same claim rather than a second
+ * one that can disagree. */
+const swVersion = sw.match(/const VERSION = '([^']*)';/)?.[1];
+const digest = createHash('sha1');
+for (const entry of precache.filter((f) => f !== './')) {
+  digest.update(entry);
+  digest.update(await readFile(join(ROOT, entry.slice(2))));
+}
+const want = 'deepwater-' + digest.digest('hex').slice(0, 12);
+if (swVersion !== want) {
+  console.error(`build-site: sw.js is versioned ${swVersion} and its contents hash to ${want}.`);
+  console.error('A stale version means the worker never installs, so returning players keep the');
+  console.error('build they already had. Run `npm run precache`.');
   process.exit(1);
 }
 

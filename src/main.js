@@ -555,6 +555,27 @@ function registerServiceWorker() {
   // never registers and the game silently loses offline support.
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });
+
+  // Say when a new build has landed.
+  //
+  // The worker is versioned by the hash of everything it caches now, so a new
+  // build really does install a new worker, sweep the old cache and claim the
+  // page. What the *page* is running is still the old modules — they were
+  // imported before any of that happened — so without this the player carries
+  // on in the previous build until they next launch, which is the tail of the
+  // same "one session behind" problem and the half a cache name cannot fix.
+  //
+  // A toast rather than a forced reload: this is a game with an autosave, not
+  // a document, and reloading somebody mid-shift because a deploy finished is
+  // the sort of thing that loses a raid. `controllerchange` fires once per
+  // takeover; the guard is for the first registration on a page that had no
+  // controller at all, which is an install rather than an update and is not
+  // news to anybody.
+  let hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return; }
+    toast('A new build of Deepwater is ready — reload when you are at a good moment.', 'good');
+  });
 }
 
 main().catch((err) => {
