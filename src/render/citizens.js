@@ -9,6 +9,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
+import { inService } from '../sim/economy.js';
 
 /** The skill a room's post trains, or null for rooms with no crew. */
 function roomSkill(room) {
@@ -92,6 +93,15 @@ export function citizensInView(state, cam) {
     if (!c || c.status === 'dead') continue;
     const room = c.job ? state.silo.rooms[c.job.roomId] : null;
     const floorN = room ? room.floor : idleFloor(state, c);
+    // Somewhere to be, rather than the whole width of the level.
+    //
+    // An off-duty citizen used to be positioned from `builtExtent` — the span
+    // from the leftmost room on the floor to the rightmost — which was a
+    // corridor when a floor had gaps in it and is the ENTIRE floor now that
+    // every bay arrives furnished. So they drifted across the top of every
+    // room on the level, lit or dark, which is the other half of the same
+    // report. Off shift, people are in the canteen or in their bunks.
+    const living = room ? null : livingRoomOn(state, floorN);
     // Everybody living who has no post, including the ones who are not here:
     // somebody on the stair is coming back, and so is somebody on the surface.
     // A room already holds a place for both — `room.staff` keeps an
@@ -118,7 +128,11 @@ export function citizensInView(state, cam) {
     }
     if (floorN < from || floorN > to) continue;
     if (!byFloor.has(floorN)) byFloor.set(floorN, []);
-    byFloor.get(floorN).push({ c, room });
+    // `living` rides in as the room, so an off-duty citizen lanes inside the
+    // canteen or the bunks exactly the way a worker lanes inside their post.
+    // Everything downstream — the lane dealing, the drift, the tap box — then
+    // treats them the same, and nobody has to know the difference.
+    byFloor.get(floorN).push({ c, room: room || living, idle: !room });
   }
 
   // Nearest the camera centre first. The sprite budget is real on a phone, and
@@ -152,7 +166,9 @@ export function citizensInView(state, cam) {
     // into a shift.
     const byRoom = new Map();
     for (const item of list) {
-      const key = item.room ? item.room.id : 'idle';
+      // Off duty is its own queue even when it shares a room with a shift, so
+      // eight people eating do not take the lanes of the two who are cooking.
+      const key = item.idle ? 'idle' : item.room.id;
       if (!byRoom.has(key)) byRoom.set(key, []);
       byRoom.get(key).push(item);
     }
@@ -815,6 +831,27 @@ function drawOne(ctx, c, x, y) {
  */
 let idleFloorCache = { cycle: -1, floors: [1] };
 
+/**
+ * Where somebody off shift is, on a floor that has somewhere to be.
+ *
+ * The canteen first, then the bunks, and only rooms that are actually running:
+ * a seized Residences is four dark walls and a hole in the floor, not a place
+ * anybody is sitting. Widest first, because a wider room has more lanes and a
+ * crowd reads better spread across a hall than stacked in a cupboard.
+ */
+function livingRoomOn(state, floorN) {
+  let best = null;
+  for (const room of Object.values(state.silo.rooms)) {
+    if (room.floor !== floorN || !inService(room)) continue;
+    if (room.type !== 'cafeteria' && room.type !== 'residences') continue;
+    const rank = room.type === 'cafeteria' ? 0 : 1;
+    if (!best || rank < best.rank || (rank === best.rank && room.width > best.room.width)) {
+      best = { room, rank };
+    }
+  }
+  return best?.room || null;
+}
+
 function idleFloor(state, c) {
   if (idleFloorCache.cycle !== state.clock.cycle) {
     // Every floor with somewhere to be, not the first one that matched.
@@ -825,11 +862,19 @@ function idleFloor(state, c) {
     // `maxIdleCitizensPerFloor` at 8 that showed at most sixteen of them
     // however many there were — measured, 53 people off shift and 16 drawn —
     // so the silo read as empty in exactly the places people actually live.
+    // IN SERVICE, and that qualifier is the whole of a reported bug. Silo 12
+    // is inherited rather than built: every level opens with its bays already
+    // furnished, and one of the two lodger bays on almost every one of them is
+    // a Residences — seized, dark, never commissioned. Counting those put the
+    // off-shift population on every level the player had opened, standing
+    // inside rooms that have no lights on, which is what "the idle characters
+    // just sit around in between areas" was. A room nobody has restored is not
+    // somewhere anybody lives.
     const floors = [];
     for (const room of Object.values(state.silo.rooms)) {
-      if (room.type === 'cafeteria' || room.type === 'residences') {
-        if (!floors.includes(room.floor)) floors.push(room.floor);
-      }
+      if (room.type !== 'cafeteria' && room.type !== 'residences') continue;
+      if (!inService(room)) continue;
+      if (!floors.includes(room.floor)) floors.push(room.floor);
     }
     floors.sort((a, b) => a - b);
     idleFloorCache = { cycle: state.clock.cycle, floors: floors.length ? floors : [1] };

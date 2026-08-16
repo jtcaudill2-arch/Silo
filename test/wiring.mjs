@@ -48,7 +48,7 @@ import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
 import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/data/items.js';
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
-import { sectionFor, suitsSection } from '../src/data/sections.js';
+import { sectionFor, suitsSection, manifestFor } from '../src/data/sections.js';
 import { streamFor } from '../src/core/rng.js';
 import { canRepair, repair, strainedFloors, canDemolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
 import { resolveExpedition, supplyCost, BANDS, homeCost } from '../src/sim/expedition.js';
@@ -7430,6 +7430,73 @@ const ERRAND_ROOM = {
   } else {
     ok(`and a silo whose youngest hope is ${f.nextInDays} days off is told that, not left to ` +
       'infer it from a number that will not move');
+  }
+}
+
+// ---- 81. nobody stands in a room that has no lights on --------------------
+//
+// Reported from play: "the idle characters or the children just sit around in
+// between areas", and "the non occupied rooms just need to look like dark
+// rooms — right now it looks weird when someone is in there or not".
+//
+// Two causes, both of them the same change catching up with the renderer. Silo
+// 12 is inherited rather than built, so a level opens with its bays already
+// furnished and one lodger bay on nearly every one is a Residences — seized,
+// dark, never commissioned. `idleFloor` picked its floors by looking for a
+// cafeteria or a residence and did not ask whether either was running, so the
+// off-shift population was spread across every level the player had opened.
+// And once there, an idle citizen's position came from `builtExtent` — the
+// span from the leftmost room on the floor to the rightmost — which was a
+// corridor back when floors had gaps in them and is the ENTIRE floor now that
+// every bay arrives furnished.
+//
+// Measured before the fix: 360 of 2400 sampled sprite positions, fifteen per
+// cent of everybody the player could see, standing inside a room with no
+// lights on.
+{
+  const store = newStore(0x1D1E);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  // Levels opened, which is what puts dark rooms in the silo at all.
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 3; n++) {
+    store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
+  }
+  game.runDays(3);
+
+  const cam = {
+    camY: -20, time: 0, drawn: 0, spriteBudget: 600,
+    viewWorldH: () => 900, visibleFloorRange: () => ({ from: 1, to: BAL.silo.startExcavatedFloors + 4 }),
+  };
+  let dark = 0;
+  let lit = 0;
+  let void_ = 0;
+  for (let k = 0; k < 120; k++) {
+    cam.time = k * 250;
+    for (const p of citizensInView(s, cam)) {
+      if (p.onStair) continue;
+      const floorN = Math.round(p.y / FLOOR_H + 0.5);
+      const slot = Math.floor(p.x / SLOT_W);
+      const room = Object.values(s.silo.rooms).find(
+        (r) => r.floor === floorN && slot >= r.slot && slot < r.slot + r.width
+      );
+      if (!room) void_++;
+      else if (!inService(room)) dark++;
+      else lit++;
+    }
+  }
+
+  const total = dark + lit + void_;
+  if (total < 500) {
+    fail(`only ${total} sprite positions sampled, which is too few to say anything`);
+  } else if (dark > 0) {
+    fail(`${dark} of ${total} sampled positions put somebody inside a seized room — a level that ` +
+      'has never been commissioned is four dark walls, not somewhere anybody is standing');
+  } else if (void_ > 0) {
+    fail(`${void_} of ${total} sampled positions are on a floor but inside no room at all — ` +
+      'people are drifting through the gaps between bays');
+  } else {
+    ok(`all ${total} sampled sprite positions are inside a room that is actually running`);
   }
 }
 
