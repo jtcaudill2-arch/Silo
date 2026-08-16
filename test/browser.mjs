@@ -562,7 +562,97 @@ try {
   await page.mouse.click(roomPoint.x, roomPoint.y);
   await page.waitForSelector('.modal', { timeout: 4000 });
   const modalTitle = await page.locator('.modal .panel-title').textContent();
-  ok(`tapping a room opens its panel ("${modalTitle}")`);
+  // A room's panel is titled "<name> · Floor <n>"; a citizen card is a person's
+  // name. They were told apart by neither until the living became tappable and
+  // this check started opening somebody's card and calling it a room.
+  if (!/Floor \d/.test(modalTitle)) {
+    fail(`tapping a room opened "${modalTitle}", which is not a room — a citizen standing in the ` +
+      'bay took the tap meant for it');
+  } else {
+    ok(`tapping a room opens its panel ("${modalTitle}")`);
+  }
+
+  // And a person, ahead of the room they are standing in.
+  //
+  // The cross-section answered to a room and to a grave: you could tap
+  // somebody's death marker and be told their name and what killed them, and
+  // you could not tap the person beside it. Everyone alive was scenery, which
+  // is most of "the characters feel lifeless" — the game builds a card with a
+  // portrait, traits, relationships and a written history, and the only way to
+  // it was a list two taps deep in another panel. Measured over five 300-day
+  // campaigns: 647 living citizens, every one carrying a history, 1183 written
+  // lines between them, and that card the only reader.
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(200);
+  // A day, so the silo has an off shift and somebody is between floors.
+  await page.evaluate(() => window.DEEPWATER.game.runDays(1));
+  await page.waitForTimeout(200);
+  const people = await page.evaluate(async () => {
+    const m = await import('./src/render/citizens.js');
+    const r = window.DEEPWATER.renderer;
+    const s2 = window.DEEPWATER.store.state;
+    const list = m.citizensInView(s2, r);
+    if (!list.length) return null;
+
+    // The hit test itself, on every drawn person: asked at their own feet, it
+    // has to answer with them. Deterministic, unlike a tap — which depends on
+    // somebody happening to be off shift at that second.
+    let missed = 0;
+    for (const q of list) {
+      const found = m.citizenAt(s2, q.x, q.y - 7, r);
+      if (!found) missed++;
+    }
+
+    // And a real tap, when there is somebody a tap can reach: a bay belongs to
+    // its room, so this is the stair, a corridor, an idle floor — where the
+    // off-shift half of the silo is, and the half that had no way to be
+    // reached at all before.
+    const free = list.find((q) => {
+      const floor = s2.silo.floors[Math.floor(q.y / 40)];
+      const slot = Math.floor(q.x / 64);
+      return !floor || !floor.slots[slot];
+    });
+    const rect = document.getElementById('silo-canvas').getBoundingClientRect();
+    return {
+      drawn: list.length,
+      missed,
+      free: free && {
+        name: `${free.c.firstName} ${free.c.lastName}`,
+        x: rect.left + rect.width / 2 + (free.x - 384 / 2) * r.scale,
+        y: rect.top + (free.y - 7 - r.camY) * r.scale,
+      },
+    };
+  });
+  if (!people) {
+    fail('nobody is drawn on the cross-section, so tapping a person cannot be checked');
+  } else if (people.missed) {
+    fail(`${people.missed} of ${people.drawn} people on screen cannot be found by the hit test at ` +
+      'their own position — the living are still untouchable');
+  } else {
+    let tapped = null;
+    if (people.free) {
+      await page.mouse.click(people.free.x, people.free.y);
+      await page.waitForTimeout(400);
+      tapped = await page.evaluate(() => document.querySelector('.modal .panel-title')?.textContent || null);
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(150);
+    }
+    if (people.free && !tapped) {
+      fail(`tapping ${people.free.name}, who has no room under them, opened nothing`);
+    } else if (tapped && !tapped.includes(people.free.name.split(' ')[0])) {
+      fail(`tapping ${people.free.name} opened "${tapped}" instead`);
+    } else if (tapped) {
+      ok(`the living can be touched: all ${people.drawn} are findable, and tapping one opened "${tapped}"`);
+    } else {
+      ok(`the living can be touched: all ${people.drawn} on screen are findable by the hit test ` +
+        '(nobody was outside a bay this second, so the tap itself went unchecked)');
+    }
+  }
+
+  // Put the room panel back: the section below is mid-conversation with it, and
+  // this check borrowed the screen.
+  await page.mouse.click(roomPoint.x, roomPoint.y);
+  await page.waitForSelector('.modal', { timeout: 4000 });
 
   // And the panel opens on something to *do*, above the fold.
   //

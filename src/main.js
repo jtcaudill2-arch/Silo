@@ -26,13 +26,14 @@ import { startTutorial } from './ui/tutorial.js';
 import { SiloRenderer, syncPaletteFromCSS } from './render/canvas.js';
 import { DepthGauge } from './render/depthgauge.js';
 import { loadAtlas } from './render/sprites.js';
-import { deathMarkAt } from './render/citizens.js';
+import { deathMarkAt, citizenAt } from './render/citizens.js';
 import { fullName } from './sim/population.js';
 import { loadArtwork, primeRoomSkills } from './ui/artwork.js';
 import * as audio from './audio/audio.js';
 
 import { Shell } from './ui/shell.js';
 import { openRoom } from './ui/roomView.js';
+import { openCitizen } from './ui/citizenCard.js';
 import { ROOMS } from './data/rooms.js';
 import { toast, modal, closeTopModal, button, el } from './ui/dom.js';
 import { CRISES } from './data/events.js';
@@ -182,6 +183,32 @@ async function main() {
       store.dispatch({ type: 'DEATH_ACKNOWLEDGE', id: mark.c.id });
       toast(`${fullName(mark.c)} — ${mark.c.causeOfDeath}.`);
       return;
+    }
+    // Then a person — but only where there is no room under them.
+    //
+    // Until this the living were the one thing on the cross-section that could
+    // not be touched: you could tap somebody's grave and be told their name and
+    // what killed them, and not the person standing beside it.
+    //
+    // Letting them win over the room was tried first and is wrong. People stand
+    // in the middle of the rooms they work in, which is exactly where a thumb
+    // aims to open one, so the browser suite's room check started opening
+    // citizen cards — and tightening the box did not help, because the conflict
+    // is not the box's size, it is that both targets occupy the same pixels.
+    // Tightening it only made the theft intermittent, which is worse.
+    //
+    // So: a bay belongs to its room, and everywhere else belongs to whoever is
+    // standing there — the great stair, the corridors, the idle floors, which
+    // is where the off-shift half of the silo is and the half a player has no
+    // other way to reach. Somebody at a post is one tap further away, through
+    // the crew list in the room they are working in, where their name already
+    // sits.
+    if (!hit.roomId) {
+      const who = citizenAt(store.state, hit.worldX, hit.worldY, renderer);
+      if (who) {
+        openCitizen(store, who.id, { shell });
+        return;
+      }
     }
     if (hit.roomId) openRoom(store, hit.roomId, shell);
     else store.dispatch({ type: 'UI_SET', ui: { cameraFloor: hit.floor } });

@@ -1988,6 +1988,24 @@ export const BAL = {
     // skull is 16 world units and test/mobile.mjs holds every control to 30
     // screen px, so the box is deliberately larger than the sprite.
     deathMarkTapRadius: 14,
+
+    /**
+     * How much bigger than a citizen the box that catches a tap on them is.
+     *
+     * The dead could be tapped and the living could not: the cross-section
+     * answered to a room and to a grave, and everybody walking about on it was
+     * scenery. A sprite is 12x16, which is under four millimetres on a phone
+     * and moving, so the box it is caught by wants to be generous.
+     *
+     * But not this generous. At 5 the box is 22x26 in a 64x40 bay — a third of
+     * the room — and a person standing anywhere near the middle of one took
+     * every tap meant for it. The browser suite caught it immediately: the
+     * check that taps a room to open its panel opened somebody's citizen card
+     * instead. 2 keeps the box close to the figure, so a person wins when the
+     * finger is on them and the room wins when it is not, which is the only
+     * division a player will read as fair.
+     */
+    citizenTapMargin: 2,
     depthGaugeBarHeight: 3,
     cameraLerp: 0.18,
     // ---- flick to scroll ----
