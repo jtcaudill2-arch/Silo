@@ -968,6 +968,40 @@ export const BAL = {
     policyPerAdminSkill: 40, // 2 + floor(adminSkill / 40)
     crime: {
       baseChancePerDay: 0.05,
+      /**
+       * WHAT LIVES IN THE ROOMS YOU NEVER TURNED ON.
+       *
+       * Silo 12 is inherited, and opening a level hands the silo five rooms it
+       * has not paid for and cannot yet crew. Without a cost to that, the whole
+       * game is "open the next level", because a seal is cheap and what is
+       * behind it is free — a hundred and forty levels of dark rooms nobody
+       * has any reason not to unseal.
+       *
+       * So the dark is not empty. People who do not want to be found live in
+       * the parts of the building nobody has switched on, and the more of it
+       * there is the more of them there are. It gives depth a running cost
+       * rather than a one-off price, and it makes restoring a room and
+       * stripping one out into two answers to the same question — both of them
+       * remove a hideout, and which is right depends on whether the silo can
+       * crew what is in there.
+       *
+       * `perHideout` is per seized room per day, on top of the base rate.
+       * Measured at 0.004 on a silo four levels down carrying sixteen unlit
+       * rooms: 24 crimes in 400 days becomes 47, the dark adding 139% to a base
+       * rate of about 0.05. That is a pressure a player can feel without being
+       * a death sentence — order scaling alone can already swing the same
+       * number by 90% — and it is measured, not asserted: see wiring §82, which
+       * rolls the same four hundred days against the same silo with the seized
+       * rooms taken out of it.
+       */
+      perHideout: 0.004,
+      // No matter how much of the building is dark. Past this the silo is
+      // telling the player something they have already been told, and a
+      // certainty every day is a metronome rather than a threat. It binds at 55
+      // seized rooms — eleven levels opened and never switched on — so it is a
+      // backstop rather than a working number: obedient campaigns peak around
+      // twenty to thirty.
+      hideoutChanceCap: 0.22,
       orderScaling: 0.9, // lower order -> more crime
       curfewMult: 0.5,
       theftFraction: 0.05,
@@ -1111,6 +1145,33 @@ export const BAL = {
     // like an ordinary repair put it in the eighties and had obedient silos
     // buying schoolhouses instead of laboratories.
     restoreFound: 40,
+    // Clearing a room the silo opened and never switched on, because somebody
+    // is living in it. Above digging (30) and above upgrading (34) — the point
+    // of the order is that opening another level is the wrong move while the
+    // last four stand dark — and below `restoreFound` (40), because restoring
+    // a room is always the better answer to the same problem and has to keep
+    // its place ahead of demolishing one.
+    hideoutOrder: 36,
+    // How much of the building has to be dark before the order is worth the
+    // bar — about two levels' worth, a level arriving with four or five rooms
+    // on it. Swept at 200 days on the default seed, at five actions a day:
+    //
+    //   no order   died d62,  8 floors, 31 rooms, 20 dark
+    //   at 20      died d62,  8 floors, 30 rooms, 19 dark   (fires once)
+    //   at 14      died d175, 20 floors, 25 rooms, 12 dark
+    //   at 10      died d182, 20 floors, 21 rooms, 9 dark
+    //   at 6       died d183, 20 floors, 17 rooms, 5 dark
+    //
+    // Ten is the knee: six buys one more day for four more rooms demolished,
+    // fourteen keeps four more rooms standing for seven fewer days.
+    //
+    // The survival figure is NOT the crime mechanic working, and reading it
+    // that way would be wrong. It is the same fault as #78: without this order
+    // the silo's top line on most days was one it could not carry out, the
+    // player's day dead-ended on it, and 236 of an allowed 310 actions were
+    // never taken. With it, 268 of 910. An order that can be followed is worth
+    // more than the thing it asks for.
+    hideoutWarnAt: 10,
     // The top of the shoring band, minus the floor's remaining integrity. A
     // fresh warning at 55 lands on 33 — just above digging, which is exactly
     // the trade being offered: hold what you have before you open more. A

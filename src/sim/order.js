@@ -16,6 +16,7 @@ import { BAL } from '../config/balance.js';
 import { streamFor } from '../core/rng.js';
 import { getRoom } from '../data/rooms.js';
 import { POLICIES, CRIME_LIST, CRIMES, policyEffects } from '../data/policies.js';
+import { inService } from './economy.js';
 import { fullName, isDissident } from './population.js';
 import { idleDissent } from './jobs.js';
 import { resolve as resolveCombat, applyResolution } from './combat.js';
@@ -192,11 +193,66 @@ function exileOne(state, rng, pe) {
 
 // ------------------------------------------------------------------- crime ---
 
-function rollCrime(state, rng, pe) {
+/**
+ * The rooms nobody has switched on, which is where somebody hides.
+ *
+ * A seized room is a room the silo opened and never commissioned: dark, unlit,
+ * unvisited, and — unlike every other space in the building — not on anybody's
+ * roster. That is exactly the kind of place a person who does not want to be
+ * found would choose, and it is the running cost of opening a level you have
+ * no crew for.
+ */
+export function hideouts(state) {
+  return Object.values(state.silo.rooms).filter((r) => !inService(r));
+}
+
+/**
+ * How much of today's crime rate the dark accounts for, and the whole of it.
+ * Exported because the standing order quotes both — an order that says "crime
+ * is up 40%" has to be reading the same two numbers the roll does, or it is a
+ * decoration that happens to be near the truth.
+ */
+export function crimeOdds(state, pe = policyEffects(state)) {
   const C = O.crime;
   const orderFactor = 1 + ((O.driftToward - state.order.value) / 100) * C.orderScaling;
-  const chance = C.baseChancePerDay * Math.max(0.1, orderFactor) * (pe.crimeMult ?? 1);
+  const base = C.baseChancePerDay * Math.max(0.1, orderFactor) * (pe.crimeMult ?? 1);
+  // The dark part of the building, on top of how well the silo is run. Capped,
+  // because a certainty every day is a metronome rather than a threat.
+  const dens = hideouts(state);
+  const fromDark = Math.min(C.hideoutChanceCap, dens.length * C.perHideout);
+  return { base, fromDark, chance: base + fromDark, dens };
+}
+
+/** The sentence a crime carries when it came up out of an unlit room. */
+function denNote(den) {
+  if (!den) return '';
+  const def = getRoom(den.type);
+  return ` Somebody has been living in the ${def?.name || den.type} on floor ${den.floor}. ` +
+    'It has never been switched on and nobody is posted to it.';
+}
+
+function rollCrime(state, rng, pe) {
+  const C = O.crime;
+  const { fromDark, chance, dens } = crimeOdds(state, pe);
   if (!rng.chance(chance)) return [];
+
+  // WHERE IT CAME FROM, attributed in proportion to what raised the odds. A
+  // silo with nothing dark never sees the line; one that is half unlit sees it
+  // on most reports. Nothing about the crime itself changes — the point is that
+  // the player can tell the difference between bad order and an unwatched
+  // building, which are two different problems with two different answers.
+  //
+  // ON ITS OWN STREAM, which is not tidiness. Attribution is the one draw here
+  // that decides nothing: the crime has already happened and which room gets
+  // named does not change a resource, a room or a life. Taking it off `order`
+  // would have shifted every draw after it — the crime type, the victim, the
+  // suspects, the uprising check — for the rest of the campaign. Measured on
+  // the 700-day reachability run: the whole `uprising_window` event stopped
+  // firing, not because anything about uprisings changed but because two extra
+  // draws a day walked the stream past it.
+  const denRng = streamFor(state.meta.seed, 'dens', state.clock.day);
+  const den = fromDark > 0 && denRng.chance(fromDark / chance) ? denRng.pick(dens) : null;
+  const where = denNote(den);
 
   const pool = CRIME_LIST.filter((c) => !c.needsDissent || state.order.dissentPressure > 1);
   const crime = rng.weighted(pool, (c) => c.weight);
@@ -212,14 +268,14 @@ function rollCrime(state, rng, pe) {
       if (amount > 0) actions.push({ type: 'RESOURCE_DELTA', deltas: { [key]: -amount } });
       actions.push({
         type: 'CRIME_ADD',
-        crime: { id: crime.id, day, text: `${amount} ${key} is missing from stores. The ledger does not explain it.` },
+        crime: { id: crime.id, day, text: `${amount} ${key} is missing from stores. The ledger does not explain it.${where}` },
       });
       break;
     }
     case 'hoarding': {
       actions.push({
         type: 'CRIME_ADD',
-        crime: { id: crime.id, day, text: 'A false panel on the residential floors, and three months of rations behind it.' },
+        crime: { id: crime.id, day, text: `A false panel on the residential floors, and three months of rations behind it.${where}` },
       });
       actions.push({ type: 'ORDER_DELTA', amount: -2, reason: 'hoarding discovered' });
       break;
@@ -228,7 +284,7 @@ function rollCrime(state, rng, pe) {
       actions.push({ type: 'RESOURCE_DELTA', deltas: { chits: -Math.round(state.resources.chits * 0.06) } });
       actions.push({
         type: 'CRIME_ADD',
-        crime: { id: crime.id, day, text: 'There is a second economy on the residential floors, and morale is better inside it than outside.' },
+        crime: { id: crime.id, day, text: `There is a second economy on the residential floors, and morale is better inside it than outside.${where}` },
       });
       // Uncomfortable: the black market genuinely helps morale.
       actions.push({ type: 'MORALE_ALL', amount: 2, emit: false });
@@ -248,7 +304,7 @@ function rollCrime(state, rng, pe) {
           type: 'CRIME_ADD',
           crime: {
             id: crime.id, day, roomId: target.id,
-            text: `Somebody has been inside the ${def?.name || target.type} on floor ${target.floor} who had no business being inside it.`,
+            text: `Somebody has been inside the ${def?.name || target.type} on floor ${target.floor} who had no business being inside it.${where}`,
           },
         });
         actions.push({ type: 'ORDER_DELTA', amount: -4, reason: 'sabotage' });
@@ -262,11 +318,20 @@ function rollCrime(state, rng, pe) {
       const culprit = rng.pick(living.filter((c) => c.id !== victim.id));
       if (!victim || !culprit) break;
 
+      // Found in the dark when there is dark to be found in. Otherwise the old
+      // line, which picks a floor out of the air — and reads like it, which is
+      // the point of naming a real room the moment there is one. The draw
+      // happens either way, so the stream does not fork on which sentence gets
+      // printed; see the den stream above for why that matters.
+      const anywhere = rng.int(1, 14);
+      const found = den
+        ? `in the ${getRoom(den.type)?.name || den.type} on floor ${den.floor}, a room the silo has never switched on`
+        : `on floor ${anywhere}`;
       actions.push({
         type: 'CITIZEN_DIE',
         id: victim.id,
         cause: 'murdered',
-        text: `${fullName(victim)}, ${Math.floor(victim.age)}, was found dead on floor ${rng.int(1, 14)}. It was not an accident.`,
+        text: `${fullName(victim)}, ${Math.floor(victim.age)}, was found dead ${found}. It was not an accident.`,
       });
       actions.push({ type: 'ORDER_DELTA', amount: -6, reason: 'a murder' });
 

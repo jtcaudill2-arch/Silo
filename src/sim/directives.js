@@ -27,8 +27,9 @@ import { canTake as canTakeDoctrine } from './doctrine.js';
 import { available as availableResearch } from './research.js';
 import {
   canBuild, canExcavate, nextFloorToExcavate, canRepair, canShore, canUpgrade, upgradeCost, strainedFloors,
-  buildCostFor, describeCost, affordable,
+  buildCostFor, describeCost, affordable, canDemolish,
 } from './build.js';
+import { hideouts, crimeOdds } from './order.js';
 import { staffSlots, inService, roomCapability } from './economy.js';
 import { readySquads } from './military.js';
 import { canLaunch } from './expedition.js';
@@ -936,6 +937,77 @@ export function directives(state) {
       panel: 'build',
       weight: BAL.directives.restoreFound,
     });
+  }
+
+  // ---- what lives in the rooms you never switched on ---------------------
+  //
+  // A seal is cheap and what is behind it is free, so without a running cost
+  // the whole game is "open the next level down": a hundred and forty floors of
+  // furnished rooms, none of them crewed, none of them costing anything to
+  // leave dark. `sim/order.js` gives the dark its cost — a seized room is a
+  // room with no roster, no lights and nobody who would notice somebody living
+  // in it, and crime scales with how many of them there are.
+  //
+  // This is the line that says so, and it exists because the pressure is
+  // otherwise unattributable. Crime arrives as a theft report; nothing about a
+  // theft report points at the twenty unlit rooms on the levels the silo opened
+  // last month. Measured on an obedient silo at five actions a day before this
+  // order existed: it reached day 62 carrying twenty dark rooms, and across
+  // those 62 days its standing order was a repair it could not pay for on 40 of
+  // them and a hold on 22 — it took 74 of an allowed 310 actions, because most
+  // days dead-ended on a line it could not act on, and not one of those lines
+  // ever mentioned the dark.
+  //
+  // Ranked at `hideoutOrder`, which is above `excavate` and above `upgrade` and
+  // below `restore`. That ordering is the whole design of it: restoring a room
+  // is always the better answer and keeps its place, and when restoring is not
+  // on the table — nothing affordable, nobody to crew it — the silo is told to
+  // stop opening levels and clear one instead.
+  //
+  // The room it names is the one the silo wants least, by its own crewing
+  // order. Naming the most useful dark room would be advice to demolish
+  // something worth having; the point is the Storage Depot on floor 19 that
+  // nobody will ever staff and that is somewhere to hide for the rest of the
+  // game.
+  //
+  // AND ONLY WHEN THERE IS NOTHING TO RESTORE. The two orders are a ladder,
+  // not a choice: put the room back into service if the silo can pay for it,
+  // close it up only if it cannot. Ranking `restore` at 40 above this at 36
+  // gets the top line right on its own — the guard is about the rest of the
+  // list, which the directives panel shows in full, and where "Restore the
+  // Storage Depot on floor 5" sitting directly above "Strip out the Storage
+  // Depot on floor 6" is the game contradicting itself in two lines.
+  //
+  // It was written expecting to fix the obedient suite's monotonicity failure
+  // — a player acting eight times a shift restores once, empties the treasury,
+  // and finds this order at the top for the rest of the day — and it did not:
+  // 200-day runs at 3, 5, 8 and 12 actions a day came out identical with and
+  // without it, because at the moments this order fires there is nothing
+  // restorable anyway. It is kept for the coherence, which is a claim about
+  // what the panel says rather than about what a silo ends up looking like.
+  const dens = hideouts(state);
+  if (!restorable && dens.length >= D.hideoutWarnAt) {
+    const odds = crimeOdds(state);
+    const lift = Math.round((odds.fromDark / odds.base) * 100);
+    const clearable = dens
+      .filter((r) => r.buildingUntilCycle === 0 && canDemolish(state, r.id).ok)
+      .sort((a, b) => staffingRank(b.type) - staffingRank(a.type) || a.floor - b.floor)[0];
+    if (clearable) {
+      const def = getRoom(clearable.type);
+      add({
+        id: 'hideouts',
+        text: `Strip out the ${def?.name || clearable.type} on floor ${clearable.floor}`,
+        roomId: clearable.id,
+        demolish: true,
+        why:
+          `${dens.length} rooms stand open with no lights and nobody posted, and crime is running ` +
+          `about ${lift}% above what the silo's own order would produce. People who do not want to ` +
+          'be found live in them. Restoring one puts it back on the roster; stripping one takes it ' +
+          'out of the building. Either is one fewer place to hide.',
+        panel: 'build',
+        weight: D.hideoutOrder,
+      });
+    }
   }
 
   // ---- the bootstrap ----------------------------------------------------

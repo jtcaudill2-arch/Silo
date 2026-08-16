@@ -34,12 +34,13 @@ import { autoAssign } from '../src/sim/jobs.js';
 import { topDirective } from '../src/sim/directives.js';
 import {
   canBuild, build, canExcavate, startExcavation, canRepair, repair, canShore, shoreFloor,
-  canUpgrade, upgrade,
+  canUpgrade, upgrade, canDemolish, demolish,
 } from '../src/sim/build.js';
 import { canStart } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { getRoom } from '../src/data/rooms.js';
 import { formSquad } from '../src/sim/military.js';
+import { inService } from '../src/sim/economy.js';
 import { BAL } from '../src/config/balance.js';
 
 const args = Object.fromEntries(
@@ -95,6 +96,15 @@ function findSpot(state, type) {
  * they did.
  */
 function obey(state, d) {
+  // Stripping one out, which is the only order in the set that points at a
+  // seized room and does NOT mean restore it. Matched before the shape rule
+  // below, and carried on the directive rather than on its id for the same
+  // reason `wait` is: the verb is part of the order, not a name to look up.
+  if (d.demolish) {
+    const check = canDemolish(state, d.roomId);
+    if (!check.ok) return `refused: ${check.reason}`;
+    return { actions: demolish(state, d.roomId), note: 'stripped it out' };
+  }
   // A seized room is a restore whatever the order calls itself. Every order
   // that used to say "Build a X" now points at a dead X on an open level, or
   // says to open the next level; both keep their own id, so this has to match
@@ -287,6 +297,17 @@ function playObediently(perDay, days) {
     day: s.clock.day,
     residents: s.citizenIds.length,
     rooms: Object.keys(s.silo.rooms).length,
+    // Rooms the silo is actually RUNNING, which is what the monotonicity check
+    // below compares. Counting rooms standing stopped measuring progress the
+    // day demolition became advice: the dark-rooms order tells a silo carrying
+    // more unlit rooms than it can pay to switch on to close some of them up,
+    // so a player who obeys more often ends up with a smaller building on
+    // purpose. Measured on the default seed at 3, 5, 8 and 12 actions a day:
+    // 34 rooms standing against 21, and twelve in service in every one of them
+    // — the entire gap is seized stock the busier player stripped out, and the
+    // busier player also dug 20 floors against 11 and lived to day 182 against
+    // 78. A metric that reads that as "did worse" is measuring inventory.
+    inService: Object.values(s.silo.rooms).filter((r) => inService(r)).length,
     floors: s.silo.floors.filter((f) => f.excavated).length,
     research: s.research.completed.length,
     ranksBought,
@@ -417,7 +438,9 @@ for (const r of runs.slice(1)) {
   if (r.research < base.research - researchSlack) {
     worse.push(`${r.research} research against ${base.research}`);
   }
-  if (r.rooms < base.rooms - SLACK) worse.push(`${r.rooms} rooms against ${base.rooms}`);
+  if (r.inService < base.inService - SLACK) {
+    worse.push(`${r.inService} rooms in service against ${base.inService} (${r.rooms} standing against ${base.rooms})`);
+  }
   if (r.floors < base.floors - SLACK) worse.push(`${r.floors} floors against ${base.floors}`);
   if (worse.length) {
     fail(
@@ -429,7 +452,8 @@ for (const r of runs.slice(1)) {
 if (!failures.length || !failures.some((f) => /did worse/.test(f))) {
   ok(
     `obeying ${RATES.slice(1).join('×, ')}× a day is no worse than ${REFERENCE}× ` +
-      `(research ${runs.map((r) => r.research).join('/')}, rooms ${runs.map((r) => r.rooms).join('/')})`
+      `(research ${runs.map((r) => r.research).join('/')}, rooms in service ` +
+      `${runs.map((r) => r.inService).join('/')} of ${runs.map((r) => r.rooms).join('/')} standing)`
   );
 }
 

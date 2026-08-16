@@ -42,7 +42,8 @@ import autopilot from './autopilot.mjs';
 import { directives, topDirective } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
 import { gearStorageCap, craftableItems } from '../src/sim/military.js';
-import { computeCaps, staffSlots, roomCapability } from '../src/sim/economy.js';
+import { computeCaps, staffSlots, roomCapability, roomDraw } from '../src/sim/economy.js';
+import { hideouts, crimeOdds, simulateDay as orderDay } from '../src/sim/order.js';
 import { getRoom, ROOM_LIST } from '../src/data/rooms.js';
 import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
 import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/data/items.js';
@@ -7497,6 +7498,195 @@ const ERRAND_ROOM = {
       'people are drifting through the gaps between bays');
   } else {
     ok(`all ${total} sampled sprite positions are inside a room that is actually running`);
+  }
+}
+
+// ---- 82. the rooms you never switched on are where somebody hides ---------
+//
+// Asked for from play: "let's add a mechanic where criminals hide in non used
+// rooms to hide out — as there's more unused rooms it increases criminal
+// activity, so you don't just keep digging without using the rooms."
+//
+// The measurement has to isolate the term, because everything else about a
+// silo four levels down also differs from one that stayed put. So: one silo,
+// two copies, the seized rooms deleted out of the second, and the SAME four
+// hundred days of the same seeded stream rolled against both. `simulateDay`
+// returns actions rather than applying them and reads the day off the clock,
+// so four hundred independent rolls of the real function can be taken against
+// a state that never moves.
+{
+  const store = newStore(0x0DAC);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 4; n++) {
+    store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
+  }
+  game.runDays(2);
+
+  const dens = hideouts(s);
+  const lit = JSON.parse(JSON.stringify(s));
+  for (const id of Object.keys(lit.silo.rooms)) {
+    if (!inService(lit.silo.rooms[id])) delete lit.silo.rooms[id];
+  }
+
+  const DAYS = 400;
+  const rollFor = (state) => {
+    let crimes = 0;
+    const said = [];
+    for (let d = 1; d <= DAYS; d++) {
+      state.clock.day = d;
+      for (const a of orderDay(state)) {
+        if (a.type === 'CRIME_ADD') { crimes++; said.push(a.crime.text); }
+        else if (a.type === 'INVESTIGATION_OPEN') crimes++;
+      }
+    }
+    return { crimes, said };
+  };
+  const dark = rollFor(s);
+  const clean = rollFor(lit);
+
+  if (dens.length < 8) {
+    fail(`four levels opened left only ${dens.length} seized rooms, which is too few to measure against`);
+  } else if (dark.crimes <= clean.crimes) {
+    fail(`${dens.length} rooms standing dark produced ${dark.crimes} crimes in ${DAYS} days against ` +
+      `${clean.crimes} with none of them — opening levels you never crew costs the silo nothing, so ` +
+      'there is no reason not to keep digging');
+  } else {
+    ok(`${dens.length} dark rooms take crime from ${clean.crimes} to ${dark.crimes} over ${DAYS} days ` +
+      `(${Math.round((crimeOdds(s).fromDark / crimeOdds(s).base) * 100)}% on top of the base rate)`);
+  }
+
+  // And it has to be legible, or it is a difficulty setting rather than a
+  // mechanic. A theft report that does not say where the thief lives cannot be
+  // acted on, and the whole point is that the player can tell an unwatched
+  // building apart from a badly run one.
+  const named = dark.said.filter((t) => /never been switched on/.test(t));
+  const floors = new Set(dens.map((r) => r.floor));
+  const wrong = named.filter((t) => {
+    const m = /on floor (\d+)\. It has never been switched on/.exec(t);
+    return !m || !floors.has(Number(m[1]));
+  });
+  if (!named.length) {
+    fail(`none of ${dark.said.length} crime reports named the unlit room it came out of`);
+  } else if (wrong.length) {
+    fail(`${wrong.length} crime reports named a floor with no seized room on it: ${wrong[0]}`);
+  } else {
+    ok(`${named.length} of ${dark.said.length} reports name the unlit room, and every one of them ` +
+      'is a room that is really standing there');
+  }
+
+  // The order that answers it, and the ranking that is the whole design of it:
+  // above digging, so the silo stops being told to open another level while the
+  // last four stand dark.
+  // The two orders that answer it, and they are a ladder rather than a choice:
+  // put a room back into service if the silo can pay for it, close it up if it
+  // cannot. Both outrank digging, which is the point — the silo stops being
+  // told to open another level while the last four stand dark.
+  //
+  // Against `excavate`, not against every order that ends up digging. `add()`
+  // turns any order for a room the silo cannot reach into "Open floor N", so a
+  // silo with no working Generator Hall gets one at 92 — and that one SHOULD
+  // win, because it is life support rather than growth. The order this has to
+  // beat is the one that says to dig because there is scrap spare.
+  const rank = (state, id) => directives(state).find((d) => d.id === id);
+  const dig = rank(s, 'excavate');
+  const put = rank(s, 'restore');
+  if (!dig) {
+    fail('fixture problem: the silo cannot dig, so there is no growth order to outrank');
+  } else if (!put) {
+    fail(`${dens.length} rooms stand dark, the silo can afford to restore one, and it is not told to`);
+  } else if (put.weight <= dig.weight) {
+    fail(`"${dig.text}" at ${dig.weight} outranks "${put.text}" at ${put.weight}`);
+  } else if (rank(s, 'hideouts')) {
+    // The panel lists every order, not only the top one, so both being offered
+    // is the game contradicting itself in two consecutive lines.
+    fail(`the silo says "${put.text}" and "${rank(s, 'hideouts').text}" at the same time`);
+  } else {
+    ok(`with money in the bank the silo says "${put.text}" rather than to dig again, and does not ` +
+      'offer to demolish anything in the same breath');
+  }
+
+  // Then the silo this order is really for: one that has restored everything it
+  // can pay for and is still carrying most of a building it never switched on.
+  // Reached by playing it out rather than by contriving it — take the parts
+  // away, which every repair wants and a dig does not, and then restore whatever
+  // is still affordable until nothing is.
+  const broke = store.state;
+  broke.resources.parts = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    const next = rank(broke, 'restore');
+    if (!next) break;
+    store.dispatchAll(repair(broke, next.roomId));
+  }
+  const den = rank(broke, 'hideouts');
+  const stillDigs = rank(broke, 'excavate');
+  if (rank(broke, 'restore')) {
+    fail('fixture problem: the silo can still afford to restore something, so stripping is not yet the answer');
+  } else if (hideouts(broke).length < 10) {
+    // Ten written out rather than read from `BAL.directives.hideoutWarnAt`,
+    // which is the difference between a test and a tautology: a fixture guard
+    // that moves with the constant it is guarding cannot notice the constant
+    // being wrong. The design claim being pinned is that about two levels'
+    // worth of unlit rooms is where the silo starts objecting — so raising the
+    // balance value past this is a design change, and it is supposed to have to
+    // come back through here.
+    fail(`restoring what it could afford left only ${hideouts(broke).length} dark rooms, which is ` +
+      'too few to say whether the order fires');
+  } else if (!den) {
+    fail(`${dens.length} rooms stand dark, nothing can be restored, and the standing orders never ` +
+      `mention it: ${directives(broke).map((d) => d.id).join(', ')}`);
+  } else if (!den.roomId || !broke.silo.rooms[den.roomId]) {
+    fail('the dark-rooms order names no room the player can act on');
+  } else if (stillDigs && stillDigs.weight >= den.weight) {
+    fail(`"${stillDigs.text}" at ${stillDigs.weight} still outranks "${den.text}" at ${den.weight}`);
+  } else {
+    ok(`and when it cannot pay to switch one on: "${den.text}", ranked above digging again`);
+  }
+}
+
+// ---- 83. the panel charged for rooms the silo never switched on -----------
+//
+// `explainResource` in ui/panels/resources.js walks `state.silo.rooms` entire
+// and pushes anything with a draw into the power spend list. Its own doc
+// comment says the rooms sum to the header by construction — and they did,
+// until a level started arriving with five furnished rooms on it that the
+// cycle does not walk and the panel does. Measured before the fix: 69.16 of
+// listed spend against 30.36 actually spent, 38.80 of it charged to sixteen
+// rooms that have never been switched on.
+//
+// The walk is duplicated here rather than imported because `explainResource`
+// is module-private and builds DOM. What is being asserted is the arithmetic
+// it does, which is `roomDraw` over every room in the silo.
+{
+  const store = newStore(0x9E11);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 4; n++) {
+    store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
+  }
+  game.runDays(3);
+
+  let listed = 0;
+  for (const room of Object.values(s.silo.rooms)) {
+    const def = getRoom(room.type);
+    if (!def || def.produces?.power) continue;
+    listed += roomDraw(s, room, roomCapability(s, room));
+  }
+  const spent = s.flows.power.out;
+  const seized = Object.values(s.silo.rooms).filter((r) => !inService(r)).length;
+
+  if (s.power.generation < s.power.demand) {
+    fail('the silo is browning out, so the cycle sheds rooms and the sum cannot be compared');
+  } else if (seized < 8) {
+    fail(`only ${seized} seized rooms, which is too few for the panel to be wrong by much`);
+  } else if (Math.abs(listed - spent) > 0.01) {
+    fail(`the resources panel lists ${listed.toFixed(2)} power of spend against ${spent.toFixed(2)} ` +
+      `the cycle actually spent — ${seized} rooms the silo has never switched on are on the bill`);
+  } else {
+    ok(`with ${seized} rooms standing dark the power spend list still sums to the ${spent.toFixed(2)} ` +
+      'the cycle spent');
   }
 }
 

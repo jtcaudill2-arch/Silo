@@ -145,6 +145,27 @@ export function staffSlots(def, room) {
 export function roomDraw(state, room, capability) {
   const def = getRoom(room.type);
   if (!def || !def.consumes.power) return 0;
+  // A SEIZED ROOM IS NOT ON THE CIRCUIT. The trickle below is a commissioned
+  // room with nobody in it — lights on, breakers closed, nothing being made. A
+  // room the silo found and never switched on has never been connected.
+  //
+  // This changes no simulation number and it was still worth doing, which is
+  // the unusual case: `orderedRoomIds` already keeps seized rooms out of the
+  // list the cycle walks, so the plant never charged for one. The two callers
+  // that are NOT the cycle did. `explainResource` in ui/panels/resources.js
+  // walks `state.silo.rooms` entire and pushes anything with a draw into the
+  // power spend list — in a panel whose stated job is that the rooms sum to the
+  // header. Measured on a silo four levels down: the list came to 69.16 power
+  // against a cycle that spent 30.36, with 38.80 of it — more than the whole
+  // real draw — charged to sixteen rooms that have never been switched on. And
+  // `ui/roomView.js` prints a draw on the card for whichever room was tapped,
+  // which since the pivot includes every seized room the player has opened.
+  //
+  // Measured across six 200-day obedient campaigns: identical death days,
+  // identical floor counts, identical crime counts, before and after. The
+  // running cost of digging past what you can crew is the one in sim/order.js,
+  // and this is not a second one — it is two panels no longer charging for it.
+  if (!inService(room)) return 0;
   const mergeSteps = room.width - 1;
   const discount = 1 - mergeSteps * BAL.silo.merge.powerDiscountPerStep;
   const level = 1 + (room.level - 1) * BAL.silo.upgrade.outputPerLevel * 0.6;
