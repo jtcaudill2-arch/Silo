@@ -9,7 +9,7 @@
 import { BAL } from '../../config/balance.js';
 import { getRoom, SKILLS } from '../../data/rooms.js';
 import { fullName, topSkill } from '../../sim/population.js';
-import { employmentSummary, autoAssign } from '../../sim/jobs.js';
+import { employmentSummary, autoAssign, labourForecast } from '../../sim/jobs.js';
 import { facePortrait } from '../../render/portraits.js';
 import { openCitizen } from '../citizenCard.js';
 import { el, clear, humanise, button, emptyState, toast, chip } from '../dom.js';
@@ -61,6 +61,7 @@ export const populationPanel = {
         stat('Idle', emp.idle, emp.idle > 20 ? 'warn' : ''),
         stat('Open posts', emp.open, emp.open > 0 ? 'warn' : 'good')
       ),
+      labourLine(state),
       el(
         'div.roster-controls',
         el('input.roster-search', {
@@ -213,6 +214,36 @@ function rosterRow(state, c, shell) {
       el('div.roster-age.mono', Math.floor(c.age)),
       el('div.roster-skill', `${humanise(top.skill).slice(0, 4)} ${Math.round(top.value)}`)
     )
+  );
+}
+
+/**
+ * When the next pair of hands arrives.
+ *
+ * The four counters above this are all the state right now, and the number
+ * that actually decides what a silo can do is not in them: how many people are
+ * of working age, against how many posts there are to stand in. Measured over
+ * 500 days, that first number goes 42 at day 50, 40 at 150, 38 at 250 —
+ * falling — while the second goes 45 to 81, and it only turns around at about
+ * day 300 when the first children born in play come of age. A birth is not a
+ * worker for sixteen years and a year is twelve days, so the wall is 192 days
+ * long and nothing anywhere said it existed.
+ *
+ * It is the same information the four counters were reaching for and could not
+ * give: "Open posts 26" says the silo is short and says nothing about whether
+ * waiting will fix it. See `labourForecast`.
+ */
+function labourLine(state) {
+  const f = labourForecast(state);
+  const tight = f.posts > f.adults;
+  const when = f.nextInDays == null
+    ? 'Nobody comes of age from here.'
+    : `Next of age in ${f.nextInDays} day${f.nextInDays === 1 ? '' : 's'}` +
+      (f.comingWithinYear > 1 ? `, ${f.comingWithinYear} within the year.` : '.');
+  return el(
+    'div.labour' + (tight ? '.tight' : ''),
+    el('span.labour-head', `${f.adults} of working age for ${f.posts} post${f.posts === 1 ? '' : 's'}`),
+    el('span.labour-when', when)
   );
 }
 

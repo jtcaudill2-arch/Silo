@@ -6,7 +6,7 @@
  * beats it by a few percent (spec §7). That gap is the reward for caring.
  */
 
-import { BAL } from '../config/balance.js';
+import { BAL, TIME } from '../config/balance.js';
 import { getRoom, SKILLS } from '../data/rooms.js';
 import { staffSlots, inService } from './economy.js';
 import { workFactor, topSkill } from './population.js';
@@ -366,6 +366,63 @@ export function employmentSummary(state) {
   let openCount = 0;
   for (const s of openSlots(state)) openCount += s.free;
   return { working, idle, school, away, children, open: openCount };
+}
+
+/**
+ * When the silo's next pair of hands arrives, and how many follow.
+ *
+ * THE HARDEST CONSTRAINT IN THE GAME IS INVISIBLE. Measured over 500 days on
+ * the project's own autopilot, the adult count goes 42 at day 50, 40 at 150,
+ * 38 at 250 — falling — while staffed posts go 45 to 81 over the same stretch.
+ * It recovers to 55 at day 300 and climbs from there, because that is when the
+ * first children born in play come of age: at `daysPerYear` days to the year
+ * and a working age of sixteen, a birth on day one is not a worker until day
+ * 192. For the whole of a first campaign the workforce is pinned at roughly
+ * what the silo started with while every build order adds posts to it.
+ *
+ * That is deliberate — config/balance.js argues it out under `birth` — and it
+ * is the root of the half-crewed rooms, the dark labs and the crew holds. What
+ * was missing is that nobody ever told the player. The People panel counted
+ * residents, posted, idle and open posts, all of them the state right now, and
+ * none of them said that the number that matters cannot move for months.
+ *
+ * So: how many adults against how many posts, and the queue of children with
+ * the day each of them turns sixteen. A wall you can count down to is a
+ * different thing from a stall.
+ */
+export function labourForecast(state) {
+  const W = BAL.citizens.workingAgeMin;
+  let adults = 0;
+  const coming = [];
+  for (const id of state.citizenIds) {
+    const c = state.citizens[id];
+    if (!c || c.status === 'dead') continue;
+    if (c.age >= W) { adults++; continue; }
+    // Rounded up: a child four fifths of the way through their sixteenth year
+    // is a worker next shift, not this one, and a countdown that says "0 days"
+    // for most of a day is a countdown nobody trusts twice.
+    coming.push({ id, day: state.clock.day + Math.max(1, Math.ceil((W - c.age) * TIME.daysPerYear)) });
+  }
+  coming.sort((a, b) => a.day - b.day);
+
+  let posts = 0;
+  for (const room of Object.values(state.silo.rooms)) {
+    const def = getRoom(room.type);
+    if (def?.staff && inService(room)) posts += staffSlots(def, room);
+  }
+
+  const next = coming[0] || null;
+  // A year is the horizon a mayor can plan against, and it is also the span
+  // that separates "wait" from "this is not coming".
+  const within = state.clock.day + TIME.daysPerYear;
+  return {
+    adults,
+    posts,
+    children: coming.length,
+    nextDay: next ? next.day : null,
+    nextInDays: next ? next.day - state.clock.day : null,
+    comingWithinYear: coming.filter((c) => c.day <= within).length,
+  };
 }
 
 /** Best-fit suggestion shown on the room panel. */

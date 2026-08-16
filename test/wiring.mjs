@@ -37,7 +37,7 @@ import { Store } from '../src/core/store.js';
 import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
-import { autoAssign, manageSchool, reassignmentAvailable } from '../src/sim/jobs.js';
+import { autoAssign, manageSchool, reassignmentAvailable, labourForecast, employmentSummary } from '../src/sim/jobs.js';
 import autopilot from './autopilot.mjs';
 import { directives, topDirective } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
@@ -7331,6 +7331,105 @@ const ERRAND_ROOM = {
   } else {
     ok(`the ${cuts.length} rank${cuts.length === 1 ? '' : 's'} that cut a short-handed room's ` +
       `output (${cuts.map((l) => `${l}→${l + 1}`).join(', ')}) are never recommended`);
+  }
+}
+
+// ---- 80. the wall the silo cannot see -------------------------------------
+//
+// The hardest constraint in the game, and until this it was invisible.
+// Measured over 500 days on the project's own autopilot, the adult count goes
+// 42 at day 50, 40 at 150, 38 at 250 — FALLING — while staffed posts go 45 to
+// 81, and it only turns around near day 300 when the first children born in
+// play come of age. A birth is not a worker for `workingAgeMin` years and a
+// year is `daysPerYear` days, so the wall is 192 days long. It is the root of
+// the half-crewed rooms, the dark labs and the crew holds that sections 77-79
+// exist for.
+//
+// The four counters on the People panel are all current state — residents,
+// posted, idle, open posts — and none of them can answer "will waiting fix
+// this". `labourForecast` is the number that can.
+{
+  const store = newStore(0x10B0);
+  const s = store.state;
+  const f = labourForecast(s);
+
+  const adults = s.citizenIds
+    .map((id) => s.citizens[id])
+    .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin).length;
+  const kids = s.citizenIds
+    .map((id) => s.citizens[id])
+    .filter((c) => c && c.status !== 'dead' && c.age < BAL.citizens.workingAgeMin);
+
+  if (f.adults !== adults || f.children !== kids.length) {
+    fail(`the forecast counts ${f.adults} adults and ${f.children} children where the roster has ` +
+      `${adults} and ${kids.length}`);
+  } else if (f.nextInDays == null) {
+    fail(`the opening silo has ${kids.length} children and the forecast says nobody ever comes ` +
+      'of age');
+  } else {
+    // The day it names has to be the day somebody actually crosses the line —
+    // checked by running the silo to it and counting, not by re-deriving the
+    // arithmetic the forecast used, which would only prove it agrees with
+    // itself. This is the whole claim: a player told "next of age in 12 days"
+    // has to have a worker on day 12.
+    // Crewed first, or the fixture is not testing the forecast — an opening
+    // silo with nobody posted has no food, water or power and is dead inside a
+    // month, which is what the first version of this measured.
+    store.dispatchAll(autoAssign(s));
+    const game = new Game(store);
+    const before = adults;
+    const target = f.nextInDays;
+    game.runDays(target);
+    const after = s.citizenIds
+      .map((id) => s.citizens[id])
+      .filter((c) => c && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin).length;
+    if (after <= before) {
+      fail(`the forecast promised somebody of working age within ${target} day(s); the silo had ` +
+        `${before} and after ${target} days it has ${after} — the countdown does not count down ` +
+        'to anything');
+    } else {
+      // And the posts half of the line, by a different route: every post is
+      // either filled or open, so the roster's own summary has to agree with
+      // it. Without this the number could be anything — a mutation that
+      // counted one post per room instead of one per slot walked through the
+      // day-counting check above without a mark on it.
+      const emp = employmentSummary(s);
+      const after2 = labourForecast(s);
+      if (after2.posts !== emp.working + emp.open) {
+        fail(`the forecast says ${after2.posts} posts and the roster says ${emp.working} filled ` +
+          `plus ${emp.open} open — every post is one or the other, so one of them is wrong`);
+      } else {
+        ok(`the labour forecast is honest: ${before} of working age for ${f.posts} posts, next ` +
+          `of age in ${target} day${target === 1 ? '' : 's'}, ${after} adults on that day, and ` +
+          `${after2.posts} posts against ${emp.working} filled + ${emp.open} open`);
+      }
+    }
+  }
+}
+
+// And it says the thing the counters cannot: a silo whose children are all far
+// off is told so, rather than being left to infer it from an "open posts"
+// number that will not move for months.
+{
+  const store = newStore(0x10B1);
+  const s = store.state;
+  // Push every child back to the bottom of the ladder, which is the state a
+  // silo two hundred days into a growth phase is actually in.
+  for (const id of s.citizenIds) {
+    const c = s.citizens[id];
+    if (c && c.age < BAL.citizens.workingAgeMin) c.age = 1;
+  }
+  const f = labourForecast(s);
+  const expected = Math.ceil((BAL.citizens.workingAgeMin - 1) * TIME.daysPerYear);
+  if (f.comingWithinYear !== 0) {
+    fail(`every child in the silo is one year old and the forecast still counts ` +
+      `${f.comingWithinYear} coming of age within the year`);
+  } else if (Math.abs(f.nextInDays - expected) > 1) {
+    fail(`a one-year-old is ${f.nextInDays} days from working age; ` +
+      `${BAL.citizens.workingAgeMin} minus 1 years at ${TIME.daysPerYear} days each is ${expected}`);
+  } else {
+    ok(`and a silo whose youngest hope is ${f.nextInDays} days off is told that, not left to ` +
+      'infer it from a number that will not move');
   }
 }
 

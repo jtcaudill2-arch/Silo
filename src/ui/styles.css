@@ -1425,6 +1425,17 @@ button.why-line:active { background: var(--sodium-dim); }
 /* The designation on a floor pip. Three letters is all that fits under a
    46px pip that already carries a number and a free-bay count, so the strip
    stays scannable rather than becoming a second list. */
+/* The labour forecast on the People panel. Two lines under the counters,
+   because it is the answer to the question those counters raise. */
+.labour {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 6px 12px 8px; border-bottom: 1px solid var(--hairline);
+}
+.labour-head { font-size: 13px; color: var(--bone-dim); }
+.labour-when { font-size: 12px; color: var(--bone-faint); }
+.labour.tight { border-left: 2px solid var(--sodium); }
+.labour.tight .labour-head { color: var(--sodium); }
+
 .floor-sec { font-size: 9px; line-height: 10px; color: var(--bone-faint); letter-spacing: .04em; }
 .floor-pip.fitted { border-color: var(--verdigris); }
 .floor-pip.fitted .floor-sec { color: var(--verdigris); }
