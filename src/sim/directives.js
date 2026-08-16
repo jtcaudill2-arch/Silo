@@ -335,7 +335,21 @@ export function directives(state) {
     const def = getRoom(type);
     if (!def?.staff) return true;
     if (PASSIVE.some((k) => def.provides?.[k])) return true;
-    return spare * 2 >= (def.staff.slotsPerLevel[0] || 1) * (def.width || 1);
+    // ONE PAIR OF HANDS IS ENOUGH, and the rule used to want half a room's
+    // worth. That was the right bar when the answer to an order was building a
+    // room from nothing — an empty new room is a hole in the treasury — and it
+    // is the wrong bar for restoring one that is already standing there. A
+    // room runs at the fraction of its posts that are crewed, so bringing back
+    // a four-post Workshop and putting one person in it is a quarter of a
+    // Workshop, which is a quarter more than the silo had.
+    //
+    // Measured, at the old bar: an opening of twenty people can crew about
+    // twelve posts, every level opened adds four to ten more, and the silo
+    // therefore sat at zero spare from the first week — so `crewed` was false
+    // for everything, every order in the game was filtered out, and the
+    // standing order read "wait for people, not rooms" for the rest of the
+    // campaign while the silo starved with three restorable levels under it.
+    return spare >= 1;
   };
 
   // The same question asked backwards: is the silo getting anything out of the
