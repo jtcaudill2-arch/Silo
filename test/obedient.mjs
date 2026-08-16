@@ -95,6 +95,20 @@ function findSpot(state, type) {
  * they did.
  */
 function obey(state, d) {
+  // A seized room is a restore whatever the order calls itself. Every order
+  // that used to say "Build a X" now points at a dead X on an open level, or
+  // says to open the next level; both keep their own id, so this has to match
+  // on the shape rather than on the name.
+  if (d.roomId && state.silo.rooms[d.roomId]?.found) {
+    const check = canRepair(state, d.roomId);
+    if (!check.ok) return `refused: ${check.reason}`;
+    return { actions: repair(state, d.roomId), note: 'restored' };
+  }
+  if (d.floor != null && String(d.id).endsWith('_open')) {
+    const dig = canExcavate(state);
+    if (!dig.ok) return `refused: ${dig.reason}`;
+    return { actions: startExcavation(state), note: 'opened a level' };
+  }
   if (!d) return 'nothing to do';
 
   if (d.room) {

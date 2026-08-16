@@ -26,7 +26,7 @@ import { NODE_LIST as DOCTRINE_NODES } from '../data/doctrine.js';
 import { canTake as canTakeDoctrine } from './doctrine.js';
 import { available as availableResearch } from './research.js';
 import {
-  canBuild, canExcavate, canRepair, canShore, canUpgrade, upgradeCost, strainedFloors,
+  canBuild, canExcavate, nextFloorToExcavate, canRepair, canShore, canUpgrade, upgradeCost, strainedFloors,
   buildCostFor, describeCost, affordable,
 } from './build.js';
 import { staffSlots, inService, roomCapability } from './economy.js';
@@ -263,6 +263,15 @@ function doubled(cost) {
   return out;
 }
 
+/**
+ * Where a room type sits in the silo's own idea of what matters, which is the
+ * crewing order. Types nobody listed fall in behind the ones that were.
+ */
+function staffingRank(type) {
+  const i = BAL.jobs.staffingPriority.indexOf(type);
+  return i < 0 ? BAL.jobs.staffingPriority.length : i;
+}
+
 export function directives(state) {
   const out = [];
   const env = readEnvironment(state);
@@ -360,9 +369,76 @@ export function directives(state) {
     return rooms.every((r) => r.buildingUntilCycle === 0 && r.powered);
   };
 
+  /**
+   * Where the silo would get one of these.
+   *
+   * SILO 12 IS INHERITED, NOT BUILT. There is no construction: every level was
+   * fitted out by the builders and is standing behind its seal, dark. So an
+   * order that used to read "Build a Laboratory" has two possible answers now,
+   * and which one it is depends only on what the silo can already reach —
+   * either there is a dead Laboratory on a level that is open, in which case
+   * restoring it is the move, or there is not, in which case the move is to go
+   * further down.
+   *
+   * Cheapest first among rooms of the SAME type, because a Laboratory at 30%
+   * and one at 8% are the same order at very different prices and the player is
+   * being told what to do next, not what to aspire to. Across types the caller
+   * decides — see `restorable` further down, which does not take the cheapest
+   * room in the silo for exactly the reason a measured run showed: the cheapest
+   * thing behind any seal is a Storage Depot, and a silo that spends its whole
+   * opening treasury restoring cupboards is dead in six weeks.
+   */
+  const sourceFor = (type) => {
+    const derelict = Object.values(state.silo.rooms)
+      .filter((r) => r.type === type && r.found && r.buildingUntilCycle === 0)
+      .map((r) => ({ room: r, check: canRepair(state, r.id) }))
+      .filter((c) => c.check.ok)
+      .sort((a, b) => (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
+    if (derelict) return { kind: 'restore', room: derelict.room, cost: derelict.check.cost };
+    return { kind: 'open' };
+  };
+
+  /**
+   * One interception point, so every order in this file keeps its own weight,
+   * its own reason and its own place in the ranking, and only its VERB changes.
+   *
+   * The alternative was rewriting twenty-two call sites into restore-or-open
+   * pairs, which would have been forty-four things to keep in step with each
+   * other and with the balance band they sit in. The reason an order fires is
+   * unchanged by the silo no longer having a build menu; only the answer is.
+   */
   const add = (d) => {
-    if (d.room && (!crewed(d.room) || !running(d.room))) return;
-    out.push(d);
+    if (!d.room) { out.push(d); return; }
+    if (!crewed(d.room) || !running(d.room)) return;
+    const def = getRoom(d.room);
+    const src = sourceFor(d.room);
+    if (src.kind === 'restore') {
+      out.push({
+        ...d,
+        room: null,
+        roomId: src.room.id,
+        text: `Restore the ${def?.name || d.room} on floor ${src.room.floor}`,
+        why: `${d.why} One is standing on floor ${src.room.floor} at ${Math.round(src.room.condition)}% ` +
+          `and has never run — putting it back into service costs ${describeCost(src.cost)}.`,
+      });
+      return;
+    }
+    // Nowhere open has one, so the answer is depth. Not "open floor 12 where
+    // the Laboratory is" — a seal is only ever broken on the next level down,
+    // so an order naming a floor the silo cannot reach yet is an order nobody
+    // can follow. The reason it wants one rides along instead.
+    const next = nextFloorToExcavate(state);
+    if (next == null || !canExcavate(state).ok) return;
+    out.push({
+      ...d,
+      room: null,
+      id: `${d.id}_open`,
+      floor: next,
+      text: `Open floor ${next}`,
+      why: `${d.why} Nothing standing on an open level is a ${def?.name || d.room}, and the silo ` +
+        'cannot build one — every level below is furnished and sealed, so the way to one is down.',
+      panel: 'build',
+    });
   };
 
   // ---- about to kill somebody ------------------------------------------
@@ -802,7 +878,14 @@ export function directives(state) {
     .filter((r) => r.found && (r.staff?.length || 0) === 0 && r.buildingUntilCycle === 0)
     .map((r) => ({ room: r, check: canRepair(state, r.id) }))
     .filter((c) => c.check.ok && !c.check.partial)
-    .sort((a, b) => (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
+    // What the silo needs most, not what is cheapest. Cheapest picks a Storage
+    // Depot every time — it is the smallest room in the game and one stands on
+    // most levels — and measured on the opening that is exactly what happened:
+    // the silo restored a cupboard on day 2, was down to 17 scrap on day 3, and
+    // starved on day 41. `staffingPriority` is the silo's own answer to which
+    // rooms matter, and it already governs who gets crewed first.
+    .sort((a, b) => staffingRank(a.room.type) - staffingRank(b.room.type)
+      || (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
   if (restorable) {
     const r = restorable.room;
     const def = getRoom(r.type);

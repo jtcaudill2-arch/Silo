@@ -667,9 +667,18 @@ export class Shell {
   directiveAction(d) {
     if (d.wait || d.blocked) return null;
     const state = this.state;
-    if (d.room) {
-      if (!allPlacements(state, d.room).length) return null;
-      return { label: 'Place', run: () => this.startPlacement(d.room) };
+    // `d.room` is gone: directives.js turns every order that wants a room into
+    // a restore on a level that is open or an order to open the next one, since
+    // the silo has no construction. Both verbs already exist below.
+    if (d.floor && d.id?.endsWith('_open')) {
+      return { label: 'Open', run: () => this.doExcavate() };
+    }
+    // Any order pointing at a seized room is a restore, whatever it is called.
+    // The orders that want a room keep their own id — `laboratory`,
+    // `scrap_income` — and only their verb changed, so matching on the id
+    // would have left every one of them with no button at all.
+    if (d.roomId && state.silo.rooms[d.roomId]?.found) {
+      return { label: 'Restore', run: () => this.doRepair(d.roomId) };
     }
     if (d.id === 'repair' && d.roomId) return { label: 'Repair', run: () => this.doRepair(d.roomId) };
     // Same button, different word. Restoring a room a dig turned up runs the

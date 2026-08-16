@@ -24,6 +24,7 @@ import * as order from '../sim/order.js';
 import * as events from '../sim/events.js';
 import { streamFor } from './rng.js';
 import { digOutcome } from '../sim/dig.js';
+import { manifestFor } from '../data/sections.js';
 import { getRoom } from '../data/rooms.js';
 
 /** "water" -> "Water". The UI's own humanise lives in the DOM layer. */
@@ -379,7 +380,16 @@ export class Game {
         dig.floor,
         streamFor(this.state.meta.seed, 'dig', dig.floor)
       );
-      this.store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: dig.floor, outcome });
+      // What is standing on the level, alongside what the crew found loose.
+      // Both are computed here and carried on the action so the reducer stays
+      // pure; the manifest needs no stream at all, being a fact about the
+      // building rather than about the seed.
+      this.store.dispatch({
+        type: 'EXCAVATION_COMPLETE',
+        floor: dig.floor,
+        outcome,
+        manifest: manifestFor(dig.floor),
+      });
     }
     for (const id of Object.keys(this.state.silo.rooms)) {
       const room = this.state.silo.rooms[id];

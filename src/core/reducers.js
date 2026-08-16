@@ -225,44 +225,54 @@ const siloReducers = {
     if (o?.air) {
       state.air.quality = Math.max(BAL.air.min, Math.min(BAL.air.max, state.air.quality + o.air));
     }
-    // A level that was built for something arrives with the room still in it,
-    // seized. Placed here rather than through placeRoom() so the reducer keeps
-    // no import on newgame.js — the floor is empty by definition, having just
-    // been opened, so there is nothing to collide with.
-    if (o?.found && floor) {
-      const width = Math.min(o.found.width, BAL.silo.slotsPerFloor);
-      const id = String(state.silo.nextRoomId++);
-      state.silo.rooms[id] = {
-        id,
-        type: o.found.type,
-        floor: a.floor,
-        slot: 0,
-        width,
-        level: o.found.level,
-        condition: o.found.condition,
-        staff: [],
-        // Dark, and it stays dark until restored. This is not decoration: the
-        // economy skips seized rooms, so nothing ever recomputes this field
-        // for them, and a `true` here is a lie that never gets corrected.
-        // Three separate systems ask `room.powered` directly — schooling,
-        // airlock capacity, and whether the silo can craft a suit — so a
-        // found Armory on floor 96 was fitting out squads with no crew, no
-        // power and no repairs.
-        powered: false,
-        // Never commissioned. This is what separates a room that arrived
-        // seized from one that decayed to the same number while the silo
-        // leaned on it — the first is an opportunity, the second is an
-        // emergency, and the standing orders rank them nothing alike.
-        found: true,
-        buildingUntilCycle: 0,
-        upgradingUntilCycle: 0,
-      };
-      for (let i = 0; i < width; i++) floor.slots[i] = id;
-      // Same as ROOM_BUILD does. Without it a found room is never in
-      // `powerPriority` at all, and `orderedRoomIds` appends unlisted rooms
-      // after every listed one — so a restored Recycling Plant, whose default
-      // rank is sixth, browns out before the residences.
-      insertByDefaultPriority(state, state.silo.rooms[id]);
+    // EVERY LEVEL ARRIVES FURNISHED. Silo 12 is abandoned, not empty: each of
+    // the 144 floors was fitted out and lived in, and behind the seal the
+    // fittings are still bolted down — dark, seized, and waiting for somebody
+    // to put them back into service.
+    //
+    // The manifest is a pure function of the floor number (data/sections.js),
+    // so it is passed in on the action the same way the outcome roll is and
+    // this reducer stays pure. `o.found` is the older shape — one room on one
+    // floor in eight — and is still honoured, because a save written mid-dig
+    // before this carries one.
+    const standing = a.manifest?.length ? a.manifest : (o?.found ? [{ ...o.found, slot: 0 }] : []);
+    if (floor && standing.length) {
+      for (const spec of standing) {
+        const width = Math.min(spec.width, BAL.silo.slotsPerFloor - spec.slot);
+        if (width < 1) continue;
+        const id = String(state.silo.nextRoomId++);
+        state.silo.rooms[id] = {
+          id,
+          type: spec.type,
+          floor: a.floor,
+          slot: spec.slot,
+          width,
+          level: spec.level,
+          condition: spec.condition,
+          staff: [],
+          // Dark, and it stays dark until restored. This is not decoration: the
+          // economy skips seized rooms, so nothing ever recomputes this field
+          // for them, and a `true` here is a lie that never gets corrected.
+          // Three separate systems ask `room.powered` directly — schooling,
+          // airlock capacity, and whether the silo can craft a suit — so a
+          // found Armory on floor 96 was fitting out squads with no crew, no
+          // power and no repairs.
+          powered: false,
+          // Never commissioned. This is what separates a room that arrived
+          // seized from one that decayed to the same number while the silo
+          // leaned on it — the first is an opportunity, the second is an
+          // emergency, and the standing orders rank them nothing alike.
+          found: true,
+          buildingUntilCycle: 0,
+          upgradingUntilCycle: 0,
+        };
+        for (let i = 0; i < width; i++) floor.slots[spec.slot + i] = id;
+        // Without this a found room is never in `powerPriority` at all, and
+        // `orderedRoomIds` appends unlisted rooms after every listed one — so a
+        // restored Recycling Plant, whose default rank is sixth, browns out
+        // before the residences.
+        insertByDefaultPriority(state, state.silo.rooms[id]);
+      }
     }
     if (o?.condition) {
       // The floor above is the one a seal gives way into. Worst-conditioned

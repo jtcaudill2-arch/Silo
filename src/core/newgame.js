@@ -24,6 +24,7 @@ import { BAL, TIME } from '../config/balance.js';
 import { Rng, freshSeed } from './rng.js';
 import { makeCitizen, resetIdCounter, vitalityForAge } from '../sim/population.js';
 import { getRoom } from '../data/rooms.js';
+import { manifestFor } from '../data/sections.js';
 import { SILOS } from '../data/silos.js';
 import { SCHEMA_VERSION } from './migrations.js';
 import { RES_KEYS } from '../sim/economy.js';
@@ -105,33 +106,16 @@ const STARTING_ROOMS = [
  * A silo that has already solved its opening problems. Not reachable in play —
  * this exists so the headless harness can fast-forward a *stable* economy for
  * 100 days and catch divergence, which a starving silo can't test.
- */
-/**
- * Layered on top of STARTING_ROOMS for the `sufficient` scenario — a silo
- * with slack in every direction, used by the harness as the stable control to
- * measure divergence against.
  *
- * These slots are chosen to sit beside the starting rooms rather than on top
- * of them. That is load-bearing: `placeRoom` refuses an occupied slot and
- * says nothing, so a collision here does not fail loudly, it just quietly
- * deletes a room from the control silo. When the opening shrank, this list
- * still described the old layout, and the two it lost were the second
- * filtration bay and the clinic — the control silo suffocated.
+ * It used to be a hand-written list of rooms laid on top of the opening, and
+ * that list had to be kept clear of the opening's own slots or `placeRoom`
+ * would silently drop a room and quietly suffocate the control silo. There is
+ * nothing to keep clear now: the scenario simply has more of the building
+ * open, with everything on it commissioned. `manifestFor` decides what is
+ * there, exactly as it does for a level the player unseals, so the control silo
+ * cannot drift away from the game it is a control for.
  */
-const SUFFICIENT_EXTRA = [
-  { type: 'residences', floor: 1, slot: 3, width: 3, level: 3 },
-  { type: 'air_filtration', floor: 2, slot: 2, width: 2, level: 2 },
-  { type: 'workshop', floor: 2, slot: 4, width: 2, level: 2 },
-  { type: 'hydroponics', floor: 3, slot: 2, width: 2, level: 3 },
-  { type: 'clinic', floor: 3, slot: 4, width: 2, level: 2 },
-  { type: 'water_reclaimer', floor: 4, slot: 2, width: 2, level: 2 },
-  { type: 'maintenance_bay', floor: 4, slot: 4, width: 1, level: 2 },
-  { type: 'storage_depot', floor: 4, slot: 5, width: 1, level: 2 },
-  // Every room added here draws power, so the generation has to follow.
-  { type: 'generator_hall', floor: 5, slot: 3, width: 3, level: 3 },
-  { type: 'recycling', floor: 6, slot: 0, width: 2, level: 2 },
-  { type: 'recycling', floor: 6, slot: 2, width: 2, level: 2 },
-];
+const SUFFICIENT_FLOORS = 9;
 
 export function createNewGame(opts = {}) {
   const seed = opts.seed !== undefined ? opts.seed : freshSeed();
@@ -240,9 +224,37 @@ export function createNewGame(opts = {}) {
   for (const k of RES_KEYS) state.resources[k] = BAL.resources.start[k] ?? 0;
 
   // ---- rooms --------------------------------------------------------------
-  for (const spec of STARTING_ROOMS) placeRoom(state, { ...spec, strict: true });
+  //
+  // THE SILO IS INHERITED, NOT BUILT. Every level of Silo 12 was fitted out and
+  // lived in, and the lit ones at the top are where the people who are left
+  // have been keeping the lights on. So the opening is not a list of rooms
+  // written here any more — it is `manifestFor` on the levels that are open,
+  // which is the same function that furnishes every level the player later
+  // unseals. One source for what is standing in this building, whether the
+  // player inherited it on the first morning or opened the seal themselves.
+  //
+  // Worn rather than derelict, and that is the first thing the game teaches: a
+  // new mayor's opening move is a repair on something they can see running,
+  // not a purchase from a menu of twenty-nine rooms and a hundred and forty-
+  // four empty floors.
+  for (let n = 1; n <= BAL.silo.startExcavatedFloors; n++) {
+    for (const spec of manifestFor(n)) {
+      placeRoom(state, {
+        type: spec.type, floor: n, slot: spec.slot, width: spec.width,
+        level: spec.level, condition: spec.condition, strict: true,
+      });
+    }
+  }
   if (opts.scenario === 'sufficient') {
-    for (const spec of SUFFICIENT_EXTRA) placeRoom(state, { ...spec, strict: true });
+    for (let n = BAL.silo.startExcavatedFloors + 1; n <= SUFFICIENT_FLOORS; n++) {
+      state.silo.floors[n - 1].excavated = true;
+      for (const spec of manifestFor(n)) {
+        placeRoom(state, {
+          type: spec.type, floor: n, slot: spec.slot, width: spec.width,
+          level: spec.level, condition: BAL.silo.condition.start, strict: true,
+        });
+      }
+    }
   }
 
   // ---- people -------------------------------------------------------------

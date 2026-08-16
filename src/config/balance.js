@@ -51,14 +51,18 @@ export const BAL = {
     // quietly pricing the bottom of the silo like the top.
     reachableFloors: 144,
     slotsPerFloor: 6,
-    // Six: the five the starting rooms occupy, and one spare to build the
-    // first thing into. It was fourteen, which handed the player nine empty
-    // floors on the first morning — enough room for everything the early game
-    // asks for, so the silo could be played for hours without ever digging,
-    // and digging read as a chore rather than as how the silo grows. Six makes
-    // the first excavation an early decision with a price on it, and every one
-    // after that a larger one.
-    startExcavatedFloors: 6,
+    // Three: the levels the twenty people who are left have been living on —
+    // bunks and a canteen, the crop and the water, the generator and the air.
+    // Everything below is sealed and furnished and dark.
+    //
+    // It was six, and before that fourteen, back when a floor arrived empty and
+    // the player filled it. Empty floors were a resource then, so the question
+    // was how many to hand over; now a floor arrives with a Foundry in it and
+    // the question is the opposite — how little the silo can see at once. Three
+    // levels is one screen, seven rooms and twenty people, which is a first
+    // morning somebody can read in a minute instead of a menu of twenty-nine
+    // rooms over a hundred and forty-four empty floors.
+    startExcavatedFloors: 3,
     // Six bands across 144. Five stretched over that depth would put thirty
     // levels behind each gate, which is a long time between arrivals — the
     // bands are what make going down feel like getting somewhere, so there is
@@ -225,6 +229,36 @@ export const BAL = {
     section: {
       extraWidth: 1,
     },
+    /**
+     * What is behind a seal — see data/sections.js.
+     *
+     * Silo 12 is abandoned rather than empty: every level was fitted out and
+     * every level is still fitted, dark and seized. These numbers say how badly
+     * the dark treated it.
+     *
+     * `conditionTop` to `conditionDeep` is the band a level arrives in, worst
+     * at the bottom of the shaft, because the seals nearest the Foundations are
+     * the ones that most needed sealing. All of it sits under
+     * `repair.commissionBelow`, so nothing behind a seal can ever be mistaken
+     * for a room that works.
+     */
+    derelict: {
+      conditionTop: 34,
+      conditionDeep: 10,
+      conditionSpread: 12,
+      conditionFloor: 6,
+      // Bays at the end of a level given over to the things every floor of a
+      // lived-in building has — a store, or bunks — whatever the level was for.
+      lodgerBays: 2,
+      // A level was left at some rank between one and this. The deep levels
+      // being better-built is deliberate: it is what makes a Foundations
+      // restoration worth the alloy it costs to reach.
+      maxFoundLevel: 3,
+      // The three levels the silo is still living on. Worn, not dead: the
+      // people who are left have been keeping them running, so the first
+      // useful thing a mayor can do is fix something they can see working.
+      openingCondition: 62,
+    },
     condition: {
       start: 100,
       decayPerCycleWorking: 0.055,
@@ -255,6 +289,10 @@ export const BAL = {
       // correction put them. It also restores the margin the suite lost: the
       // deepest found level was sitting at 49.52% against a 50% ceiling.
       fractionOfBuildCost: 0.40,
+      // Nothing behind a seal may arrive above this, or a level would open
+      // with something on it that looks like it already works. `derelict`
+      // above keeps every manifest under it; this is the line that says so.
+      commissionBelow: 40,
     },
     upgrade: {
       maxLevel: 5,
@@ -584,7 +622,7 @@ export const BAL = {
     // the scrap income, which meant no second generator could ever be
     // afforded. 44 crews the opening five rooms and the three a player adds
     // next, with people spare.
-    startPopulation: 44,
+    startPopulation: 20,
     // The harness's control silo has slack in every direction and about thirty
     // staff posts to fill. Crewing that from a 28-person opening is what a
     // *failing* silo looks like, not a sufficient one — every room runs part-

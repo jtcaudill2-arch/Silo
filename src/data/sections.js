@@ -34,7 +34,7 @@
  */
 
 import { BAL } from '../config/balance.js';
-import { CATEGORIES } from './rooms.js';
+import { CATEGORIES, getRoom } from './rooms.js';
 
 /**
  * What the silo's own records call a level of each kind.
@@ -139,4 +139,237 @@ export function maxWidthOn(n, def) {
   return BAL.silo.merge.maxWidth + (suitsSection(n, def) ? BAL.silo.section.extraWidth : 0);
 }
 
-export default { sectionFor, suitsSection, maxWidthOn, SECTION_NAMES };
+// ------------------------------------------------------- what is standing ---
+
+/**
+ * The rooms on a level, as the builders left them and as the dark left them.
+ *
+ * SILO 12 IS ABANDONED, NOT EMPTY. Every one of the 144 levels was fitted out
+ * and lived in, and behind each seal the fittings are still bolted down — dark,
+ * seized, and waiting for somebody to put them back into service. That is the
+ * game: you open a level, read what is on it, and decide what you can afford to
+ * bring back. Nothing is built from nothing.
+ *
+ * It replaces a build catalogue, and it replaces it for a reason a player said
+ * plainly: dropped into a half-built silo with a menu of twenty-nine rooms and
+ * a hundred and forty-four empty floors, the first decision the game asked for
+ * was a layout puzzle, and the answer to "where does this go" is not
+ * interesting when the honest answer is "anywhere". The builders already
+ * decided. Reading their decision is a much better first move than second-
+ * guessing it.
+ *
+ * SHAPE OF A LEVEL. Six bays. The level's own kind of work takes the wide
+ * ones — a Machine Level's workshops run three and four bays across, because
+ * the level was built with the span for them — and the last bay or two carry
+ * the ordinary things every floor of a lived-in building has: a store, or
+ * bunks. That mixture is what keeps `suitsSection` meaningful now that every
+ * room arrives on a level rather than being placed on one: the fitted rooms are
+ * the wide ones, and the lodgers are narrow.
+ *
+ * DERIVED, NOT STORED, like the designation above it. A level's contents are a
+ * pure function of its number, so a save carries nothing new, two players who
+ * reach floor 96 find the same foundry, and the Levels panel can show you what
+ * is behind a seal before you pay to break it.
+ */
+
+/** The rooms of each kind that a level of that kind was fitted with, best first. */
+const FITTINGS = {
+  // The gated ones are in these lists on purpose. `allowed` below filters them
+  // out above their tier, so a Reactor is only ever standing on a Foundations
+  // level and a Deep Mine only in the Deeps — which is the whole reason to go
+  // down there, and it cannot be true unless they are listed here.
+  life: ['hydroponics', 'water_reclaimer', 'generator_hall', 'air_filtration', 'clinic',
+    'protein_vats', 'reactor'],
+  civic: ['residences', 'cafeteria', 'schoolhouse', 'radio_room'],
+  production: ['workshop', 'recycling', 'foundry', 'maintenance_bay', 'munitions',
+    'heat_exchange', 'deep_mine'],
+  security: ['armory', 'barracks', 'training_yard', 'sheriffs_office', 'holding_cells'],
+  science: ['laboratory', 'chem_lab', 'archive'],
+  surface: ['airlock', 'suit_bay'],
+  storage: ['storage_depot'],
+};
+
+/**
+ * What every level carries regardless of what it was for. A silo is a place
+ * people lived, so there are beds and cupboards on the machine floors too.
+ */
+const LODGERS = ['storage_depot', 'residences'];
+
+/**
+ * How the fitted bays are divided, and why there is more than one answer.
+ *
+ * Four bays and one room in them makes every level in the silo the same shape:
+ * one wide thing and two cupboards. These are the ways four bays split, and
+ * which one a level got is decided by its number — so some levels hand you a
+ * single big plant and others hand you three smaller rooms, and reading the
+ * manifest before you open one is worth doing.
+ */
+const SPLITS = [[4], [2, 2], [3, 1], [2, 1, 1]];
+
+/**
+ * Which split a level got — hashed, not multiplied.
+ *
+ * `(n * 3) % SPLITS.length` looked fine and had a hole in it. A tier's cycle is
+ * eight long, so every civic level in the Mids sits at a floor divisible by
+ * eight, and any linear function of n over a four-entry table is then constant
+ * across the whole group: all four of them drew the same one-room split, so
+ * the third entry in the civic fittings was never reached and the Schoolhouse
+ * stood on no level in the silo. A hash has no such structure.
+ */
+function splitFor(n) {
+  let h = 2166136261;
+  h ^= n;
+  h = Math.imul(h, 16777619);
+  return SPLITS[(h >>> 0) % SPLITS.length];
+}
+
+/**
+ * The three levels the silo is living on when you take the desk.
+ *
+ * TWELVE POSTS FOR SIXTEEN ADULTS, and the four spare are the point. These
+ * widths come from that arithmetic rather than from what looks like a silo.
+ *
+ * Two measured failures got it here. Eighteen posts and a Cafeteria ran 27
+ * power generated against 59 wanted from the first morning — generation scales
+ * with the fraction of a room's posts that are crewed, so an opening with more
+ * posts than people does not run a little short of everything, it runs the
+ * GENERATOR at part crew and browns out the rooms that make the food. Dead on
+ * day 41. Sixteen posts for sixteen adults then balanced on paper and was
+ * worse: `crewed()` refuses any order the silo has not got spare hands for, so
+ * at exactly zero spare every order in the game is filtered and the standing
+ * order is "wait for people" for ever. An opening has to have slack in it or
+ * the player is handed a silo with nothing they are allowed to do.
+ *
+ * Authored rather than generated, for the same reason the Uppers' cycle above
+ * is hand-fitted: this is the opening, and the opening is the tutorial. It has
+ * to cover the four things that keep people alive — crop, water, generation,
+ * air — with somewhere to sleep and eat, and no generator can afford to depend
+ * on which way a modulus fell.
+ *
+ * These are the only rooms in the silo that are NOT derelict. The building is
+ * abandoned; these three floors are where the twenty people who are left have
+ * been keeping the lights on, and they are worn rather than dead — which makes
+ * the first thing a new mayor can usefully do a repair on something they can
+ * already see working, rather than a purchase from a menu.
+ */
+const OPENING = {
+  // Home. Nothing here needs crewing — beds and cupboards are passive — so the
+  // level a new mayor looks at first asks nothing of them.
+  // Home, and nothing on it needs crewing: beds and cupboards are passive, so
+  // the level a new mayor looks at first asks nothing of them.
+  1: [
+    { type: 'residences', slot: 0, width: 3 },
+    { type: 'storage_depot', slot: 3, width: 3 },
+  ],
+  // What is eaten and drunk.
+  2: [
+    { type: 'hydroponics', slot: 0, width: 2 },
+    { type: 'water_reclaimer', slot: 2, width: 1 },
+    { type: 'storage_depot', slot: 3, width: 2 },
+    { type: 'residences', slot: 5, width: 1 },
+  ],
+  // What keeps it running and breathable.
+  3: [
+    { type: 'generator_hall', slot: 0, width: 2 },
+    { type: 'air_filtration', slot: 2, width: 1 },
+    { type: 'storage_depot', slot: 3, width: 2 },
+    { type: 'residences', slot: 5, width: 1 },
+  ],
+};
+
+/** Is this one of the levels the silo starts alive on? */
+export function isOpeningLevel(n) {
+  return Object.prototype.hasOwnProperty.call(OPENING, n);
+}
+
+/**
+ * Deterministic, and deliberately not a seeded stream.
+ *
+ * A level's contents are a fact about the building rather than about the save.
+ * The brief's rule is that all randomness goes through `streamFor`, and this is
+ * not randomness: two players who open floor 96 have to find the same foundry,
+ * or the panel that shows them what is down there before they pay is lying.
+ */
+function pick(list, n, salt) {
+  return list[(n * 7 + salt * 13) % list.length];
+}
+
+/**
+ * How wrecked a level is when the seal comes off.
+ *
+ * Everything arrives below `silo.repair.commissionBelow`, so nothing behind a
+ * seal can be mistaken for a room that works. Deeper is worse: the seals
+ * nearest the Foundations are the ones that most needed sealing, which is what
+ * sim/dig.js has always said about depth and what makes a deep level a decision
+ * rather than a shopping trip.
+ */
+function conditionAt(n, salt) {
+  const D = BAL.silo.derelict;
+  const depth = Math.min(1, (n - 1) / Math.max(1, BAL.silo.totalFloors - 1));
+  const band = D.conditionTop - (D.conditionTop - D.conditionDeep) * depth;
+  // A few points of spread inside the band, so a level is not six identical
+  // numbers and the eye has something to sort on.
+  return Math.max(D.conditionFloor, Math.round(band - ((n * 5 + salt * 11) % D.conditionSpread)));
+}
+
+/**
+ * Every room standing on floor `n`, left to right.
+ *
+ * Rooms whose `tierGate` puts them below this floor are skipped rather than
+ * substituted — a Reactor is on a Foundations level and nowhere else, which is
+ * the whole reason to go down there.
+ */
+export function manifestFor(n) {
+  if (OPENING[n]) {
+    return OPENING[n].map((r) => ({
+      ...r,
+      level: 1,
+      condition: BAL.silo.derelict.openingCondition,
+      working: true,
+    }));
+  }
+
+  const section = sectionFor(n);
+  if (!section) return [];
+  const tierRank = BAL.silo.tiers.findIndex((t) => n >= t.from && n <= t.to);
+  const allowed = (id) => {
+    const def = getRoom(id);
+    if (!def) return false;
+    if (!def.tierGate) return true;
+    return BAL.silo.tiers.findIndex((t) => t.key === def.tierGate) <= tierRank;
+  };
+
+  const fitted = (FITTINGS[section.key] || []).filter(allowed);
+  const lodgers = LODGERS.filter(allowed);
+  if (!fitted.length || !lodgers.length) return [];
+
+  const W = BAL.silo.slotsPerFloor;
+  const fittedBays = W - BAL.silo.derelict.lodgerBays;
+  const split = splitFor(n).filter((w) => w <= fittedBays);
+
+  const out = [];
+  let slot = 0;
+  let salt = 0;
+  for (const want of split) {
+    if (slot >= fittedBays) break;
+    const id = pick(fitted, n, salt);
+    const def = getRoom(id);
+    if (!def) break;
+    // Never wider than the level would carry — `maxWidthOn` is the same
+    // ceiling the merge rule uses, so the level's own kind of work is the only
+    // thing on it that ever runs four bays across.
+    const width = Math.max(1, Math.min(want, maxWidthOn(n, def), fittedBays - slot));
+    out.push({ type: id, slot, width, level: 1 + ((n + salt) % BAL.silo.derelict.maxFoundLevel), condition: conditionAt(n, salt) });
+    slot += width;
+    salt++;
+  }
+  while (slot < W) {
+    const id = pick(lodgers, n, salt);
+    out.push({ type: id, slot, width: 1, level: 1, condition: conditionAt(n, salt) });
+    slot++;
+    salt++;
+  }
+  return out;
+}
+
+export default { sectionFor, suitsSection, maxWidthOn, manifestFor, isOpeningLevel, SECTION_NAMES };
