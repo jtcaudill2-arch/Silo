@@ -7148,6 +7148,56 @@ const ERRAND_ROOM = {
   }
 }
 
+// ---- 77. the order that makes the silo better, not just bigger ------------
+//
+// Every room has five ranks and nothing ever asked for one — measured, three
+// 300-day campaigns finished at a mean rank of 1.1 and the standing-order tally
+// over nine hundred order-days had no upgrade in it at all. test/obedient.mjs
+// covers whether obeying buys ranks; this covers WHICH room it names, because
+// a rank on a room nobody is standing in buys exactly nothing: output scales
+// with the crew in it, so an upgrade there is scrap spent on a number that does
+// not move.
+{
+  const store = newStore(0x11A9);
+  const s = store.state;
+  for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
+  // Two identical rooms at the same rank, one crewed and one not. Everything
+  // else that could break the tie — rank, width — is held equal, so the only
+  // thing left for the order to sort on is the one being tested.
+  const pair = Object.values(s.silo.rooms).filter((r) => getRoom(r.type)?.staff);
+  const width = pair.length ? pair[0].width : 0;
+  const same = pair.filter((r) => r.width === width);
+  const [crewed, empty] = same;
+  const hands = s.citizenIds.slice(0, 4);
+  if (!crewed || !empty || hands.length < 2) {
+    fail('fixture problem: the opening silo has no two staffed rooms of the same width, so ' +
+      'nothing here compares anything');
+  } else {
+    // Nobody anywhere except the one room, and every other room already at the
+    // top of the ladder so it cannot be the answer. Without that last part the
+    // order picked the Residences — which has no posts at all, so the crewed
+    // test never applied to it and the guard could be deleted with this green.
+    for (const r of Object.values(s.silo.rooms)) {
+      r.staff = [];
+      if (r !== crewed && r !== empty) r.level = BAL.silo.upgrade.maxLevel;
+    }
+    crewed.staff = hands.slice();
+    for (const id of hands) s.citizens[id].job = { roomId: crewed.id };
+    crewed.level = 2;
+    empty.level = 1; // the cheaper step, so rank order alone would pick the empty one
+    const order = directives(s).find((d) => d.id === 'upgrade');
+    if (!order) {
+      fail('a silo with a million of everything and a crewed room at rank 2 is never told to ' +
+        'upgrade anything');
+    } else if (order.roomId === empty.id) {
+      fail(`the upgrade order names the ${getRoom(empty.type)?.name} on floor ${empty.floor}, ` +
+        'which has nobody in it — output scales with the crew, so that rank buys nothing at all');
+    } else {
+      ok(`the upgrade order names a room somebody is standing in: "${order.text}"`);
+    }
+  }
+}
+
 /** Working or standing watch — the same line economy.js and sprites.js draw. */
 function onDutyStatus(c) {
   return c.status === 'working' || c.status === 'training';

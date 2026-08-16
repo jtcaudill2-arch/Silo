@@ -43,6 +43,8 @@ import {
   startExcavation,
   canShore,
   shoreFloor,
+  canUpgrade,
+  upgrade,
 } from '../sim/build.js';
 import { autoAssign } from '../sim/jobs.js';
 import { canStart as canStartResearch } from '../sim/research.js';
@@ -674,6 +676,9 @@ export class Shell {
     // repair path — it is the same bill — but "Repair" reads as fixing damage
     // the silo did, and this is the opposite: a room the silo never had.
     if (d.id === 'restore' && d.roomId) return { label: 'Restore', run: () => this.doRepair(d.roomId) };
+    if (d.id === 'upgrade' && d.roomId) {
+      return { label: 'Upgrade', run: () => this.doUpgrade(d.roomId) };
+    }
     if (d.id === 'shore' && d.floor) return { label: 'Shore', run: () => this.doShore(d.floor) };
     if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
     if (d.id === 'excavate') return { label: 'Open', run: () => this.doExcavate() };
@@ -730,6 +735,28 @@ export class Shell {
         ? `${name}: patched as far as the stores allow.`
         : `${name} on floor ${room.floor} repaired.`
     );
+    if (room) this.focusFloor(room.floor);
+  }
+
+  /**
+   * Put a rank on a room from the standing order.
+   *
+   * Same shape as `doRepair` beside it, and for the same reason: the order bar
+   * has to be able to *do* the thing it is asking for. An order that can only
+   * open a panel is a reading exercise, which is most of what "it feels like a
+   * sit and wait game" was about.
+   */
+  doUpgrade(roomId) {
+    const state = this.state;
+    const room = state.silo.rooms[roomId];
+    const check = canUpgrade(state, roomId);
+    if (!check.ok) {
+      toast(check.reason, 'bad');
+      return;
+    }
+    this.store.dispatchAll(upgrade(state, roomId));
+    const name = getRoom(room?.type)?.name || 'The room';
+    toast(`${name} on floor ${room.floor} is going to rank ${room.level + 1}.`);
     if (room) this.focusFloor(room.floor);
   }
 

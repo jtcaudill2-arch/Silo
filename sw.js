@@ -8,7 +8,7 @@
    `node tools/gen-precache.mjs`; don't hand-edit it, it will be overwritten.
    ========================================================================= */
 
-const VERSION = 'deepwater-ee59abab91a7';
+const VERSION = 'deepwater-0b2ba093686f';
 const CACHE = `${VERSION}`;
 
 /* ---- PRECACHE:BEGIN (generated — do not edit by hand) ---- */

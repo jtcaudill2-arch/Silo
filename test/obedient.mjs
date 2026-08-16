@@ -34,6 +34,7 @@ import { autoAssign } from '../src/sim/jobs.js';
 import { topDirective } from '../src/sim/directives.js';
 import {
   canBuild, build, canExcavate, startExcavation, canRepair, repair, canShore, shoreFloor,
+  canUpgrade, upgrade,
 } from '../src/sim/build.js';
 import { canStart } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
@@ -119,6 +120,16 @@ function obey(state, d) {
       if (!check.ok) return `refused: ${check.reason}`;
       return { actions: repair(state, d.roomId), note: d.id === 'restore' ? 'restored' : 'repaired' };
     }
+    // A rank on a room, which is the only order in the set that makes the silo
+    // better rather than keeping it alive. It goes through the same `canUpgrade`
+    // the panel does, so an order the silo cannot actually follow shows up here
+    // as a refusal rather than as a green run.
+    case 'upgrade': {
+      const check = canUpgrade(state, d.roomId);
+      if (!check.ok) return `refused: ${check.reason}`;
+      const room = state.silo.rooms[d.roomId];
+      return { actions: upgrade(state, d.roomId), note: `upgraded to rank ${room.level + 1}` };
+    }
     case 'shore': {
       const check = canShore(state, d.floor);
       if (!check.ok) return `refused: ${check.reason}`;
@@ -192,6 +203,11 @@ function playObediently(perDay, days) {
   store.dispatchAll(autoAssign(s));
 
   const seen = new Map(); // directive id -> how many days it was the top order
+  // Ranks the silo actually bought by obeying. Counted rather than inferred
+  // from the rooms standing at the end: found rooms arrive at rank 2 and 3
+  // straight off the named levels, so mean rank was 1.18 with the upgrade
+  // order deleted entirely — a mutation that escaped an assertion on the mean.
+  let ranksBought = 0;
   const stuck = new Map(); // refusal reason -> count
   const trail = [];
   let last = null;
@@ -234,6 +250,7 @@ function playObediently(perDay, days) {
       }
 
       const result = obey(s, order);
+      if (typeof result === 'object' && order.id === 'upgrade') ranksBought++;
       if (typeof result === 'string') {
         if (result !== 'nothing to do') stuck.set(result, (stuck.get(result) || 0) + 1);
         break; // blocked or nothing to do; no point repeating it this day
@@ -257,6 +274,13 @@ function playObediently(perDay, days) {
     rooms: Object.keys(s.silo.rooms).length,
     floors: s.silo.floors.filter((f) => f.excavated).length,
     research: s.research.completed.length,
+    ranksBought,
+    // Mean rank, which is what says whether the silo grew by improving or only
+    // by spreading — but see `ranksBought`: it is not the instrument, because
+    // digging hands the silo rooms that arrive above rank 1.
+    rank: Object.values(s.silo.rooms).length
+      ? Object.values(s.silo.rooms).reduce((a, r) => a + r.level, 0) / Object.values(s.silo.rooms).length
+      : 0,
   };
 }
 
@@ -295,12 +319,13 @@ if (base.stuck.size) {
 
 console.log('');
 console.log('  obeying harder');
-console.log('    per day   residents   rooms   floors   research   savings raided');
+console.log('    per day   residents   rooms   floors   research   mean rank   savings raided');
 for (const r of runs) {
   console.log(
     `      ${String(r.perDay).padStart(2)}×      ` +
       `${String(r.residents).padStart(6)}   ${String(r.rooms).padStart(5)}   ` +
-      `${String(r.floors).padStart(6)}   ${String(r.research).padStart(8)}   ${String(r.raids).padStart(14)}`
+      `${String(r.floors).padStart(6)}   ${String(r.research).padStart(8)}   ` +
+      `${r.rank.toFixed(2).padStart(9)}   ${String(r.raids).padStart(14)}`
   );
 }
 
@@ -391,6 +416,44 @@ if (!failures.length || !failures.some((f) => /did worse/.test(f))) {
     `obeying ${RATES.slice(1).join('×, ')}× a day is no worse than ${REFERENCE}× ` +
       `(research ${runs.map((r) => r.research).join('/')}, rooms ${runs.map((r) => r.rooms).join('/')})`
   );
+}
+
+// A silo that obeys gets BETTER, not only bigger.
+//
+// Every room has five ranks, each is +35% of base output and the third and
+// fifth add posts, and there is drawn art for all five. Measured before there
+// was an order that asked for one: three 300-day autopilot campaigns came out
+// at a mean rank of 1.1, and the standing-order tally over those nine hundred
+// order-days contained no upgrade at all. The ladder and its art were
+// unreachable by doing what the game says, which is most of what "it's missing
+// that building up and improving factor" meant.
+//
+// RANKS BOUGHT, not the mean rank of what is standing. That was the first form
+// of this and it was worthless: digging hands the silo rooms that arrive at
+// rank 2 and 3 straight off the named levels, so deleting the upgrade order
+// entirely still left a mean of 1.18 with four rooms above rank 1, and the
+// mutation walked through green.
+//
+// One is the bar, and the number it actually reaches is two across 200 days.
+// That is not the order being weak — it is `research_stalled` at 62 holding the
+// top of the bar on 109 of those 200 days, because the silo browns out, the
+// labs are the first thing a brownout takes, and the only fix is a decision
+// about the power priority that the game deliberately will not make for the
+// player. This harness treats a hold as a day spent doing nothing, so those
+// days buy nothing. Setting the bar at what the measurement gives rather than
+// at what the feature deserves: the run that matters is the one where the silo
+// is NOT stuck, and there it takes a rank the first time it is offered one —
+// the obedient population at day 200 went from 95 to 119 with this order in.
+{
+  const bought = base.ranksBought;
+  const ranked = Object.values(s.silo.rooms).filter((r) => r.level > 1).length;
+  if (bought === 0) {
+    fail(`${DAYS} days of obeying the standing order bought the silo not one rank — the five-rank ` +
+      'ladder and the art drawn for it cannot be reached by doing what the game says');
+  } else {
+    ok(`obeying it improves the silo rather than only spreading it: ${bought} ranks bought, ` +
+      `${ranked} of ${base.rooms} rooms standing above rank 1 (mean ${base.rank.toFixed(2)})`);
+  }
 }
 
 // And the mechanism, not only the outcome: a savings plan has to converge. Once

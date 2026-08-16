@@ -26,7 +26,8 @@ import { NODE_LIST as DOCTRINE_NODES } from '../data/doctrine.js';
 import { canTake as canTakeDoctrine } from './doctrine.js';
 import { available as availableResearch } from './research.js';
 import {
-  canBuild, canExcavate, canRepair, canShore, strainedFloors, buildCostFor, describeCost,
+  canBuild, canExcavate, canRepair, canShore, canUpgrade, upgradeCost, strainedFloors,
+  buildCostFor, describeCost, affordable,
 } from './build.js';
 import { staffSlots, inService, roomCapability } from './economy.js';
 import { readySquads } from './military.js';
@@ -255,6 +256,13 @@ function placeable(state, type) {
  * Every directive that currently applies, most urgent first.
  * The UI shows the top one; the panel lists the rest.
  */
+/** Every line of a cost, twice over. See the `upgrade` order's surplus test. */
+function doubled(cost) {
+  const out = {};
+  for (const [k, v] of Object.entries(cost || {})) out[k] = v * 2;
+  return out;
+}
+
 export function directives(state) {
   const out = [];
   const env = readEnvironment(state);
@@ -1402,6 +1410,84 @@ export function directives(state) {
           'Open their card in the World panel to start it.',
         panel: 'radio',
         weight: 48,
+      });
+    }
+  }
+  // ---- growth: make what you have better before making more of it --------
+  //
+  // THE SILO NEVER UPGRADED ANYTHING. Every room has five ranks, each rank is
+  // +35% of base output and the third and fifth also add posts, and there is a
+  // drawn fixture for all five on the sprite sheet. Measured across three
+  // 300-day campaigns, mean room level came out at 1.1, 1.1 and 1.2 — and the
+  // standing-order tally over those nine hundred order-days contained
+  // hold_for_crew, research_stalled, excavate, hold_for_scrap, steady, staff,
+  // repair and restore, and no upgrade at all. A player doing what the game
+  // tells them finishes a campaign with a silo entirely at rank one. That is
+  // the measured form of "it's missing that building up and improving factor"
+  // and of "not enough upgrades visually": the upgrades were there, drawn, and
+  // never once asked for.
+  //
+  // Ranked ABOVE `excavate` deliberately, and it is the whole point of putting
+  // it here. Both are what a silo does with a surplus, and the brief is a silo
+  // that is built rather than dug — so when there is spare, improving what is
+  // standing comes before opening another level to stand things on.
+  //
+  // Only a room that is actually at work. A rank on an empty bay buys nothing
+  // — output scales with the crew in it — and a rank on a seized room is
+  // refused by `canUpgrade` for the same reason.
+  {
+    const ranked = Object.values(state.silo.rooms)
+      .filter((r) => {
+        const def = getRoom(r.type);
+        if (!def) return false;
+        // A room with posts has to have somebody in them; one without posts
+        // (beds, stores) produces its provision on its own and is worth a rank
+        // whatever the roster is doing.
+        if (def.staff && !(r.staff?.length > 0)) return false;
+        return canUpgrade(state, r.id).ok;
+      })
+      // Lowest rank first, then the widest, then the busiest: the cheapest
+      // step on the biggest room the silo is actually leaning on.
+      .sort((a, b) => a.level - b.level || b.width - a.width || (b.staff?.length || 0) - (a.staff?.length || 0))[0];
+    // ...and only out of a surplus, defined as being able to pay for it twice.
+    //
+    // `canUpgrade` only asks whether the silo can cover the bill, which is not
+    // the same question. Measured on the obedient playthrough with the plain
+    // affordability check: the silo took the two upgrades it was offered on
+    // days 44 and 60, spent 300 scrap doing it, and its first Laboratory —
+    // ranked 76, forty places above this — slipped from day 68 to day 100,
+    // because an unaffordable order is demoted and the money for it had just
+    // been spent on a rank. Research is the long pole on everything below the
+    // Mids, so buying a rank with the lab's money is a bad trade however good
+    // the rank is. Paying twice over is a legible line: you are spending money
+    // you have two of, not the money you need.
+    const spare = ranked && affordable(state, doubled(upgradeCost(ranked)));
+    if (ranked && spare) {
+      const def = getRoom(ranked.type);
+      const cost = upgradeCost(ranked);
+      const per = BAL.silo.upgrade.outputPerLevel;
+      // The lift the player actually gets, which is not `outputPerLevel`: that
+      // is a share of BASE output, so a step off rank 1 is +35% and a step off
+      // rank 4 is 0.35/2.05, a little over 17%. Quoting the flat number would
+      // be selling the fifth rank at the first rank's price.
+      const lift = Math.round((per / (1 + per * (ranked.level - 1))) * 100);
+      const slots = BAL.silo.upgrade.staffSlotsPerLevel;
+      const postsNow = (slots[ranked.level - 1] || 1) * ranked.width;
+      const postsNext = (slots[ranked.level] || 1) * ranked.width;
+      const posts = postsNext > postsNow
+        ? ` and opens ${postsNext - postsNow} more post${postsNext - postsNow === 1 ? '' : 's'} in it`
+        : '';
+      add({
+        id: 'upgrade',
+        text: `Upgrade the ${def.name} on floor ${ranked.floor}`,
+        roomId: ranked.id,
+        why:
+          `It is at rank ${ranked.level} of ${BAL.silo.upgrade.maxLevel} with ${ranked.staff?.length || 0} ` +
+          `at work in it. Rank ${ranked.level + 1} lifts what it makes by about ${lift}%${posts}, ` +
+          `for ${describeCost(cost)}. The silo has more to gain from what is standing than from ` +
+          'another empty level.',
+        panel: 'build',
+        weight: 34,
       });
     }
   }
