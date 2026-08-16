@@ -676,7 +676,7 @@ export class Shell {
     // repair path — it is the same bill — but "Repair" reads as fixing damage
     // the silo did, and this is the opposite: a room the silo never had.
     if (d.id === 'restore' && d.roomId) return { label: 'Restore', run: () => this.doRepair(d.roomId) };
-    if (d.id === 'upgrade' && d.roomId) {
+    if ((d.id === 'upgrade' || d.id === 'power_rank') && d.roomId) {
       return { label: 'Upgrade', run: () => this.doUpgrade(d.roomId) };
     }
     if (d.id === 'shore' && d.floor) return { label: 'Shore', run: () => this.doShore(d.floor) };

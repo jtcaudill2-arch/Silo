@@ -124,6 +124,7 @@ function obey(state, d) {
     // better rather than keeping it alive. It goes through the same `canUpgrade`
     // the panel does, so an order the silo cannot actually follow shows up here
     // as a refusal rather than as a green run.
+    case 'power_rank':
     case 'upgrade': {
       const check = canUpgrade(state, d.roomId);
       if (!check.ok) return `refused: ${check.reason}`;

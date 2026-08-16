@@ -476,6 +476,67 @@ export function directives(state) {
     });
   }
 
+  // When there is nobody to put in another hall, the plant it has is the only
+  // plant it is going to get.
+  //
+  // OUTSIDE the census gate above, and that is the whole point of it. `power`
+  // is guarded on `genCrew >= genPosts` because another hall does nothing for a
+  // plant short of people rather than short of halls — correct, for building.
+  // For a RANK it is exactly backwards: a step that opens no new posts is the
+  // one move that makes the crew already standing there produce more, so a
+  // short-handed plant is precisely when it is worth ordering.
+  //
+  // Measured on the 200-day obedient run before this existed. From day 60 the
+  // silo sat at 69 to 88 generated against 98 to 105 wanted, with thirteen
+  // posts across three halls, ten people in them, and ZERO idle working-age
+  // residents. So the census gated `power` out, `staff` at 72 had nobody to
+  // post, `crewed()` would have dropped the build order anyway, and
+  // `research_stalled` at 62 took the bar — a hold — on 109 of the 200 days.
+  // The silo was told its labs were dark and given nothing whatever to do
+  // about it, for half a campaign. That is the sharpest form of "it feels like
+  // a sit and wait game" the measurements found.
+  //
+  // A rank is the move that fits, and it fits exactly: `staffSlotsPerLevel` is
+  // [1, 1, 2, 2, 3], so a hall going from rank 1 to 2 or from 3 to 4 opens no
+  // new posts at all and makes 35% more power out of the same people. Only
+  // those steps are offered — a step wanting two more bodies is the same order
+  // the silo already cannot follow.
+  //
+  // On a real shortfall rather than on the 90% warning `power` takes. A hall
+  // has to be ordered before the lights go because it takes shifts to build;
+  // this is the substitute for an order that cannot be followed at all, so it
+  // waits until rooms are actually being shed.
+  if (gen > 0 && demand > gen && !crewed('generator_hall')) {
+    const slots = BAL.silo.upgrade.staffSlotsPerLevel;
+    const hall = Object.values(state.silo.rooms)
+      .filter((r) => {
+        const def = getRoom(r.type);
+        if (!def?.produces?.power || !def.staff || !inService(r)) return false;
+        if ((slots[r.level] || 1) > (slots[r.level - 1] || 1)) return false;
+        return canUpgrade(state, r.id).ok;
+      })
+      .sort((a, b) => a.level - b.level || b.width - a.width)[0];
+    if (hall) {
+      const per = BAL.silo.upgrade.outputPerLevel;
+      const lift = Math.round((per / (1 + per * (hall.level - 1))) * 100);
+      add({
+        id: 'power_rank',
+        text: `Upgrade the Generator Hall on floor ${hall.floor}`,
+        roomId: hall.id,
+        why:
+          `Demand is ${Math.round(demand)} against ${Math.round(gen)} generated, and there is ` +
+          `nobody spare to stand in another hall. Rank ${hall.level + 1} opens no new posts and ` +
+          `makes about ${lift}% more power out of the same crew, for ${describeCost(upgradeCost(hall))}.`,
+        panel: 'build',
+        // Below `power` at 92 and below the failing-room band at 85, because it
+        // is a SMALLER answer to the same problem: a hall is a hall and a rank
+        // is 35% of one. Above `research_stalled` at 62, which is the hold it
+        // exists to break.
+        weight: 70,
+      });
+    }
+  }
+
   // ---- a Reactor with nothing to cool it ---------------------------------
   //
   // Said loudly, because the loss is enormous and completely silent. A Reactor

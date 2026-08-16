@@ -39,7 +39,7 @@ import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign, manageSchool, reassignmentAvailable } from '../src/sim/jobs.js';
 import autopilot from './autopilot.mjs';
-import { directives } from '../src/sim/directives.js';
+import { directives, topDirective } from '../src/sim/directives.js';
 import { readEnvironment, simulateDay as populationDay } from '../src/sim/population.js';
 import { gearStorageCap, craftableItems } from '../src/sim/military.js';
 import { computeCaps, staffSlots, roomCapability } from '../src/sim/economy.js';
@@ -7195,6 +7195,70 @@ const ERRAND_ROOM = {
     } else {
       ok(`the upgrade order names a room somebody is standing in: "${order.text}"`);
     }
+  }
+}
+
+// ---- 78. a silo short of power AND of people still has a move -------------
+//
+// The one state the standing order had nothing for. `power` at 92 — the
+// highest build order in the game — is gated on the plant being fully crewed,
+// because another hall does nothing for a plant short of people; `crewed()`
+// drops any build order the silo has not got hands for; `staff` at 72 has
+// nobody to post. So a silo that is short of generation AND out of spare
+// people falls all the way through to `research_stalled` at 62, which is a
+// hold. Measured on the 200-day obedient run: 69 to 88 generated against 98 to
+// 105 wanted, thirteen posts and ten people across three halls, zero idle
+// adults — and that hold on the bar for 109 of the 200 days.
+//
+// A rank on a hall is the move, because `staffSlotsPerLevel` is [1,1,2,2,3]:
+// rank 1 to 2 opens no new posts and makes 35% more power out of the same
+// crew. This checks that the state produces an order somebody can act on.
+{
+  const store = newStore(0x9017);
+  const s = store.state;
+  for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
+  // Everybody posted, so there is nobody to crew anything new.
+  for (const id of s.citizenIds) {
+    const c = s.citizens[id];
+    if (c && c.age >= BAL.citizens.workingAgeMin) c.job = c.job || { roomId: Object.keys(s.silo.rooms)[0] };
+  }
+  // Short of power, and the plant short of the people to fill it — which is
+  // what gates `power` out. Set after the roster so the census reads it.
+  const halls = Object.values(s.silo.rooms).filter((r) => getRoom(r.type)?.produces?.power);
+  for (const h of halls) h.staff = [];
+  s.power = { generation: 60, demand: 90, brownout: true, powered: {} };
+
+  const all = directives(s);
+  const top = topDirective(s);
+  const rank = all.find((d) => d.id === 'power_rank');
+  const actionable = all.filter((d) => !d.wait && !d.blocked);
+  if (!halls.length) {
+    fail('fixture problem: the opening silo has no generator hall, so this measures nothing');
+  } else if (!rank) {
+    fail(`a silo generating 60 against a demand of 90, with nobody spare to crew another hall, ` +
+      `is offered [${all.map((d) => d.id).join(', ')}] and not one of them is a rank on the plant ` +
+      'it already has — which is the only move that makes the crew standing there produce more');
+  } else if (top?.wait) {
+    fail(`the top order for a silo short of power and short of people is "${top.text}", a hold ` +
+      `— it can see ${actionable.length} thing(s) it could do and is telling the player to wait`);
+  } else {
+    ok(`a silo short of power with nobody spare is told to rank up the plant it has: "${rank.text}"`);
+  }
+
+  // And it does not offer the step that wants more bodies. `staffSlotsPerLevel`
+  // is [1,1,2,2,3], so rank 2 to 3 opens a post per bay — on a silo with nobody
+  // spare that is the same order it already cannot follow, dressed as a new
+  // one. Checked separately because the case above cannot see it: every hall
+  // there is at rank 1, where the guard is a no-op and deleting it changes
+  // nothing. It escaped a mutation for exactly that reason.
+  for (const h of halls) h.level = 2;
+  const stepUp = directives(s).find((d) => d.id === 'power_rank');
+  if (stepUp) {
+    const room = s.silo.rooms[stepUp.roomId];
+    fail(`with every hall at rank ${room?.level} — where the next rank opens a post per bay — the ` +
+      `silo is still told "${stepUp.text}". It has nobody to put in the posts it already has`);
+  } else {
+    ok('and not the rank that would open posts it has nobody to fill');
   }
 }
 
