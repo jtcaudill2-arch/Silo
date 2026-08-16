@@ -50,8 +50,10 @@ import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/dat
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
 import { sectionFor, suitsSection, manifestFor } from '../src/data/sections.js';
+// The floors sections.js authors by hand; the generated pick is tested on the rest.
+const NEAR_FLOORS = new Set([4, 5, 6, 7, 8, 9, 10]);
 import { streamFor } from '../src/core/rng.js';
-import { canRepair, repair, strainedFloors, canDemolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
+import { canRepair, repair, strainedFloors, canDemolish, demolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
 import { resolveExpedition, supplyCost, BANDS, homeCost } from '../src/sim/expedition.js';
 import { inService } from '../src/sim/economy.js';
 import { tierUnlocked, available as availableResearch } from '../src/sim/research.js';
@@ -7687,6 +7689,154 @@ const ERRAND_ROOM = {
   } else {
     ok(`with ${seized} rooms standing dark the power spend list still sums to the ${spent.toFixed(2)} ` +
       'the cycle spent');
+  }
+}
+
+// ---- 84. the silo is never told to demolish something it cannot replace ---
+//
+// There is no construction. A room that is stripped out is gone, and the only
+// other one of its kind is behind a seal an unknown number of levels down.
+// `canDemolish` guards the three whose loss is immediately fatal — water, air,
+// power — and the strip order needs a far wider rule than that.
+//
+// It did not have one. Naming the room lowest in `staffingPriority` sounds like
+// the silo's own judgement and is the opposite of it: `staffingRank` puts every
+// type absent from that list at the bottom, and the types absent from it are
+// the ones nothing is ever posted to — the Airlock, the Suit Bay. Measured on
+// the opening, the obedient player took this order on day 6 and demolished the
+// Airlock and the Suit Bay on floor 6, which is the entire surface half of the
+// game, and a later run ate two Air Filtration bays, a Radio Room and a Clinic.
+{
+  const store = newStore(0xA1A1);
+  const s = store.state;
+  const game = new Game(store);
+  store.dispatchAll(autoAssign(s));
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 8; n++) {
+    store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
+  }
+  game.runDays(2);
+  // The silo this order is for: it has restored what it can pay for and is
+  // still carrying most of a building it never switched on. Same shape as §82.
+  s.resources.parts = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    const next = directives(s).find((x) => x.id === 'restore');
+    if (!next) break;
+    store.dispatchAll(repair(s, next.roomId));
+  }
+
+  // Every room the order would ever name, across the whole state space it can
+  // reach: walk it, strip what it names, ask again. Checking the one room it
+  // names today would have passed on day 5 of the run that ate the Airlock.
+  const named = [];
+  for (let guard = 0; guard < 60; guard++) {
+    const d = directives(s).find((x) => x.id === 'hideouts');
+    if (!d) break;
+    const room = s.silo.rooms[d.roomId];
+    if (!room) { fail('the strip order named a room that does not exist'); break; }
+    named.push(room.type);
+    store.dispatchAll(demolish(s, d.roomId));
+  }
+
+  // Bunks and shelves, and nothing else. Written as the design claim rather
+  // than as "nothing with a post in it", which was the first attempt and was
+  // worthless: an Airlock has no staff and produces nothing — what it gives the
+  // silo is a *provision* — so the assertion sailed through a run that named
+  // `airlock` and `suit_bay` among the four rooms it offered up.
+  const FILLER = new Set(['storage_depot', 'residences']);
+  const wrong = [...new Set(named)].filter((t) => !FILLER.has(t));
+  // And the invariant underneath it, which holds whatever the filler list says:
+  // whatever was stripped, the silo still has one of its kind somewhere.
+  const lost = [...new Set(named)].filter(
+    (t) => !Object.values(s.silo.rooms).some((r) => r.type === t)
+  );
+  if (!named.length) {
+    fail('eight levels opened and the strip order never fired, so nothing was tested');
+  } else if (wrong.length) {
+    fail(`the silo was told to strip out ${wrong.join(', ')} — there is no construction, so that ` +
+      'capability is gone until another one is found behind a seal');
+  } else if (lost.length) {
+    fail(`stripping left the silo with no ${lost.join(' and no ')} anywhere in the building`);
+  } else {
+    ok(`across ${named.length} strip orders the silo only ever offered up ` +
+      `${[...new Set(named)].join(' and ')}, and still has one of each`);
+  }
+}
+
+// ---- 85. the plan puts an income within reach of the opening --------------
+//
+// Scrap and parts are what every dig, every repair and every restoration is
+// priced in, and the silo opens with 298 scrap and 60 parts and no way to make
+// either. `pick` chose the fittings with `(n * 7 + salt * 13) % list.length`
+// and the production list has exactly seven entries, so `n * 7 % 7` was zero on
+// every floor in the silo and the pick did not depend on the floor at all —
+// the same modulus collapse `splitFor` was already fixed for. Worse, the
+// Uppers' cycle carried no Machine Level whatever.
+//
+// Measured before both fixes: the first Recycling Plant on the whole plan stood
+// on floor 23 and the first Workshop on floor 31, and an obedient silo spent
+// its opening treasury digging toward an income it never reached and suffocated
+// on day 78 with 4,285 water in tanks it could not pump.
+{
+  const first = {};
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= 40; n++) {
+    for (const r of manifestFor(n)) if (first[r.type] == null) first[r.type] = n;
+  }
+  const reach = BAL.silo.startExcavatedFloors + 8;
+  const late = ['recycling', 'workshop'].filter((t) => !(first[t] <= reach));
+  if (late.length) {
+    fail(`${late.map((t) => `${getRoom(t)?.name || t} at floor ${first[t] ?? 'nowhere above 40'}`).join(' and ')} ` +
+      `— a twenty-person silo cannot dig that far on 298 scrap, and scrap is what digging costs`);
+  } else {
+    ok(`salvage is on floor ${first.recycling} and parts on floor ${first.workshop}, both inside ` +
+      `${reach - BAL.silo.startExcavatedFloors} seals of the opening`);
+  }
+
+  // And the level they are on has to be signed as what it is. `NEAR` writes
+  // floor 7's contents down, so the designation is the half that can silently
+  // disagree with them — and a Machine Level is also the only place a machine
+  // gets the section's extra bay.
+  const seven = sectionFor(first.recycling);
+  const off = manifestFor(first.recycling)
+    .filter((r) => !['storage_depot', 'residences'].includes(r.type))
+    .filter((r) => !suitsSection(first.recycling, getRoom(r.type)));
+  if (off.length) {
+    fail(`floor ${first.recycling} carries ${off.map((r) => r.type).join(', ')} and is signed a ` +
+      `${seven?.name} — the level the whole economy is on does not match what the builders put in it`);
+  } else {
+    ok(`and floor ${first.recycling} is signed a ${seven?.name}, which is what is standing on it`);
+  }
+
+  // And the pick has to actually depend on the floor. `(n * 7) % 7` is zero for
+  // every floor in the silo, so wherever the fitted list is exactly seven long
+  // the first room on the level was a constant.
+  //
+  // PER TIER, and that is the whole assertion. `allowed` filters the list by
+  // tier gate, so it is only seven long once every gate is open — in the Mids
+  // it is four or five and `% 4` does vary with n. Aggregated over the silo the
+  // bug is invisible: the old modulus still produced five distinct lead rooms
+  // and twelve distinct whole-level arrangements, and the first two versions of
+  // this check sailed through it. Split by tier it is unmissable — the Deeps,
+  // the Foundations and the Shaft, thirty-six Machine Levels between them, all
+  // led with a Workshop and nothing else.
+  const perTier = [];
+  for (const tier of BAL.silo.tiers) {
+    const leads = new Set();
+    let count = 0;
+    for (let n = Math.max(tier.from, BAL.silo.startExcavatedFloors + 1); n <= tier.to; n++) {
+      if (sectionFor(n)?.key !== 'production' || NEAR_FLOORS.has(n)) continue;
+      const fitted = manifestFor(n).find((r) => getRoom(r.type)?.category === 'production');
+      if (fitted) { count++; leads.add(fitted.type); }
+    }
+    if (count >= 5) perTier.push({ tier: tier.key, count, leads });
+  }
+  const flat = perTier.filter((t) => t.leads.size < 2);
+  if (perTier.length < 3) {
+    fail(`only ${perTier.length} tiers carry enough Machine Levels to say anything`);
+  } else if (flat.length) {
+    fail(`${flat.map((t) => `${t.count} Machine Levels in the ${t.tier} all lead with ` +
+      `${[...t.leads][0]}`).join('; ')} — the fitting pick does not depend on the floor number`);
+  } else {
+    ok(`Machine Levels vary within every tier: ${perTier.map((t) => `${t.tier} ${t.leads.size} of ${t.count}`).join(', ')}`);
   }
 }
 

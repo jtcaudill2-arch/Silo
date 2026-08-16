@@ -59,6 +59,49 @@ function staffingRank(type) {
 }
 
 /**
+ * The crewing order, corrected for what the silo actually needs this morning.
+ *
+ * `staffingPriority` is a fixed list and it has to be — it is the silo's
+ * standing policy about what matters. But one entry on it stops being true the
+ * moment it is satisfied, and it is the entry that sits third.
+ *
+ * A generator hall does not run flat out. `powerPicture` lights halls only far
+ * enough to cover the draw plus what the battery will take, so once generation
+ * is comfortably past demand the next mechanic posted to a hall produces
+ * *nothing at all* — the hall he is standing in is throttled. Meanwhile the
+ * Recycling Plant two ranks below him is the silo's only source of scrap, and
+ * scrap is what every dig, every repair and every restoration is priced in.
+ *
+ * Measured on the opening at three actions a day. The silo restored a
+ * three-bay Generator Hall on day 10 while it still had hands free, crewed it
+ * five deep, and by day 60 held fourteen working adults as seven in generation,
+ * three in water, three in crop and one in air — with 54 power generated
+ * against 49 drawn, the Recycling Plant on floor 7 standing at 0 of 6, and
+ * scrap income of exactly zero. From day 21 the standing order was a repair it
+ * could not pay for, and it read the same line for 97 of the next 129 days.
+ *
+ * Nothing could break it. `autoAssign` only places people who have no job, so
+ * a bad early assignment is permanent, and `promoteOne` — the one transfer that
+ * can move somebody already posted — is a promotion: it walks the crew of
+ * lower-ranked rooms looking for somebody to move UP. Generation outranks
+ * salvage on the fixed list, so the seven people keeping a throttled plant
+ * warm were, by the silo's own policy, exactly where they belonged.
+ *
+ * Correcting the rank rather than the list fixes both halves at once: the
+ * posts sort correctly for new hires, and the transfer becomes legal, because
+ * a hall with surplus really is ranked below the plant that has none.
+ */
+function crewingRank(state, type) {
+  const base = staffingRank(type);
+  const def = getRoom(type);
+  if (!def?.produces?.power) return base;
+  const gen = state.power?.generation || 0;
+  const demand = state.power?.demand || 0;
+  if (gen <= 0 || gen < demand * (1 + BAL.jobs.powerSlack)) return base;
+  return base + BAL.jobs.surplusRankPenalty;
+}
+
+/**
  * Greedy skill-first assignment. Fills the most important *empty* posts with
  * the best-matched idle citizens. Returns actions; assigns nobody who is
  * already better placed than the candidate we'd move them for.
@@ -92,7 +135,7 @@ export function autoAssign(state, opts = {}) {
   // order plus how deep into that room the post is.
   const posts = [];
   for (const slot of slots) {
-    const rank = staffingRank(slot.room.type);
+    const rank = crewingRank(state, slot.room.type);
     const crewed = staffSlots(slot.def, slot.room) - slot.free;
     for (let i = 0; i < slot.free; i++) {
       posts.push({ slot, score: rank + (crewed + i) * BAL.jobs.staffingDepthPenalty });
@@ -181,7 +224,7 @@ function promoteOne(state, post, pending) {
   if (!target || live(target).length > 0) return [];
 
   let bestCitizen = null;
-  let bestScore = staffingRank(target.type);
+  let bestScore = crewingRank(state, target.type);
 
   for (const id of Object.keys(state.silo.rooms)) {
     const room = state.silo.rooms[id];
@@ -211,7 +254,7 @@ function promoteOne(state, post, pending) {
     const crew = live(room);
     // Never strip the source: it would just move the dark room somewhere else.
     if (crew.length < 2) continue;
-    const score = staffingRank(room.type);
+    const score = crewingRank(state, room.type);
     if (score <= bestScore) continue;
     // Of that room's crew, give up whoever is worst at the job.
     let worst = null;

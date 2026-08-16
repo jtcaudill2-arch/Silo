@@ -896,6 +896,17 @@ export const BAL = {
     // candidate crewing orders it survives 200 days at 3 under every one of
     // them, and is a coin toss at every other value tried.
     staffingDepthPenalty: 3,
+    // How far past demand generation has to be before a hall stops attracting
+    // crew. Not zero: the plant has to lead the load, because a restored room
+    // draws the moment it lights and a hall crewed to exactly today's demand
+    // browns out tomorrow's. A fifth is about one restoration of headroom.
+    powerSlack: 0.2,
+    // And how far down the crewing order a hall with that surplus goes. Six
+    // steps takes generation from third to below salvage, air, the workshop and
+    // the benches — everything the silo is actually short of when it has more
+    // power than it draws — without moving it below the security and surface
+    // rooms, which it should still outrank the moment the surplus is spent.
+    surplusRankPenalty: 6,
   },
 
   // ---------------------------------------------------------- research ---
@@ -1152,6 +1163,27 @@ export const BAL = {
     // a room is always the better answer to the same problem and has to keep
     // its place ahead of demolishing one.
     hideoutOrder: 36,
+    // Digging *towards* a room the silo needs but no open level has. The dig
+    // itself does not deliver the room — the plan says it is several levels
+    // down — so the order is a growth project wearing an emergency's clothes,
+    // and it takes the digging band rather than the need's own rank. See the
+    // `_open` conversion in sim/directives.js for the seven consecutive days of
+    // "Open floor N" at weight 92 that this exists to stop. Just above
+    // `excavate` at 30, because digging with a reason beats digging without one.
+    openTowards: 31,
+    // How full a store has to be before its shelf space stops being surplus —
+    // the question asked before offering to close up a Storage Depot.
+    capPressure: 0.8,
+    // And how many beds have to be standing empty before a Residences counts as
+    // spare. Twelve is roughly a level's worth of bunks, so the silo keeps a
+    // whole spare level of housing before it is ever told to close one: births
+    // stop dead the moment housing goes negative, and housing is the one
+    // ceiling that cannot be rebuilt.
+    hideoutHousingSpare: 12,
+    // How far down the builders' plan is consulted when the silo is looking for
+    // a room no open level has. Bounded because `directives` is read on a rAF:
+    // unbounded, this is 140 manifests per order per frame.
+    manifestLookahead: 20,
     // How much of the building has to be dark before the order is worth the
     // bar — about two levels' worth, a level arriving with four or five rooms
     // on it. Swept at 200 days on the default seed, at five actions a day:

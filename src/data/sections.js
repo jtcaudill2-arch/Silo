@@ -82,9 +82,27 @@ export const SECTION_BLURBS = {
  * matter.
  */
 const TIER_CYCLES = {
-  // Where the silo was lived in. Nothing is made up here and the artifact
-  // tables agree — sim/dig.js weights caches to zero in the Uppers.
-  upper: ['civic', 'life', 'life', 'life', 'life', 'surface', 'civic', 'storage', 'life', 'science'],
+  // Where the silo was lived in, with the bench that kept it lived-in.
+  //
+  // This cycle read ['civic','life','life','life','life','surface','civic',
+  // 'storage','life','science'] and had no Machine Level anywhere in it, which
+  // is a pleasing idea about a residential section and an unsurvivable one. The
+  // Uppers are floors 1 to 20 and `production` is where salvage and parts are
+  // made, so the first Recycling Plant on the whole plan stood on floor 23 and
+  // the first Workshop on floor 31. Scrap buys every dig, every repair and every
+  // restoration, and the silo opens with 298 of it: measured at three actions a
+  // day, an obedient player spent the lot digging toward an income it could not
+  // reach, sat at zero scrap from day 31, watched generation decay from 33 to 0
+  // as the hall wore out unrepairable, and suffocated on day 78 with 4,285 water
+  // in tanks it could not pump.
+  //
+  // So the seventh level is the bench. It replaces the Store Level that used to
+  // sit eighth — measured, floor 8 came out as five Storage Depots and a
+  // Residences, the emptiest level in the building — and the civic level it
+  // displaces moves down one rather than being lost. Everything else is
+  // untouched, and the cycle still repeats at 17, so a silo that misses the
+  // first machine level gets another within ten floors.
+  upper: ['civic', 'life', 'life', 'life', 'life', 'surface', 'production', 'civic', 'life', 'science'],
   // The growing levels: the crop and the water that feed a silo that has
   // outgrown its spine, with the first benches and the first stores.
   mids: ['life', 'life', 'production', 'civic', 'life', 'science', 'storage', 'security'],
@@ -277,6 +295,65 @@ const OPENING = {
   ],
 };
 
+/**
+ * The first seven seals, which are the tutorial.
+ *
+ * Everything below floor 10 is generated, and generating the first levels a
+ * player ever opens was measured as unplayable twice over. `pick` chooses from
+ * a list that is written best-first and ignores the ordering, so which rooms
+ * are within reach of a twenty-person silo is a lottery: before the hash was
+ * fixed the first Recycling Plant on the plan stood on floor 23 and the first
+ * Workshop on 31, and fixing the hash moved salvage to 47. Scrap and parts are
+ * what every dig, every repair and every restoration is priced in. A silo that
+ * cannot reach either is dead in eleven weeks whatever the player does, and
+ * nothing on screen ever says why.
+ *
+ * So these seven are authored, for the same reason floors 1 to 3 are, and they
+ * are authored to teach in order: the spine that keeps people alive, then the
+ * crop and the clinic, then the door to the surface, then the two rooms the
+ * economy is denominated in, then somewhere to live, then power, then the
+ * bench. Read down them and you are reading what a silo needs, which is the
+ * one thing the old build catalogue did say and this had stopped saying.
+ *
+ * Still derelict, still priced, still yours only when you pay for them — this
+ * decides what is behind the seal, not whether you can afford it. Below floor
+ * 10 the plan goes back to being generated, by which point the silo has an
+ * income and can absorb a level that turns out to be four bays of munitions.
+ */
+const NEAR = {
+  // Air and water, doubled. The opening runs one of each and both are the
+  // first things a growing silo runs out of.
+  4: [{ type: 'air_filtration', width: 2 }, { type: 'water_reclaimer', width: 2 }],
+  // What is eaten, and who patches you up.
+  5: [{ type: 'hydroponics', width: 3 }, { type: 'clinic', width: 1 }],
+  // The door. Nothing on the surface is reachable without both of these, and
+  // this is the level the whole outside half of the game is behind.
+  6: [{ type: 'airlock', width: 2 }, { type: 'suit_bay', width: 2 }],
+  // THE ECONOMY. Salvage, parts and the bay that keeps the building standing,
+  // seven levels down — the one level on this list that is not optional, and
+  // the reason the Uppers carry a Machine Level at all.
+  //
+  // The Maintenance Bay is here because decay is what actually kills an
+  // untouched silo and nothing in reach answered it. A crew walks the floors
+  // restoring `maintenanceRestorePerCyclePerCrew` to each of the six worst
+  // rooms, which at two mechanics is about seven condition a day per room
+  // against a working decay of under one — so one bay maintains the whole
+  // opening, and it was standing on floor 23 at the nearest. Measured with
+  // nobody able to reach it: an untouched silo's rooms fall from 62 condition
+  // to 25 by day 50 and 14 by day 100, generation reaches zero, the air follows
+  // it, and everybody suffocates around day 110 with 660 scrap in the bank.
+  7: [
+    { type: 'recycling', width: 2 },
+    { type: 'workshop', width: 2 },
+  ],
+  // Where the people the silo is about to have will live and eat.
+  8: [{ type: 'cafeteria', width: 2 }, { type: 'residences', width: 2 }],
+  // Power, which is what everything above becomes once it is switched on.
+  9: [{ type: 'generator_hall', width: 3 }, { type: 'air_filtration', width: 1 }],
+  // And the bench, which is every floor below this one.
+  10: [{ type: 'laboratory', width: 2 }, { type: 'chem_lab', width: 2 }],
+};
+
 /** Is this one of the levels the silo starts alive on? */
 export function isOpeningLevel(n) {
   return Object.prototype.hasOwnProperty.call(OPENING, n);
@@ -291,7 +368,31 @@ export function isOpeningLevel(n) {
  * or the panel that shows them what is down there before they pay is lying.
  */
 function pick(list, n, salt) {
-  return list[(n * 7 + salt * 13) % list.length];
+  return list[hash(n, salt) % list.length];
+}
+
+/**
+ * The same lesson `splitFor` already learned, applied where it was still wrong.
+ *
+ * This was `(n * 7 + salt * 13) % list.length`, and the production fittings
+ * list has exactly seven entries — so `n * 7 % 7` is zero for every floor in
+ * the silo and the pick did not depend on the floor number at all. Every
+ * Machine Level in the game drew from the same four-long walk of salts.
+ *
+ * Measured: floor 7 came out `munitions, munitions, munitions, foundry` and
+ * floor 17 came out four bays of munitions, while `workshop` and `recycling` —
+ * the first two entries in the list, the two rooms every other price in the
+ * game is denominated in — stood on no level above floor 23. A hash has no
+ * such structure, and the same call now returns a Recycling Plant and a
+ * Workshop on floor 7.
+ */
+function hash(n, salt) {
+  let h = 2166136261;
+  h ^= n;
+  h = Math.imul(h, 16777619);
+  h ^= salt + 0x9e37;
+  h = Math.imul(h, 16777619);
+  return h >>> 0;
 }
 
 /**
@@ -332,6 +433,33 @@ export function manifestFor(n) {
   const section = sectionFor(n);
   if (!section) return [];
   const tierRank = BAL.silo.tiers.findIndex((t) => n >= t.from && n <= t.to);
+
+  // The authored levels, filled out the same way a generated one is: the fitted
+  // bays are written down, the lodgers fall in behind them, and the condition
+  // comes from the same depth curve so nothing about them reads as special.
+  if (NEAR[n]) {
+    const out = [];
+    let slot = 0;
+    let salt = 0;
+    for (const r of NEAR[n]) {
+      const def = getRoom(r.type);
+      if (!def) continue;
+      const width = Math.max(1, Math.min(r.width, maxWidthOn(n, def)));
+      out.push({
+        type: r.type, slot, width,
+        level: 1 + ((n + salt) % BAL.silo.derelict.maxFoundLevel),
+        condition: conditionAt(n, salt),
+      });
+      slot += width;
+      salt++;
+    }
+    while (slot < BAL.silo.slotsPerFloor) {
+      out.push({ type: pick(LODGERS, n, salt), slot, width: 1, level: 1, condition: conditionAt(n, salt) });
+      slot++;
+      salt++;
+    }
+    return out;
+  }
   const allowed = (id) => {
     const def = getRoom(id);
     if (!def) return false;

@@ -30,7 +30,8 @@ import {
   buildCostFor, describeCost, affordable, canDemolish,
 } from './build.js';
 import { hideouts, crimeOdds } from './order.js';
-import { staffSlots, inService, roomCapability } from './economy.js';
+import { manifestFor } from '../data/sections.js';
+import { staffSlots, inService, roomCapability, computeCaps } from './economy.js';
 import { readySquads } from './military.js';
 import { canLaunch } from './expedition.js';
 import { canLaunchRun, breachPierce } from './conquest.js';
@@ -130,6 +131,39 @@ const has = (state, type) =>
   );
 const count = (state, type) =>
   Object.values(state.silo.rooms).filter((r) => r.type === type && inService(r)).length;
+
+/**
+ * Is anything the silo stores actually pressing against its ceiling?
+ *
+ * Asked before offering to close up a Storage Depot: shelf space nobody is
+ * using is surplus, and shelf space that is full is the reason the salvage is
+ * being thrown away. Power is excluded — its "cap" is the battery, which is
+ * meant to sit full and is not what a depot raises.
+ */
+function nearAnyCap(state) {
+  const caps = computeCaps(state);
+  for (const [k, cap] of Object.entries(caps)) {
+    if (k === 'power' || !cap) continue;
+    if ((state.resources[k] ?? 0) >= cap * BAL.directives.capPressure) return true;
+  }
+  return false;
+}
+
+/**
+ * Is a rank on this crewless room worth buying yet?
+ *
+ * The mirror of `nearAnyCap`: a room whose whole contribution is a ceiling is
+ * worth raising when the silo is up against that ceiling and is money burned
+ * when it is not. Anything a crewless room provides that is not one of these
+ * two — the Schoolhouse's teaching, for one — is not a ceiling at all, so it
+ * falls through to true and keeps the behaviour it had.
+ */
+function worthRanking(state, def, env) {
+  const gives = Object.keys(def.provides || {});
+  if (gives.includes('depot') && !nearAnyCap(state)) return false;
+  if (gives.includes('housing') && env.housingFree > BAL.directives.hideoutHousingSpare) return false;
+  return true;
+}
 
 /** "a Generator Hall" / "an Airlock", for naming a room mid-sentence. */
 const aOrAn = (name) => `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
@@ -331,6 +365,7 @@ export function directives(state) {
   // dark. An order to build a room the silo cannot staff is exactly what this
   // gate is for; the answer was to stop the room needing staff.
   const spare = employableCitizens(state).filter((c) => !c.job).length;
+
   const PASSIVE = ['airCapacity', 'housing', 'depot', 'cap'];
   const crewed = (type) => {
     const def = getRoom(type);
@@ -352,6 +387,7 @@ export function directives(state) {
     // campaign while the silo starved with three restorable levels under it.
     return spare >= 1;
   };
+
 
   // The same question asked backwards: is the silo getting anything out of the
   // ones it has already got? An "n+1th" order is a bet that the nth is
@@ -407,10 +443,64 @@ export function directives(state) {
     const derelict = Object.values(state.silo.rooms)
       .filter((r) => r.type === type && r.found && r.buildingUntilCycle === 0)
       .map((r) => ({ room: r, check: canRepair(state, r.id) }))
-      .filter((c) => c.check.ok)
+      .filter((c) => c.check.ok && plantCanCarry(c.room))
       .sort((a, b) => (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
     if (derelict) return { kind: 'restore', room: derelict.room, cost: derelict.check.cost };
     return { kind: 'open' };
+  };
+
+  /**
+   * Whether switching this room on is something the plant can actually carry.
+   *
+   * A restore is not a purchase that finishes. It puts a permanent draw on a
+   * generator that is already running, and if the generator cannot take it the
+   * silo does not get the room — it gets a brownout, and the economy sheds
+   * rooms from the bottom of the priority list, which is where the laboratory
+   * and the filtration bay sit.
+   *
+   * `restorable` further down has had this check since the day a level first
+   * arrived furnished. `add` did not, and every "Build a X" order in the file
+   * routes through `add`. Measured on the opening at three actions a day: the
+   * silo restored a Water Reclaimer on day 2 and a Laboratory on day 8, taking
+   * demand from 31 to 53 against 32 generated, and never got above 30 generated
+   * again. It browned out on day 9 and stayed browned out until the last
+   * resident suffocated on day 78 — with 4,285 water in the tanks it could not
+   * pump and 928 food it could not eat.
+   *
+   * Generation is always allowed: a Generator Hall is how the headroom gets
+   * bigger, and refusing to restore one because there is no headroom is the
+   * deadlock this check would otherwise create.
+   */
+  function plantCanCarry(room) {
+    const def = getRoom(room.type);
+    if ((def?.produces?.power || 0) > 0) return true;
+    const wants = (def?.consumes?.power || 0) * room.width;
+    return wants <= (state.power?.generation || 0) - (state.power?.demand || 0);
+  }
+
+  /**
+   * The nearest floor at or below `from` whose plan carries this room, or null.
+   *
+   * The builders' manifest is not a secret — the player is told what is on a
+   * level before paying to open it, and this is the same table. It exists to
+   * stop `add` below turning every unmet need into "dig", at the weight of the
+   * need rather than the weight of digging.
+   *
+   * Bounded, and the bound is not cosmetic: `directives` is read from
+   * `renderChrome` on a rAF, and an unbounded scan is 140 manifests per order
+   * per frame.
+   */
+  const manifestCache = new Map();
+  const planFor = (n) => {
+    if (!manifestCache.has(n)) manifestCache.set(n, manifestFor(n));
+    return manifestCache.get(n);
+  };
+  const nearestOnThePlan = (type, from) => {
+    const last = Math.min(BAL.silo.reachableFloors, from + D.manifestLookahead);
+    for (let n = from; n <= last; n++) {
+      if (planFor(n).some((r) => r.type === type)) return n;
+    }
+    return null;
   };
 
   /**
@@ -444,6 +534,29 @@ export function directives(state) {
     // can follow. The reason it wants one rides along instead.
     const next = nextFloorToExcavate(state);
     if (next == null || !canExcavate(state).ok) return;
+
+    // AND IT ONLY KEEPS THE NEED'S WEIGHT IF THE NEXT LEVEL ACTUALLY HAS ONE.
+    //
+    // This conversion inherited the parent's rank, which is right when the dig
+    // answers the need and catastrophic when it does not. The power order is
+    // 92, the highest in the game short of a raid; there was no Generator Hall
+    // on any open level; so "Open floor N" stood at 92 every single morning,
+    // and opening a level does not produce a Generator Hall. Measured on the
+    // opening: the silo dug floors 5, 6, 7, 8, 9, 10 and 11 on seven
+    // consecutive days, one a shift, spending its whole treasury on levels it
+    // could not crew while the plant it actually had wore out behind it.
+    //
+    // The builders' plan says where the next one is, so the order can say it
+    // too. When the next seal has one, this is genuinely the highest-value
+    // action the silo can take and it keeps the rank. When it does not, it is a
+    // journey of several levels, which is a growth project — so it drops into
+    // the digging band, and the orders about staying alive today outrank it, as
+    // they should.
+    const on = nearestOnThePlan(d.room, next);
+    const near = on === next;
+    const far = on == null
+      ? `Nothing within ${D.manifestLookahead} levels of the stair head is one, on the builders' plan.`
+      : `The nearest on the plan is floor ${on}, ${on - next + 1} levels down.`;
     out.push({
       ...d,
       room: null,
@@ -451,8 +564,10 @@ export function directives(state) {
       floor: next,
       text: `Open floor ${next}`,
       why: `${d.why} Nothing standing on an open level is a ${def?.name || d.room}, and the silo ` +
-        'cannot build one — every level below is furnished and sealed, so the way to one is down.',
+        'cannot build one — every level below is furnished and sealed, so the way to one is down. ' +
+        (near ? `Floor ${next} has one on the plan.` : far),
       panel: 'build',
+      weight: near ? d.weight : Math.min(d.weight, D.openTowards),
     });
   };
 
@@ -989,9 +1104,42 @@ export function directives(state) {
   if (!restorable && dens.length >= D.hideoutWarnAt) {
     const odds = crimeOdds(state);
     const lift = Math.round((odds.fromDark / odds.base) * 100);
+    // NOTHING THE SILO CANNOT REPLACE. There is no construction: a room that is
+    // stripped out is gone, and the only other one of its kind is behind a seal
+    // some unknown number of levels down. `canDemolish` guards the three rooms
+    // whose loss is immediately fatal — water, air, power — and that is nowhere
+    // near enough here.
+    //
+    // The first attempt named the room lowest in `staffingPriority`, on the
+    // reasoning that the silo's own crewing order knows what it cares least
+    // about. That list ranks rooms it CREWS, and `staffingRank` puts everything
+    // absent from it at the bottom — so the rooms the silo has no crewing
+    // policy about sorted first, and they are exactly the ones that are
+    // irreplaceable. Measured on the opening: the silo took this order on day 6
+    // and demolished the Airlock and the Suit Bay on floor 6, the two rooms the
+    // entire surface half of the game is behind, and nothing in the game would
+    // ever have told it what it had just done. A later run ate two Air
+    // Filtration bays, the Radio Room and a Clinic.
+    //
+    // So the rule is a property rather than a ranking, and it is narrow on
+    // purpose. A room is safe to close up when everything it gives the silo is
+    // a CEILING — bunks, shelf space — and the silo is not near that ceiling.
+    // Those are also the rooms that genuinely pile up: a Storage Depot and a
+    // Residences stand on nearly every level in the building. Anything with a
+    // post in it, anything that makes something, anything behind a research
+    // gate is a capability, and a capability is never surplus.
+    const roomy = { depot: () => !nearAnyCap(state), housing: () => env.housingFree > D.hideoutHousingSpare };
     const clearable = dens
-      .filter((r) => r.buildingUntilCycle === 0 && canDemolish(state, r.id).ok)
-      .sort((a, b) => staffingRank(b.type) - staffingRank(a.type) || a.floor - b.floor)[0];
+      .filter((r) => {
+        if (r.buildingUntilCycle !== 0) return false;
+        const def = getRoom(r.type);
+        if (!def || def.staff) return false;
+        const gives = Object.keys(def.provides || {});
+        if (!gives.length || !gives.every((k) => roomy[k])) return false;
+        if (!gives.every((k) => roomy[k]())) return false;
+        return canDemolish(state, r.id).ok;
+      })
+      .sort((a, b) => a.floor - b.floor)[0];
     if (clearable) {
       const def = getRoom(clearable.type);
       add({
@@ -1697,6 +1845,21 @@ export function directives(state) {
         // (beds, stores) produces its provision on its own and is worth a rank
         // whatever the roster is doing.
         if (def.staff && !(r.staff?.length > 0)) return false;
+        // ...but only when the silo is actually pressed against the ceiling it
+        // raises, which "whatever the roster is doing" quietly stopped asking.
+        // A rank on a passive room buys a bigger number and nothing else, and
+        // this order sorts lowest-rank-and-widest first — so on the first
+        // morning of the game it names the three-bay Residences and the
+        // three-bay Storage Depot on floor 1, in that order, ahead of anything
+        // that makes something.
+        //
+        // Measured on the opening: the silo spent day one raising the bunks,
+        // the shelves and a hydroponics bay, which cost 219 of its 298 scrap
+        // and bought a housing cap it was 20 under and a stores cap it was
+        // nowhere near. Scrap is the only currency in the game, the silo has no
+        // income until it restores the Recycling Plant seven levels down, and
+        // that restoration is what the money was for.
+        if (!def.staff && !worthRanking(state, def, env)) return false;
         // AND THE RANK HAS TO BE AN IMPROVEMENT, which two of the four are not.
         //
         // `roomCapability` is ceiling x (crew / slots) and `staffSlotsPerLevel`
