@@ -69,6 +69,86 @@ export function openRoom(store, roomId, shell) {
       )
     );
 
+    // ---- what the mayor can do about it, before anything else -------------
+    //
+    // Every verb in this panel already existed — repair, upgrade, crew, strip —
+    // and every one of them was below a screen of readout. Tapping a room gave
+    // you a report and left the acting to somebody who scrolled, which is most
+    // of "it feels like a sit and wait game": the game was mostly read.
+    //
+    // So the actions come first, as one row, with their price on them. Each is
+    // the same call the section further down makes — this is a shortcut to
+    // them, not a second implementation — and a disabled one keeps its reason
+    // in the title so the row still says why not.
+    {
+      const acts = [];
+      const fixNow = canRepair(s, roomId);
+      const upNow = canUpgrade(s, roomId);
+      const short = def.staff && r.staff.length < slots;
+      const hurt = r.condition < BAL.silo.condition.penaltyBelow;
+
+      if (short) {
+        const best = bestCandidateFor(s, roomId);
+        acts.push({
+          label: best ? 'Crew it' : 'Nobody free',
+          primary: r.staff.length === 0,
+          disabled: !best,
+          title: best ? `Post ${fullName(best)}` : 'Everybody who could do this already has a post',
+          run: () => {
+            store.dispatch({ type: 'CITIZEN_ASSIGN', citizenId: best.id, roomId });
+            toast(`${fullName(best)} posted to the ${def.name}.`);
+            rerender();
+          },
+        });
+      }
+      if (r.condition < 100) {
+        acts.push({
+          label: fixNow.partial ? 'Patch' : 'Repair',
+          primary: hurt,
+          disabled: !fixNow.ok,
+          title: fixNow.ok ? describeCost(fixNow.cost) : fixNow.reason,
+          run: () => {
+            store.dispatchAll(repair(store.state, roomId));
+            toast(`${def.name} repaired.`);
+            rerender();
+          },
+        });
+      }
+      if (r.level < BAL.silo.upgrade.maxLevel && r.upgradingUntilCycle <= s.clock.cycle) {
+        acts.push({
+          label: `Upgrade to ${r.level + 1}`,
+          primary: !hurt && r.staff.length > 0,
+          disabled: !upNow.ok,
+          title: upNow.ok ? describeCost(upNow.cost || upgradeCost(r)) : upNow.reason,
+          run: () => {
+            store.dispatchAll(upgrade(store.state, roomId));
+            toast(`${def.name} upgrading.`);
+            rerender();
+          },
+        });
+      }
+
+      if (acts.length) {
+        // Only one may be the loud one, and it is the most urgent thing true of
+        // this room: crew an empty one, then fix a failing one, then grow a
+        // working one. A row of three primaries is a row of none.
+        const lead = acts.find((a) => a.primary && !a.disabled);
+        body.appendChild(
+          el(
+            'div.room-acts',
+            ...acts.map((a) =>
+              button(a.label, {
+                class: (a === lead ? 'primary' : '') + ' room-act',
+                disabled: a.disabled,
+                title: a.title,
+                onclick: a.run,
+              })
+            )
+          )
+        );
+      }
+    }
+
     // ---- why it isn't at 100% --------------------------------------------
     const reasons = [];
     // A seized room is dark because it has never been commissioned, not because

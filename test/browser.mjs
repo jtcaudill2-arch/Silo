@@ -563,6 +563,42 @@ try {
   await page.waitForSelector('.modal', { timeout: 4000 });
   const modalTitle = await page.locator('.modal .panel-title').textContent();
   ok(`tapping a room opens its panel ("${modalTitle}")`);
+
+  // And the panel opens on something to *do*, above the fold.
+  //
+  // Every verb it offers already existed — repair, upgrade, crew, strip — and
+  // every one sat below a screen of readout, so tapping a room gave a report
+  // and left the acting to whoever scrolled. That is most of what "it feels
+  // like a sit and wait game" is: the game was mostly read. Measured against
+  // the scroller's own height rather than a pixel constant, because the panel
+  // is a different height on every room.
+  const acts = await page.evaluate(() => {
+    const row = document.querySelector('.modal .room-acts');
+    if (!row) return { row: false };
+    const scroller = document.querySelector('.modal .panel-body');
+    const r = row.getBoundingClientRect();
+    const s2 = scroller ? scroller.getBoundingClientRect() : r;
+    return {
+      row: true,
+      buttons: [...row.querySelectorAll('button')].map((b) => b.textContent.trim()),
+      enabled: [...row.querySelectorAll('button:not([disabled])')].length,
+      primaries: row.querySelectorAll('button.primary').length,
+      // Wholly inside the visible part of the scroller, with no scrolling.
+      visible: r.top >= s2.top - 1 && r.bottom <= s2.bottom + 1,
+      titled: [...row.querySelectorAll('button')].every((b) => !!b.title),
+    };
+  });
+  if (!acts.row) {
+    fail('the room panel offers no action row, so every verb is still below a screen of readout');
+  } else if (!acts.visible) {
+    fail('the room panel\'s actions are below the fold — a player has to scroll before they can act');
+  } else if (acts.primaries > 1) {
+    fail(`${acts.primaries} actions are styled primary at once; a row of three loud buttons is a row of none`);
+  } else if (!acts.titled) {
+    fail('an action in the room panel carries no price or reason, so it is a button with a secret');
+  } else {
+    ok(`the room panel leads with what to do: ${acts.buttons.join(', ')} (${acts.enabled} available)`);
+  }
   if (SHOTS) await page.screenshot({ path: join(SHOT_DIR, 'room-panel.png') });
   await page.click('.modal-foot .btn');
 

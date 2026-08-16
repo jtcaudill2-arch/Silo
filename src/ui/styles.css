@@ -2266,3 +2266,19 @@ html.large-text .section-label { font-size: 12px; }
    would need the animation moved onto a wrapper that survives its own
    re-render, which is a change to how dialogs are built for the sake of
    140ms of polish on something that is already only one tap deep. */
+
+/* The room panel's action row.
+ *
+ * Every verb this panel offers used to sit below a screen of readout, so
+ * tapping a room gave a report and left acting to whoever scrolled. These are
+ * shortcuts to the same calls, above the fold, each carrying its price in the
+ * title. Wraps rather than scrolls: three is the most a room ever offers and a
+ * hidden action is the thing this row exists to stop. */
+.room-acts {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 10px 12px 2px;
+}
+.room-acts .room-act {
+  flex: 1 1 auto; min-width: 96px; min-height: var(--tap);
+  box-sizing: border-box; justify-content: center;
+}
