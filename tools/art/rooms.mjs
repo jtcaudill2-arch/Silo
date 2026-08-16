@@ -2847,13 +2847,123 @@ const CUTAWAY_ART = {
 export const FIXTURE_PREFIX = 'room_';
 export const CUTAWAY_PREFIX = 'cutaway_';
 
+/**
+ * What an upgrade looks like.
+ *
+ * The atlas held exactly one fixture per room type, so a Hydroponics Bay at
+ * level 5 drew the same picture as one at level 1 and the only thing on screen
+ * that changed was `drawFixture`'s level pips — three 2x2 rectangles, six
+ * pixels, in the bottom-left strip. Upgrading is the main thing a mid-game
+ * silo does, and doing it changed six pixels. That is the whole of "there's
+ * not enough upgrades visually", and a large part of "it doesn't give the vibe
+ * that I'm building something cool".
+ *
+ * One layer rather than 29 hand-authored ladders. Each room's fixture is its
+ * own composition and this does not touch it: it draws plant *around* the
+ * machine, the way a real installation accretes when it is uprated — another
+ * feed, more instrumentation, an auxiliary skid, a second riser. Every level
+ * adds exactly one thing, so every upgrade is visible, and the additions
+ * accumulate rather than replace so the silhouette grows monotonically.
+ *
+ * Where it may draw is set by what the renderer paints on top. `drawFixture`
+ * puts level pips along the bottom-left and `drawRoom` puts status glyphs in
+ * the top-right, so both are left clear — the same rule the fixtures
+ * themselves follow, stated at the head of this file.
+ *
+ * Palette rules hold: PAL entries or one tone() of one, ink on the shaded side
+ * for thin runs, light from the upper left, PAL.toxin reserved for radiation.
+ */
+function upgradeLayer(p, seed, level) {
+  const W = p.w;
+  const r = rng(seed + ':up');
+
+  // 2 — a second service feed dropping into the machine from the roof run.
+  // Top-left, under the conduit `ground()` already laid, clear of the glyphs.
+  if (level >= 2) {
+    const x = 6 + Math.floor(r() * 6);
+    pipev(p, x, 5, 7, 2, tone(PAL.steel, -0.12));
+    collarV(p, x, 8, 2);
+    inner(p, x - 2, 11, 6, 3, tone(STEEL, -0.2));
+  }
+
+  // 3 — instrumentation. A run of indicator lamps says the plant is watched,
+  // and reads as "more going on" at forty pixels tall better than any amount
+  // of extra structure.
+  if (level >= 3) {
+    const y = 7;
+    for (let i = 0; i < 3; i++) {
+      const x = 22 + i * 5;
+      p.frame(x, y, 3, 3, PAL.ink);
+      p.set(x + 1, y + 1, i === 2 ? AMBER : tone(PAL.verdigris, -0.1));
+    }
+  }
+
+  // 4 — an auxiliary skid standing on the contact line, low and to the right.
+  // The first addition that changes the silhouette, which is why it waits
+  // until here: a level-4 room should read as bigger from across the screen.
+  // Clear of the bottom-LEFT strip the pips use, and below the top-right
+  // corner the glyphs use.
+  if (level >= 4) {
+    const w = 10;
+    const x = W - w - 2;
+    const h = 11;
+    solid(p, x, FX_LINE - h, w, h, tone(PAL.steelDark, -0.18), { lit: 0.24, dark: -0.28 });
+    inner(p, x + 2, FX_LINE - h + 3, w - 4, 4, AMBER_DIM);
+    rivets(p, x + 2, FX_LINE - 3, 4, 2, tone(STEEL, 0.3));
+  }
+
+  // 5 — the riser. A stack running the full height of the bay is the tallest
+  // thing in it and the clearest "this one is finished".
+  //
+  // Down the middle rather than the right-hand edge: the right edge above the
+  // skid is where `drawRoom` paints its status glyphs, and a riser there would
+  // be a chimney with a warning triangle hanging off it.
+  if (level >= 5) {
+    const x = 36;
+    pipev(p, x, 5, FX_LINE - 5, 3, tone(PAL.steel, 0.08));
+    collarV(p, x, 9, 3);
+    collarV(p, x, FX_LINE - 10, 3);
+  }
+  return p;
+}
+
+/**
+ * How many distinct fixtures a room type has, and which one a level asks for.
+ *
+ * Level 1 keeps the bare `room_<id>` name so every existing caller, save and
+ * test goes on working, and so a room type that never gets a variant still
+ * draws. Above that the name carries the level.
+ */
+export const MAX_FIXTURE_LEVEL = 5;
+export function fixtureName(id, level = 1) {
+  const n = Math.max(1, Math.min(MAX_FIXTURE_LEVEL, Math.round(level || 1)));
+  return n === 1 ? `${FIXTURE_PREFIX}${id}` : `${FIXTURE_PREFIX}${id}_l${n}`;
+}
+
 function bind(art, prefix) {
   const out = {};
   for (const id of Object.keys(art)) out[id] = (p) => art[id](p, prefix + id);
   return out;
 }
 
+/**
+ * The same, at a level: the room's own art, then the plant an upgrade adds.
+ */
+function bindLevels(art, prefix) {
+  const out = {};
+  for (const id of Object.keys(art)) {
+    out[id] = (p, level) => {
+      art[id](p, prefix + id);
+      if (level > 1) upgradeLayer(p, prefix + id, level);
+      return p;
+    };
+  }
+  return out;
+}
+
 export const ROOM_FIXTURES = bind(FIXTURE_ART, FIXTURE_PREFIX);
+/** The same set, drawn at a level. See upgradeLayer(). */
+export const ROOM_FIXTURES_LEVELLED = bindLevels(FIXTURE_ART, FIXTURE_PREFIX);
 export const ROOM_CUTAWAYS = bind(CUTAWAY_ART, CUTAWAY_PREFIX);
 
 export const FIXTURE_SIZE = { w: FX_W, h: FX_H };

@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 import { atlas, hash, PAL } from './art/lib.mjs';
 import {
-  ROOM_FIXTURES, ROOM_CUTAWAYS, FIXTURE_SIZE, CUTAWAY_SIZE,
+  ROOM_FIXTURES, ROOM_FIXTURES_LEVELLED, fixtureName, MAX_FIXTURE_LEVEL, ROOM_CUTAWAYS, FIXTURE_SIZE, CUTAWAY_SIZE,
 } from './art/rooms.mjs';
 import {
   drawCitizen, drawPortrait, ACTIONS, ROLES, CONSUMER_ACTIONS, CONSUMER_ROLES,
@@ -54,8 +54,16 @@ const sheet = atlas(SIZE);
 // one per bay at ~60×33 on screen. Authored at 64×36 so the renderer is very
 // nearly 1:1 instead of stretching a 32×32 to double width, which is what made
 // every room look smeared.
-for (const [id, draw] of Object.entries(ROOM_FIXTURES)) {
-  draw(sheet.sprite(`room_${id}`, FIXTURE_SIZE.w, FIXTURE_SIZE.h), hash(`fixture:${id}`));
+// One per room type per level. A room used to draw the same picture at level 5
+// as at level 1 — the only difference on screen was three 2x2 pips — so the
+// main thing a mid-game silo does changed six pixels. `upgradeLayer` adds one
+// element per level on top of the room's own composition, and every upgrade is
+// visible. Level 1 keeps the bare name so nothing that already asks for
+// `room_<id>` has to know about any of this.
+for (const [id, draw] of Object.entries(ROOM_FIXTURES_LEVELLED)) {
+  for (let level = 1; level <= MAX_FIXTURE_LEVEL; level++) {
+    draw(sheet.sprite(fixtureName(id, level), FIXTURE_SIZE.w, FIXTURE_SIZE.h), level);
+  }
 }
 
 // Detail cutaways for the room panel: a full opaque interior with walls,

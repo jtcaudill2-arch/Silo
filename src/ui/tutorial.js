@@ -172,8 +172,16 @@ export function startTutorial({
     { type: 'button', onclick: () => finish(index === steps.length - 1) },
     'Skip'
   );
+  // `unplaced` until the geometry has run. The card is `position: absolute`
+  // with `top: 0; left: 0` in the stylesheet, so between going into the
+  // document and its first `place()` it sits in the top-left corner — over the
+  // clock, the counters and the speed control, with a live Skip button on it.
+  // `test/mobile.mjs` catches that as two top-bar controls a finger cannot
+  // reliably hit; in the hand it is a thumb going for 2x speed and quitting
+  // the tutorial instead. Nothing else on this layer takes a tap, so hiding
+  // the card until it knows where it goes is the whole fix.
   const card = el(
-    'div.tut-card',
+    'div.tut-card.unplaced',
     { role: 'status', 'aria-live': 'polite' },
     caret,
     eyebrow,
@@ -460,6 +468,8 @@ export function startTutorial({
 
   function place(left, top) {
     setBox(card, left, top, null, null);
+    // Placed, so it may be seen. See `.tut-card.unplaced`.
+    card.classList.remove('unplaced');
   }
 
   /**

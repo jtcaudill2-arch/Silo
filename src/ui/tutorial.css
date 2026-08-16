@@ -135,3 +135,8 @@ body.reduced-motion .tut-pulse { animation: none; opacity: 0.34; }
 .tut-skip:active { background: var(--concrete-lit); color: var(--bone); }
 
 .large-text .tut-copy { font-size: 16px; }
+
+/* Until the geometry has run. See tutorial.js — the card is absolutely
+   positioned at 0,0 by default, which is the top bar, and its Skip button is
+   the one thing on this layer that takes a tap. */
+.tut-card.unplaced { visibility: hidden; }

@@ -268,12 +268,34 @@ export function drawRoom(ctx, room, state, cam, flicker) {
 }
 
 /**
+ * Which fixture a room of this level draws.
+ *
+ * Level 1 keeps the bare `room_<id>`, so every save, test and caller that
+ * predates levelled art goes on working and a type with no variants baked
+ * still draws. Mirrors `tools/art/rooms.mjs:fixtureName` — the renderer cannot
+ * import from tools/, so the two agree by test rather than by sharing code
+ * (test/atlas.mjs walks every name this can produce against the sheet).
+ */
+function fixtureAtLevel(id, level) {
+  const n = Math.max(1, Math.min(BAL.silo.upgrade.maxLevel, Math.round(level || 1)));
+  const name = n === 1 ? `room_${id}` : `room_${id}_l${n}`;
+  return sprites.frame(name) ? name : `room_${id}`;
+}
+
+/**
  * One atlas fixture per bay, so a three-wide room reads as three machines
  * rather than one stretched one. Dimmed when the room isn't running.
  */
 function drawFixture(ctx, room, def, x, y, w, h, running) {
   if (!sprites.isLoaded()) return false;
-  const name = `room_${def.id}`;
+  // The room at its level. An upgraded room used to draw the same picture as a
+  // new one and the only thing that changed was the pips below — six pixels for
+  // the main thing a mid-game silo does. The sheet carries five fixtures per
+  // type now; `tools/art/rooms.mjs:upgradeLayer` is what the extra plant is.
+  //
+  // Falls back to the bare name, which is level 1's, so a room type whose
+  // variants have not been baked still draws rather than vanishing.
+  const name = fixtureAtLevel(def.id, room.level);
   if (!sprites.frame(name)) return false;
   const bayW = w / room.width;
   ctx.save();

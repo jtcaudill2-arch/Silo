@@ -39,10 +39,13 @@ import { ROOM_LIST } from '../src/data/rooms.js';
 import { ITEM_LIST } from '../src/data/items.js';
 import { BAL } from '../src/config/balance.js';
 import { CONSUMER_ROLES } from '../tools/art/citizens.mjs';
+import { ROOM_FIXTURES_LEVELLED } from '../tools/art/rooms.mjs';
+import { atlas as artAtlas } from '../tools/art/lib.mjs';
 import {
   adoptAtlas, citizenAction, citizenFrame, citizenRole, isLoaded,
 } from '../src/render/sprites.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
+import { drawRoom } from '../src/render/floors.js';
 
 const failures = [];
 const fail = (m) => failures.push(m);
@@ -157,7 +160,14 @@ console.log('');
   // The families built from data. One direction only: these live beside frames
   // named by literals, so an unused one proves nothing.
   const fromData = [
-    ...ROOM_LIST.map((r) => `room_${r.id}`),
+    // Every room at every level it can reach. The sheet used to carry one
+    // fixture per type, so an upgraded room drew the same picture as a new one;
+    // there are five each now and `render/floors.js:fixtureAtLevel` names them
+    // by the same rule `tools/art/rooms.mjs:fixtureName` bakes them by. The two
+    // cannot import from each other, so this is where they are held together.
+    ...ROOM_LIST.flatMap((r) =>
+      Array.from({ length: BAL.silo.upgrade.maxLevel }, (_, i) =>
+        (i === 0 ? `room_${r.id}` : `room_${r.id}_l${i + 1}`))),
     ...ROOM_LIST.map((r) => `cutaway_${r.id}`),
     ...ITEM_LIST.map((i) => `gear_${i.id}`),
     ...[...probeOf.keys()].map((r) => `portrait_${r}`),
@@ -400,6 +410,107 @@ drawCitizens(after.ctx, s, cam);
     }
   }
 }
+
+// ---- 5. an upgraded room draws an upgraded room ----------------------------
+//
+// Placed after the sheet is installed, because `drawFixture` returns false
+// before it looks at anything when no atlas is loaded — run earlier this
+// blitted nothing at all and proved it.
+//
+// The sheet carrying five fixtures per type is only half of it: the renderer
+// has to ask for the right one. It asked for `room_<id>` flat, so a level-5
+// Hydroponics Bay drew the same picture as a new one and the only thing that
+// changed on upgrade was `drawFixture`'s three 2x2 level pips — six pixels for
+// the main thing a mid-game silo does.
+//
+// Checked through `drawFixture` itself rather than by reading the name it
+// builds, because a room that draws *nothing* would also never draw the wrong
+// thing. Each level must blit, and no two levels may blit the same frame.
+{
+  const store = new Store(createNewGame({ seed: 0x1e5e1, now: 1_700_000_000_000 }));
+  store.silent = true;
+  const s = store.state;
+  const room = Object.values(s.silo.rooms)[0];
+  const blits = new Map();
+  const ctx = {
+    set fillStyle(_v) {}, get fillStyle() { return ''; },
+    set globalAlpha(_v) {}, get globalAlpha() { return 1; },
+    save() {}, restore() {},
+    set strokeStyle(_v) {}, get strokeStyle() { return ''; },
+    set lineWidth(_v) {}, get lineWidth() { return 1; },
+    set font(_v) {}, get font() { return ''; },
+    set textAlign(_v) {}, get textAlign() { return ''; },
+    set textBaseline(_v) {}, get textBaseline() { return ''; },
+    fillRect() {}, strokeRect() {}, fillText() {}, beginPath() {}, moveTo() {},
+    lineTo() {}, stroke() {}, closePath() {}, clip() {}, arc() {}, fill() {},
+    measureText() { return { width: 0 }; },
+    drawImage(_img, sx, sy) { blits.set(room.level, `${sx},${sy}`); },
+  };
+
+  const max = BAL.silo.upgrade.maxLevel;
+  room.powered = true;
+  room.buildingUntilCycle = 0;
+  const cam = { time: 0, worldTime: 0, camY: 0, drawn: 0, spriteBudget: 400 };
+  for (let n = 1; n <= max; n++) {
+    room.level = n;
+    drawRoom(ctx, room, s, cam, 0);
+  }
+
+  const drawn = [...blits.values()];
+  const distinct = new Set(drawn).size;
+  if (blits.size !== max) {
+    fail(`only ${blits.size} of ${max} room levels blitted anything at all, so this cannot tell ` +
+      'whether an upgrade changes the picture');
+  } else if (distinct !== max) {
+    fail(`${max} levels of the same room drew ${distinct} distinct frames — upgrading it does not ` +
+      'change what is on screen, which is the whole of "there are not enough upgrades visually"');
+  } else {
+    ok(`all ${max} levels of a room draw a different fixture`);
+  }
+
+  // And the fixtures differ in their pixels, not just in their names.
+  //
+  // The check above compares which frame the renderer asks for, and five
+  // identical pictures packed at five positions satisfy it — deleting the
+  // upgrade layer entirely left it green. So the art is redrawn here and the
+  // buffers compared: each level must differ from the one below it, and the
+  // distance from level 1 must grow, because the layer accumulates rather than
+  // replaces and a ladder that wanders is not a ladder.
+  const shots = [];
+  for (let n = 1; n <= max; n++) {
+    const sheetN = artAtlas(128);
+    const draw = ROOM_FIXTURES_LEVELLED[room.type];
+    if (!draw) break;
+    draw(sheetN.sprite('probe', 64, 36), n);
+    shots.push(sheetN.px.slice(0, 128 * 40 * 4));
+  }
+  const diff = (a, b) => {
+    let n = 0;
+    for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 3] !== b[i + 3]) n++;
+    return n;
+  };
+  if (shots.length !== max) {
+    fail(`${room.type} has no levelled art at all, so nothing here compares anything`);
+  } else {
+    const steps = [];
+    for (let i = 1; i < max; i++) steps.push(diff(shots[i - 1], shots[i]));
+    const fromBase = shots.slice(1).map((s2) => diff(shots[0], s2));
+    const still = steps.findIndex((d) => d === 0);
+    const shrank = fromBase.findIndex((d, i) => i > 0 && d <= fromBase[i - 1]);
+    if (still >= 0) {
+      fail(`upgrading a ${room.type} from level ${still + 1} to ${still + 2} changes not one ` +
+        'pixel of its art — the frames are distinct names for the same picture');
+    } else if (shrank >= 0) {
+      fail(`a ${room.type} at level ${shrank + 3} is closer to a new one than at level ` +
+        `${shrank + 2} (${fromBase[shrank]} pixels against ${fromBase[shrank - 1]}) — the ladder ` +
+        'goes backwards, so an upgrade undoes the last one');
+    } else {
+      ok(`and each level redraws it: ${steps.join(', ')} pixels changed per step, ` +
+        `${fromBase[fromBase.length - 1]} from new to finished`);
+    }
+  }
+}
+
 
 console.log('');
 if (failures.length) {
