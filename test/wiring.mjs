@@ -48,6 +48,7 @@ import { RESEARCH, RESEARCH_LIST } from '../src/data/research.js';
 import { ITEM_LIST, getItem, itemsOfKind, bestCraftable, LOOT } from '../src/data/items.js';
 import { build as buildRoom } from '../src/sim/build.js';
 import { digOutcome } from '../src/sim/dig.js';
+import { sectionFor, suitsSection } from '../src/data/sections.js';
 import { streamFor } from '../src/core/rng.js';
 import { canRepair, repair, strainedFloors, canDemolish, canUpgrade, canShore, canExcavate } from '../src/sim/build.js';
 import { resolveExpedition, supplyCost, BANDS, homeCost } from '../src/sim/expedition.js';
@@ -6105,10 +6106,37 @@ const ERRAND_ROOM = {
   // and deleting the clinic clause survived a mutation run that relied on the
   // roster happening to contain a casualty.
   {
-    const clinicFloors = Object.values(s.silo.rooms)
-      .filter((r) => r.type === 'clinic').map((r) => r.floor);
+    // The clinic is planted too, on a level with no beds on it.
+    //
+    // It used to read whichever clinic the autopilot happened to build, and
+    // that made this assertion a hostage to sixty days of economy: change any
+    // price in the game and the autopilot lays the silo out differently. It
+    // did — a build discount moved the clinic onto floor 4, which in that run
+    // also carried a Residences, and `errandFor`'s "a journey to where you
+    // are is a person twitching in a doorway" filter correctly dropped every
+    // one of the twelve. Correct behaviour, invisible test. So the fixture
+    // states what it needs instead of hoping for it: a clinic on an open floor
+    // that has room and no bunks, which is the arrangement the errand is
+    // actually about.
+    const bunkFloors = new Set(
+      Object.values(s.silo.rooms).filter((r) => r.type === 'residences').map((r) => r.floor)
+    );
+    let clinicFloors = Object.values(s.silo.rooms)
+      .filter((r) => r.type === 'clinic' && !bunkFloors.has(r.floor)).map((r) => r.floor);
     if (!clinicFloors.length) {
-      fail('the fixture has no clinic, so nobody can be shown walking to one');
+      const spot = s.silo.floors.find(
+        (f) => f.excavated && !bunkFloors.has(f.n) && f.slots.some((x) => x == null)
+      );
+      if (spot) {
+        placeRoom(s, { type: 'clinic', floor: spot.n, slot: spot.slots.indexOf(null), width: 1, level: 1 });
+        // `floorsWith` caches per cycle, so a room added mid-fixture is
+        // invisible until the cache is stepped past.
+        s.clock.cycle += 1;
+        clinicFloors = [spot.n];
+      }
+    }
+    if (!clinicFloors.length) {
+      fail('the fixture has no clinic on a floor without bunks, so nobody can be shown walking to one');
     } else {
       // A ward's worth rather than one person: which floor any individual
       // idles on is decided inside the renderer, and somebody who already
@@ -7018,6 +7046,105 @@ const ERRAND_ROOM = {
   } else {
     ok(`all ${inNpm.size} suites run both under \`npm test\` and in CI, and every suite on disk ` +
       'is one of them');
+  }
+}
+
+// ---- 76. the silo was built, and every level is on the plan ----------------
+//
+// A sealed level used to be an unknown behind a door and six interchangeable
+// bays behind that, which is why a silo whose own fiction says it was built
+// read as one being dug out. Every floor now carries a designation off the
+// builders' plan, and it buys one thing: a room of that kind can be extended a
+// bay wider than the silo's ordinary limit.
+//
+// Four claims, and the first two are what the rest stand on: the opening silo
+// has to sit on a plan that matches it, or the first thing the game teaches is
+// that placement does not matter.
+{
+  const store = newStore(0x5EC7);
+  const s = store.state;
+
+  // 1. Every floor in the silo has a designation, and it is stable.
+  const missing = [];
+  for (let n = 1; n <= BAL.silo.totalFloors; n++) {
+    const sec = sectionFor(n);
+    if (!sec || !sec.key || !sec.name || !sec.blurb) missing.push(n);
+    else if (sectionFor(n).key !== sec.key) missing.push(n);
+  }
+  if (missing.length) {
+    fail(`${missing.length} of ${BAL.silo.totalFloors} levels have no designation (first: floor ` +
+      `${missing[0]}) — a player opening one is told nothing about what is behind the seal`);
+  } else {
+    const spread = new Set();
+    for (let n = 1; n <= BAL.silo.totalFloors; n++) spread.add(sectionFor(n).key);
+    if (spread.size < 5) {
+      fail(`the whole silo is ${spread.size} kind${spread.size === 1 ? '' : 's'} of level ` +
+        `(${[...spread].join(', ')}) — a plan that says the same thing 144 times is not a plan`);
+    } else {
+      ok(`all ${BAL.silo.totalFloors} levels carry a designation, across ${spread.size} kinds`);
+    }
+  }
+
+  // 2. The silo it ships with stands on levels that were built for it. This is
+  //    the one place the cycles in sections.js are pinned to something real —
+  //    move a starting room and this goes red rather than the player quietly
+  //    learning on their first morning that the plan means nothing.
+  const wrong = Object.values(s.silo.rooms)
+    .filter((r) => !suitsSection(r.floor, getRoom(r.type)))
+    .map((r) => `${getRoom(r.type)?.name} on floor ${r.floor} (a ${sectionFor(r.floor)?.name})`);
+  if (wrong.length) {
+    fail(`the silo opens with ${wrong.length} of ${Object.keys(s.silo.rooms).length} rooms off ` +
+      `their own kind of level: ${wrong.join(', ')} — the opening has to read as a silo that was ` +
+      'built correctly');
+  } else {
+    ok(`all ${Object.keys(s.silo.rooms).length} rooms the silo opens with stand on the kind of ` +
+      'level they were built for');
+  }
+
+  // 3. The fourth bay exists, and only there. Checked through `placements`,
+  //    which is what the placement screen actually asks — a ceiling that is
+  //    right in `maxWidthOn` and not read by the merge rule is no ceiling.
+  const hydro = getRoom('hydroponics');
+  const fitted = [];
+  const plain = [];
+  for (let n = 1; n <= 40; n++) (suitsSection(n, hydro) ? fitted : plain).push(n);
+  const widthReached = (n) => {
+    const probe = newStore(0x5EC7);
+    const p = probe.state;
+    for (const k of Object.keys(p.resources)) p.resources[k] = 1e6;
+    for (const f of p.silo.floors) { f.excavated = true; f.slots.fill(null); }
+    for (const id of Object.keys(p.silo.rooms)) delete p.silo.rooms[id];
+    // Bay by bay, the way a player widens a room: build the same type next
+    // door and it merges, until the floor's ceiling refuses the next one.
+    for (let slot = 0; slot < BAL.silo.slotsPerFloor; slot++) {
+      probe.dispatchAll(buildRoom(p, n, slot, 'hydroponics'));
+    }
+    return Math.max(0, ...Object.values(p.silo.rooms).map((r) => r.width));
+  };
+  if (!fitted.length || !plain.length) {
+    fail('fixture problem: the first forty levels are all one kind, so this compares nothing');
+  } else {
+    const on = widthReached(fitted[0]);
+    const off = widthReached(plain[0]);
+    const want = BAL.silo.merge.maxWidth + BAL.silo.section.extraWidth;
+    if (on !== want || off !== BAL.silo.merge.maxWidth) {
+      fail(`a Hydroponics reaches ${on} bays on floor ${fitted[0]}, which was built for it, and ` +
+        `${off} on floor ${plain[0]}, which was not — expected ${want} and ` +
+        `${BAL.silo.merge.maxWidth}. The extra span is the only thing a designation buys`);
+    } else {
+      ok(`a room grows to ${on} bays on the kind of level it was built for and ${off} anywhere ` +
+        'else');
+    }
+  }
+
+  // 4. And opening a level says which kind it is, in the line the player reads.
+  const said = digOutcome(s, 41, streamFor(s.meta.seed, 'dig', 41));
+  const name41 = sectionFor(41)?.name;
+  if (!said.text.includes(name41)) {
+    fail(`opening floor 41 says "${said.text.slice(0, 90)}…" and never names it a ${name41} — ` +
+      'the designation is the only news on most levels');
+  } else {
+    ok(`opening a level leads with what it was built for: "${said.text.slice(0, 72)}…"`);
   }
 }
 

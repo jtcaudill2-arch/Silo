@@ -278,7 +278,7 @@ const siloReducers = {
     }
     pushLog(state, {
       kind: o?.kind || 'alert',
-      text: o?.text || `Floor ${a.floor} is open. Six bays of bare rock and a lighting circuit.`,
+      text: o?.text || `Floor ${a.floor} is open. Six bays stripped to the shell, and a lighting circuit.`,
       data: { floor: a.floor },
     });
     emit('alert', { kind: 'good', glyph: '⌗', text: `Floor ${a.floor} excavated`, floor: a.floor });

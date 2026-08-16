@@ -7,9 +7,16 @@
  * broken — and what is on the other side is the point.
  *
  * Before this, every floor opened onto the same sentence: "Six bays of bare
- * rock and a lighting circuit." Digging was a purchase with a known price and
- * a known result, which made the only question whether the silo could afford
- * it. That is a budget, not a decision.
+ * rock and a lighting circuit." Opening one was a purchase with a known price
+ * and a known result, which made the only question whether the silo could
+ * afford it. That is a budget, not a decision.
+ *
+ * The rock is also gone from that sentence, and it had to be: a level the
+ * builders sealed is a built level with its fittings stripped, not a cavity.
+ * Every opened floor now leads with its designation off the silo's own plan —
+ * see data/sections.js — so even the emptiest one arrives as a Machine Level
+ * or a Support Level with the ducting still in the wall, rather than as six
+ * interchangeable holes.
  *
  * Depth does two things here, and they pull against each other. It raises what
  * a level is worth — the old stores nearer the Foundations are richer, and the
@@ -29,6 +36,7 @@
  */
 
 import { BAL } from '../config/balance.js';
+import { sectionFor } from '../data/sections.js';
 import { tierForFloor } from './research.js';
 import { LOOT } from '../data/items.js';
 import { namedLevel } from '../data/levels.js';
@@ -69,7 +77,7 @@ const OUTCOMES = [
     id: 'bare',
     kind: 'alert',
     weight: [70, 40, 26, 18, 12, 8],
-    text: () => 'Six bays of bare rock and a lighting circuit that still works.',
+    text: () => 'Six bays stripped to the shell, and a lighting circuit that still works.',
   },
   {
     id: 'stores',
@@ -222,7 +230,17 @@ export function digOutcome(state, floorN, rng) {
   const chosen = pick(rng, table, ti);
   const out = { id: chosen.id, kind: chosen.kind, floor: floorN };
   Object.assign(out, chosen.apply ? chosen.apply(rng, ti) : {});
-  out.text = `Floor ${floorN} is open. ${chosen.text(out)}`;
+
+  // The designation leads, because on most levels it is the only news. Roughly
+  // half of every roll is `bare` up top, and "six bays and a lighting circuit"
+  // told the player nothing they could act on; "a Machine Level, deep footings
+  // and a crane rail" tells them what to put there and that it will take a
+  // fourth bay when they do.
+  const section = sectionFor(floorN);
+  out.section = section?.key || null;
+  out.text = section
+    ? `Floor ${floorN} is open — a ${section.name}. ${chosen.text(out)} ${section.blurb}`
+    : `Floor ${floorN} is open. ${chosen.text(out)}`;
   return out;
 }
 

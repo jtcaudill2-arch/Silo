@@ -676,7 +676,7 @@ export class Shell {
     if (d.id === 'restore' && d.roomId) return { label: 'Restore', run: () => this.doRepair(d.roomId) };
     if (d.id === 'shore' && d.floor) return { label: 'Shore', run: () => this.doShore(d.floor) };
     if (d.id === 'staff') return { label: 'Crew', run: () => this.doAutoAssign() };
-    if (d.id === 'excavate') return { label: 'Dig', run: () => this.doExcavate() };
+    if (d.id === 'excavate') return { label: 'Open', run: () => this.doExcavate() };
     // Both orders that name a node put it on the bench. "Open" left the player
     // in front of the whole tree holding the name of one of them.
     if (d.research) return { label: 'Start', run: () => this.doResearch(d.research) };
@@ -794,7 +794,7 @@ export class Shell {
     }
     const floor = check.floor;
     this.store.dispatchAll(startExcavation(this.state));
-    toast(`Excavation of floor ${floor} has begun.`);
+    toast(`The crew is opening floor ${floor}.`);
     if (floor) this.focusFloor(floor);
   }
 

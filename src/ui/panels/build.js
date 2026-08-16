@@ -27,6 +27,7 @@ import {
   buildCycles,
 } from '../../sim/build.js';
 import { tierForFloor } from '../../sim/research.js';
+import { sectionFor, SECTION_NAMES } from '../../data/sections.js';
 import { el, button, sectionLabel, toast, fmtDuration, humanise, chip } from '../dom.js';
 
 let category = 'all';
@@ -98,6 +99,21 @@ export const buildPanel = {
   },
 };
 
+/**
+ * The next sealed level, and what is behind the door.
+ *
+ * The words changed here and they are not decoration. sim/dig.js has always
+ * said the silo was built rather than carved — "it was built, all hundred and
+ * forty-four floors of it, and the ones below the lit part were sealed by
+ * somebody who had a reason" — and this panel said "Excavate floor 46" and
+ * "Dig", which is the one place a player would have formed the opposite
+ * impression. A silo you are digging out and a silo you are relighting are
+ * different games. This one is the second.
+ *
+ * The designation is the other half. A sealed level is no longer an unknown:
+ * the silo's own plan says what floor 46 was fitted for, so opening one is a
+ * decision with information in it rather than a purchase.
+ */
 function excavationSection(state, shell) {
   const dig = state.silo.excavating;
   const next = nextFloorToExcavate(state);
@@ -110,8 +126,8 @@ function excavationSection(state, shell) {
         'div.excavate',
         el(
           'div.excavate-main',
-          el('div.excavate-title', `Excavating floor ${dig.floor}`),
-          el('div.excavate-sub', `${fmtDuration(left)} remaining. The crew is down there now.`)
+          el('div.excavate-title', `Opening floor ${dig.floor}`),
+          el('div.excavate-sub', `${fmtDuration(left)} remaining. The crew is at the seal now.`)
         )
       )
     );
@@ -125,7 +141,7 @@ function excavationSection(state, shell) {
         el(
           'div.excavate-main',
           el('div.excavate-title', 'Every floor is open'),
-          el('div.excavate-sub', `${BAL.silo.totalFloors} down to bedrock.`)
+          el('div.excavate-sub', `All ${BAL.silo.totalFloors}, down to the shaft floor.`)
         )
       )
     );
@@ -135,22 +151,28 @@ function excavationSection(state, shell) {
   const cost = excavationCost(state);
   const check = canExcavate(state);
   const tier = tierForFloor(next);
+  const section = sectionFor(next);
 
   wrap.appendChild(
     el(
       'div.excavate',
       el(
         'div.excavate-main',
-        el('div.excavate-title', `Excavate floor ${next}`),
-        el('div.excavate-sub', `${tier.name} · ${describeCost(cost)}`),
+        el('div.excavate-title', `Open floor ${next}`),
+        el(
+          'div.excavate-sub',
+          section ? `${section.name} · ${tier.name} · ${describeCost(cost)}`
+            : `${tier.name} · ${describeCost(cost)}`
+        ),
+        section ? el('div.excavate-note', section.blurb) : null,
         !check.ok ? el('div.excavate-warn', check.reason) : null
       ),
-      button('Dig', {
+      button('Break the seal', {
         class: 'primary',
         disabled: !check.ok,
         onclick: () => {
           shell.store.dispatchAll(startExcavation(state));
-          toast(`Excavation of floor ${next} has begun.`);
+          toast(`The crew is opening floor ${next}.`);
           shell.renderPanel(true);
         },
       })
@@ -240,6 +262,14 @@ function catalogueRow(shell, opt) {
         output ? chip(`+${output}/cycle`, 'good') : null,
         upkeep ? chip(`−${upkeep}/cycle`, 'bad') : null,
         chip(fmtDuration(buildCycles(def))),
+        // The kind of level this belongs on. It is the same for every room in
+        // a category, which would make it furniture on a list sorted any other
+        // way — but the catalogue is the screen where the player is deciding
+        // WHAT, and where a thing goes is half of that decision. The floors
+        // themselves light up once they pick.
+        ok && SECTION_NAMES[def.category]
+          ? chip(SECTION_NAMES[def.category], 'good')
+          : null,
         // Room left, but only when running out of it is news.
         //
         // This used to print on every row, and on the first morning every row
@@ -273,6 +303,10 @@ function floorSection(state, shell) {
   const strip = el('div.floor-strip');
   for (const f of dug) {
     const free = f.slots.filter((s) => s == null).length;
+    // What the builders fitted this level for. Abbreviated to three letters
+    // because a pip is 46px and already carries a number and a bay count; the
+    // full name is in the title and on the room panel.
+    const sec = sectionFor(f.n);
     strip.appendChild(
       el(
         'button.floor-pip' + (f.n === floor.n ? '.active' : '') + (free === 0 ? '.full' : ''),
@@ -283,9 +317,12 @@ function floorSection(state, shell) {
             shell.onFocusFloor?.(f.n);
             shell.renderPanel(true);
           },
-          title: `Floor ${f.n} — ${free} free bay${free === 1 ? '' : 's'}`,
+          title: sec
+            ? `Floor ${f.n}, ${sec.name} — ${free} free bay${free === 1 ? '' : 's'}`
+            : `Floor ${f.n} — ${free} free bay${free === 1 ? '' : 's'}`,
         },
         el('span.floor-n.mono', String(f.n)),
+        el('span.floor-sec', sec ? sec.name.slice(0, 3).toUpperCase() : ''),
         el('span.floor-free', free ? `${free}` : '·')
       )
     );

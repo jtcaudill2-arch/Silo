@@ -36,7 +36,7 @@ import { BAL } from '../src/config/balance.js';
  * charges the full `buildCost`, and widening means building again next door,
  * so the answer is per slot — but this asks rather than assumes.
  */
-function measuredBuildCost(def, width) {
+function measuredBuildCost(def, width, floorN = BAL.silo.totalFloors) {
   const store = createStore(createNewGame({ seed: 5150, now: 1 }));
   store.silent = true;
   const s = store.state;
@@ -45,7 +45,6 @@ function measuredBuildCost(def, width) {
   for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
   for (const k of Object.keys(s.caps || {})) s.caps[k] = 1e6;
   const spent = {};
-  const floorN = BAL.silo.totalFloors;
   for (let slot = 0; slot < width; slot++) {
     for (const a of build(s, floorN, slot, def.id)) {
       if (a.type === 'RESOURCE_DELTA') {
@@ -171,8 +170,13 @@ if (!failures.length) ok(`all ${floors.length} named levels name a real room tha
   for (const f of floors) {
     const spec = NAMED_LEVELS[f];
     const def = getRoom(spec.room);
+    // With its floor, so "building one instead" means building one HERE. It
+    // used to measure every build on floor 144 whatever level the found room
+    // stood on, which was harmless while price did not depend on the floor and
+    // is the kind of stand-in that stops being harmless quietly. It also turned
+    // up something the old form could not see — see `buildFloor` below.
     const room = {
-      type: spec.room, width: spec.width, level: spec.level, condition: spec.condition,
+      type: spec.room, width: spec.width, level: spec.level, condition: spec.condition, floor: f,
     };
     const missing = BAL.silo.condition.start - spec.condition;
     const fix = repairCost(room, missing);
@@ -183,7 +187,22 @@ if (!failures.length) ok(`all ${floors.length} named levels name a real room tha
     // algebraically `share` and the section could not fail: a reviewer tripled
     // the helper's output and every line still printed green. Measuring the
     // real transaction is the only version of this check that is worth having.
-    const build = measuredBuildCost(def, spec.width);
+    // Built on the level's own floor where that is legal, which is the real
+    // alternative to restoring it. Where it is not, the build is measured on
+    // the shallowest floor that would take one.
+    //
+    // Exactly one row needs that fallback and it is worth knowing about: the
+    // Archive stands on floor 38 and carries `tierGate: 'lowers'`, so a player
+    // cannot build one above floor 49 no matter what they spend. Finding it is
+    // the only way to have an Archive in the Mids, which is a large part of
+    // what that level is worth and was invisible while every build in this
+    // section was measured on floor 144.
+    let buildFloor = f;
+    let build = measuredBuildCost(def, spec.width, buildFloor);
+    if (!Object.keys(build).length && def.tierGate) {
+      buildFloor = BAL.silo.tiers.find((t) => t.key === def.tierGate)?.from ?? f;
+      build = measuredBuildCost(def, spec.width, buildFloor);
+    }
     // Worst resource, not just scrap. A cheap-in-scrap repair that demands
     // alloy the silo cannot yet smelt is not a bargain.
     if (!Object.keys(build).length) {

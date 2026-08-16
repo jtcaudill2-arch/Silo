@@ -123,7 +123,7 @@ export function openTitle({ onFirstPaint } = {}) {
     el('span.title-btn-label', 'New silo'),
     el(
       'span.title-btn-sub',
-      `${BAL.citizens.startPopulation} people, ${BAL.silo.startExcavatedFloors} floors dug.`
+      `${BAL.citizens.startPopulation} people, ${BAL.silo.startExcavatedFloors} of ${BAL.silo.totalFloors} levels lit.`
     )
   );
 
@@ -425,7 +425,7 @@ export function openTitle({ onFirstPaint } = {}) {
       } else {
         primaryLabel.textContent = 'New silo';
         primarySub.textContent =
-          `${BAL.citizens.startPopulation} people, ${BAL.silo.startExcavatedFloors} floors dug.`;
+          `${BAL.citizens.startPopulation} people, ${BAL.silo.startExcavatedFloors} of ${BAL.silo.totalFloors} levels lit.`;
         primarySub.hidden = false;
         fresh.hidden = true;
       }

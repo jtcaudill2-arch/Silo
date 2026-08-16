@@ -199,6 +199,32 @@ export const BAL = {
       efficiencyPerStep: 0.15, // +15% output per merge step
       powerDiscountPerStep: 0.12, // -12% power draw per merge step
     },
+    /**
+     * Building on a level the builders fitted for that kind of work — see
+     * data/sections.js.
+     *
+     * A bonus with no matching penalty: a room out of place is built at the
+     * ordinary price to the ordinary width, so nothing that was standing
+     * before this existed became worse, and a player who never notices the
+     * designations plays the game they played before.
+     *
+     * ONE LEVER, AND IT USED TO BE TWO. A `buildDiscount` sat here as well, on
+     * the reasoning that a quarter off is enough to break a tie between two
+     * floors and not enough to decide the placement by itself. Measured on the
+     * pacing run, that was wrong twice over: at 0.75 the campaign never got an
+     * expedition home in 300 days and never reached the Lowers, at 0.85 it
+     * still lost the Lowers, and only 0.9 held. What it actually moved was not
+     * where rooms go but how much scrap the silo is holding at any moment —
+     * cheaper rooms mean the treasury never reaches the level where descending
+     * looks affordable, so the silo builds out and stops going down. That is a
+     * treasury effect wearing a placement costume, and a lever whose next notch
+     * kills the endgame is not a tie-breaker. `extraWidth` measured exactly
+     * neutral on the same run (d82 / d95 / d300, to the day) because it changes
+     * what a well-placed room is worth rather than what the silo can afford.
+     */
+    section: {
+      extraWidth: 1,
+    },
     condition: {
       start: 100,
       decayPerCycleWorking: 0.055,

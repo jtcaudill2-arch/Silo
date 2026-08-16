@@ -1407,6 +1407,27 @@ button.why-line:active { background: var(--sodium-dim); }
 .excavate-title { font-size: 14px; }
 .excavate-sub { font-size: 12px; color: var(--bone-faint); }
 .excavate-warn { font-size: 12px; color: var(--sodium); margin-top: 2px; }
+/* What the builders fitted the level behind the seal for. Quieter than the
+   cost line above it: this is the reason to want the level, not the price. */
+.excavate-note { font-size: 12px; color: var(--bone-faint); margin-top: 3px; opacity: .8; }
+
+/* A level's designation, on the room panel. Not a chip — a chip reads as a
+   status the room has, and this is a fact about the floor it stands on. */
+.room-section {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 12px; border-bottom: 1px solid var(--hairline);
+}
+.room-section-name { font-size: 12px; color: var(--bone-dim); letter-spacing: .05em; }
+.room-section-note { font-size: 12px; color: var(--bone-faint); }
+.room-section.fitted { border-left: 2px solid var(--verdigris); }
+.room-section.fitted .room-section-name { color: var(--verdigris); }
+
+/* The designation on a floor pip. Three letters is all that fits under a
+   46px pip that already carries a number and a free-bay count, so the strip
+   stays scannable rather than becoming a second list. */
+.floor-sec { font-size: 9px; line-height: 10px; color: var(--bone-faint); letter-spacing: .04em; }
+.floor-pip.fitted { border-color: var(--verdigris); }
+.floor-pip.fitted .floor-sec { color: var(--verdigris); }
 
 .floor-strip-wrap { border-bottom: 1px solid var(--hairline); }
 .floor-strip {

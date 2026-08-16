@@ -66,7 +66,7 @@ export const COLD_OPEN = [
         'deciding which of two things gets the power, and then living in the silo ' +
         'where you decided it.',
       `I ran Silo 12 for fourteen years. What I am leaving you is ${SILO.people} people, ` +
-        `${SILO.dug} floors dug out of ${SILO.floors}, about a season of margin on everything ` +
+        `${SILO.dug} levels lit out of ${SILO.floors}, about a season of margin on everything ` +
         'that matters, and a desk that will tell you what it needs if you let it.',
     ],
   },

@@ -1171,7 +1171,7 @@ export function directives(state) {
     // the bay rejects: measured before this guard, 21 consecutive days of
     // "Build a Schoolhouse" answered with "Schoolhouse needs the mids opened
     // first". The order that fixes that is already on the list — it is
-    // "Excavate the next floor" — and this one waits for it.
+    // "Open the next level down" — and this one waits for it.
     if (kids > 0 && !has(state, 'schoolhouse') && placeable(state, 'schoolhouse')) {
       add({
         id: 'schoolhouse',
@@ -1410,13 +1410,13 @@ export function directives(state) {
   // Ask the excavator, rather than guessing from the treasury. The next floor
   // down is often behind a research gate, and an order to dig it is an order
   // that cannot be followed until that node lands — measured at 136 days of
-  // "Excavate the next floor" against a tier that needed Deep Excavation I.
+  // "Open the next level down" against a tier that needed Deep Excavation I.
   if (!state.silo.excavating) {
     const dig = canExcavate(state);
     if (dig.ok) {
       add({
         id: 'excavate',
-        text: 'Excavate the next floor',
+        text: 'Open the next level down',
         why: `There is scrap spare and the silo is ${BAL.silo.totalFloors} floors deep. Bays are the constraint on everything else.`,
         panel: 'build',
         weight: 30,

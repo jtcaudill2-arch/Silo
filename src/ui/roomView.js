@@ -8,6 +8,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
+import { sectionFor, suitsSection, maxWidthOn } from '../data/sections.js';
 import { roomCapability, roomDraw, staffSlots, powerPicture } from '../sim/economy.js';
 import { workFactor, fullName, topSkill } from '../sim/population.js';
 import { employableCitizens, bestCandidateFor } from '../sim/jobs.js';
@@ -57,6 +58,29 @@ export function openRoom(store, roomId, shell) {
     if (art) {
       if (art.tagName === 'CANVAS') art.setAttribute('aria-hidden', 'true');
       body.appendChild(el('div.room-art' + (r.powered ? '' : '.dark'), art));
+    }
+
+    // ---- what level this is, in the silo's own words ----------------------
+    //
+    // A room on a level the builders fitted for it can carry a fourth bay and
+    // cost a quarter less to put up, and neither of those is legible from a
+    // percentage. This is the one place a player can be told why this
+    // particular Hydroponics is wider than the one two floors up.
+    const section = sectionFor(r.floor);
+    if (section) {
+      const fitted = suitsSection(r.floor, def);
+      body.appendChild(
+        el(
+          'div.room-section' + (fitted ? '.fitted' : ''),
+          el('span.room-section-name', section.name),
+          el(
+            'span.room-section-note',
+            fitted
+              ? `Fitted for this. ${section.blurb} Up to ${maxWidthOn(r.floor, def)} bays here.`
+              : section.blurb
+          )
+        )
+      );
     }
 
     // ---- headline numbers -------------------------------------------------

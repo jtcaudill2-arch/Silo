@@ -144,7 +144,7 @@ export const TUTORIAL = [
     prefer: 'below',
     tap: true,
     copy: ({ state }) =>
-      `Silo 12 in section: ${dugFloors(state)} floors dug of ${BAL.silo.totalFloors}, ` +
+      `Silo 12 in section: ${dugFloors(state)} levels lit of ${BAL.silo.totalFloors}, ` +
       `${state.citizenIds.length} people inside. Tap a floor to look at it.`,
   },
   {

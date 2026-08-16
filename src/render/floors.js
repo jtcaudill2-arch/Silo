@@ -14,6 +14,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom } from '../data/rooms.js';
+import { suitsSection } from '../data/sections.js';
 import { roomCapability } from '../sim/economy.js';
 import { PALETTE, SLOT_W, FLOOR_H, SLOTS, WORLD_W } from './canvas.js';
 import * as sprites from './sprites.js';
@@ -371,13 +372,15 @@ export function drawPlacement(ctx, mode, range, cam, pulse) {
   const state = cam.state;
   const focus = cameraFloor(cam);
   const fill = P.fillAlpha + P.fillPulse * pulse;
+  // What is being placed, so a level the builders fitted for it can say so.
+  const placing = getRoom(mode.typeId);
 
   for (let n = range.from; n <= range.to; n++) {
     const slots = mode.bays.get(n);
     if (!slots) continue;
     const y = (n - 1) * FLOOR_H + GAP;
     const h = FLOOR_H - 3 - GAP * 2;
-    const suggested = suggestedSlots(state, n, slots, focus, W);
+    const suggested = suggestedSlots(state, n, slots, focus, W, placing);
 
     for (const [slot, mergeSide] of slots) {
       const x = slot * SLOT_W + GAP;
@@ -439,11 +442,17 @@ function cameraFloor(cam) {
  * that already carry a merge target are left alone — the merge is the answer
  * on that floor and a second bright box beside it is just noise.
  */
-function suggestedSlots(state, n, slots, focus, W) {
+function suggestedSlots(state, n, slots, focus, W, placing) {
   const out = new Set();
   // A floor with a merge on it has its answer already, and a second bright box
   // beside the merge only competes with it.
   for (const side of slots.values()) if (side) return out;
+
+  // A level the builders fitted for this kind of work IS the answer to "where"
+  // — cheaper to build on and able to carry a fourth bay — so every free bay on
+  // one is lit rather than the single one the contiguity heuristic below would
+  // pick. See data/sections.js.
+  if (placing && suitsSection(n, placing)) return new Set(slots.keys());
 
   const floor = state.silo.floors[n - 1];
   const adjacent = [...slots.keys()].filter(

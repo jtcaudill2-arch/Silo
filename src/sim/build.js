@@ -15,6 +15,7 @@
 
 import { BAL } from '../config/balance.js';
 import { getRoom, ROOM_LIST } from '../data/rooms.js';
+import { sectionFor, suitsSection, maxWidthOn } from '../data/sections.js';
 import { roomUnlocked, tierUnlocked, tierForFloor, effects } from './research.js';
 import { fullName } from './population.js';
 import { inService } from './economy.js';
@@ -240,7 +241,9 @@ function fitsAt(state, floor, def, slot) {
       if (id == null) continue;
       const neighbour = state.silo.rooms[id];
       if (!neighbour || neighbour.type !== def.id) continue;
-      if (neighbour.width >= BAL.silo.merge.maxWidth) continue;
+      // The ceiling is the floor's, not the silo's: a level fitted for this
+      // kind of work has the span for a fourth bay. See data/sections.js.
+      if (neighbour.width >= maxWidthOn(floor.n, def)) continue;
       // Merging must not skip a slot: the neighbour has to be contiguous.
       const wouldSpan = adj < slot ? neighbour.slot : slot;
       const wouldWidth = neighbour.width + 1;
@@ -250,10 +253,13 @@ function fitsAt(state, floor, def, slot) {
     }
   }
 
+  const fitted = suitsSection(floor.n, def);
   return {
     floor: floor.n,
     slot,
     merge,
+    fitted,
+    section: sectionFor(floor.n),
     label: merge
       ? `Merge into the ${def.name} beside it — ${merge.newWidth} wide`
       : `New ${def.name}`,
