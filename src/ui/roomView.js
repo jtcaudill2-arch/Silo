@@ -139,11 +139,21 @@ export function openRoom(store, roomId, shell) {
         });
       }
       if (r.level < BAL.silo.upgrade.maxLevel && r.upgradingUntilCycle <= s.clock.cycle) {
+        // Never the loud button when the rank would open posts the silo has
+        // nobody for: at unchanged crew that step is a 37% cut, not an
+        // upgrade, and this row is the one most players press. The reason
+        // rides in the title, which is what a disabled or hesitant row says.
+        const cutting = postsShortfall(s, r, def) > 0;
         acts.push({
           label: `Upgrade to ${r.level + 1}`,
-          primary: !hurt && r.staff.length > 0,
+          primary: !hurt && r.staff.length > 0 && !cutting,
           disabled: !upNow.ok,
-          title: upNow.ok ? describeCost(upNow.cost || upgradeCost(r)) : upNow.reason,
+          title: !upNow.ok
+            ? upNow.reason
+            : cutting
+              ? `${describeCost(upNow.cost || upgradeCost(r))} — opens posts nobody can fill, ` +
+                'so it makes this room produce less until they are crewed'
+              : describeCost(upNow.cost || upgradeCost(r)),
           run: () => {
             store.dispatchAll(upgrade(store.state, roomId));
             toast(`${def.name} upgrading.`);
@@ -378,9 +388,26 @@ export function openRoom(store, roomId, shell) {
         el(
           'div.note',
           `Level ${r.level} → ${r.level + 1}: ${describeCost(cost)}, and ` +
-            `${BAL.silo.upgrade.downtimeCycles} shifts offline. Adds output and staff slots.`
+            `${BAL.silo.upgrade.downtimeCycles} shifts offline. ${rankGains(r, def)}`
         )
       );
+      // A rank that opens posts you cannot fill is a CUT, not an upgrade, and
+      // this button is the one place a player can walk into it on their own.
+      //
+      // `roomCapability` is ceiling × (crew / slots) and `staffSlotsPerLevel`
+      // is [1, 1, 2, 2, 3], so at unchanged crew a step from rank 2 to 3
+      // multiplies output by 0.63 and rank 4 to 5 by 0.78. This panel said
+      // "Adds output and staff slots" for all four steps, which is true of the
+      // slots and false of the output on two of them.
+      const short = postsShortfall(s, r, def);
+      if (short > 0) {
+        body.appendChild(
+          el('div.note.warn',
+            `This rank opens ${short === 1 ? 'a post' : `${short} posts`} the silo has nobody for. ` +
+            'A room runs at the fraction of its posts that are crewed, so until they are filled ' +
+            'this makes it produce less than it does now, not more.')
+        );
+      }
       if (!up.ok) body.appendChild(el('div.note.warn', up.reason));
       body.appendChild(
         el(
@@ -419,6 +446,38 @@ export function openRoom(store, roomId, shell) {
 
   handle = show();
   return handle;
+}
+
+/**
+ * How many posts a rank opens that the silo has nobody standing ready for.
+ *
+ * Zero for a room with no posts at all, and zero for the two rungs that open
+ * none — `staffSlotsPerLevel` is [1, 1, 2, 2, 3], so rank 1 to 2 and rank 3 to
+ * 4 are free of this entirely and are the two that are unambiguously worth
+ * buying.
+ */
+function postsShortfall(state, room, def) {
+  if (!def?.staff) return 0;
+  const slots = BAL.silo.upgrade.staffSlotsPerLevel;
+  const opens = ((slots[room.level] || 1) - (slots[room.level - 1] || 1)) * room.width;
+  if (opens <= 0) return 0;
+  const spare = employableCitizens(state).filter((c) => !c.job).length;
+  return Math.max(0, opens - spare);
+}
+
+/** What the next rank actually buys, in the terms the player is deciding in. */
+function rankGains(room, def) {
+  const per = BAL.silo.upgrade.outputPerLevel;
+  // A share of BASE output, so a step off rank 1 is +35% and a step off rank 4
+  // is 0.35/2.05 — a little over 17%. The flat number would be selling the
+  // fifth rank at the first rank's price.
+  const lift = Math.round((per / (1 + per * (room.level - 1))) * 100);
+  if (!def?.staff) return `About ${lift}% more out of it.`;
+  const slots = BAL.silo.upgrade.staffSlotsPerLevel;
+  const opens = ((slots[room.level] || 1) - (slots[room.level - 1] || 1)) * room.width;
+  return opens > 0
+    ? `About ${lift}% more out of it, across ${opens} more post${opens === 1 ? '' : 's'} to crew.`
+    : `About ${lift}% more out of it, with the same crew.`;
 }
 
 /** Capability with a perfect crew, for the "% of rating" readout. */

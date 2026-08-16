@@ -7262,6 +7262,78 @@ const ERRAND_ROOM = {
   }
 }
 
+// ---- 79. two of the four ranks make a room worse --------------------------
+//
+// `roomCapability` is ceiling × (crew / slots) and `staffSlotsPerLevel` is
+// [1, 1, 2, 2, 3], so at unchanged crew the four rungs multiply a room's
+// output by 1.35, 0.63, 1.21 and 0.78. Two of them are cuts — a 37% one and a
+// 22% one — and they are not a corner case: measured on the 200-day obedient
+// run the silo carries 39 workers against 65 posts with zero idle adults from
+// about day 50, so a rank that opens posts is always a cut on the silo this
+// order actually meets.
+//
+// The arithmetic is checked here rather than taken from the constants, because
+// the constants are exactly what a change would move: if `outputPerLevel` or
+// `staffSlotsPerLevel` is retuned so that every rung is a gain, this section
+// should go quiet on its own and not have to be remembered.
+{
+  const per = BAL.silo.upgrade.outputPerLevel;
+  const slots = BAL.silo.upgrade.staffSlotsPerLevel;
+  const cuts = [];
+  for (let lvl = 1; lvl < BAL.silo.upgrade.maxLevel; lvl++) {
+    const now = (1 + per * (lvl - 1)) / (slots[lvl - 1] || 1);
+    const next = (1 + per * lvl) / (slots[lvl] || 1);
+    if (next < now) cuts.push(lvl);
+  }
+
+  const store = newStore(0x4B17);
+  const s = store.state;
+  for (const k of Object.keys(s.resources)) s.resources[k] = 1e6;
+  // A one-bay staffed room, so the smallest possible opening — a single post —
+  // is in the fixture. Without one every room here is two or three bays wide
+  // and every cutting rung opens at least two posts, which is enough slack for
+  // an off-by-one in the guard to pass: `spare < opens - 1` walked through
+  // green until this room existed.
+  s.silo.floors[5].excavated = true;
+  placeRoom(s, { type: 'maintenance_bay', floor: 6, slot: 0, width: 1, level: 1 });
+  // Everybody posted, so there is nobody for a new post — which is the silo
+  // the order meets, per the measurement above.
+  const first = Object.keys(s.silo.rooms)[0];
+  for (const id of s.citizenIds) {
+    const c = s.citizens[id];
+    if (c && c.age >= BAL.citizens.workingAgeMin) c.job = c.job || { roomId: first };
+  }
+  const staffed = Object.values(s.silo.rooms).filter((r) => getRoom(r.type)?.staff);
+  for (const r of staffed) r.staff = [s.citizenIds[0]];
+
+  const offered = [];
+  for (const lvl of cuts) {
+    // Only the staffed rooms are candidates. A room with no posts — beds,
+    // stores — is a perfectly good answer to "what should I upgrade" whatever
+    // the roster is doing, so leaving the Residences upgradable let the order
+    // duck the question entirely and an off-by-one in the guard passed.
+    for (const r of Object.values(s.silo.rooms)) {
+      r.level = getRoom(r.type)?.staff ? lvl : BAL.silo.upgrade.maxLevel;
+    }
+    const d = directives(s).find((o) => o.id === 'upgrade' || o.id === 'power_rank');
+    if (!d) continue;
+    const room = s.silo.rooms[d.roomId];
+    if (room && getRoom(room.type)?.staff && room.level === lvl) offered.push({ lvl, text: d.text });
+  }
+
+  if (!cuts.length) {
+    ok(`every rank is a gain at unchanged crew (${slots.join('/')} posts per rank), so there is ` +
+      'nothing here for the order to get wrong');
+  } else if (offered.length) {
+    fail(`with every room at rank ${offered[0].lvl} and nobody spare, the silo is told ` +
+      `"${offered[0].text}" — that rank opens posts it cannot fill, and a room runs at the ` +
+      'fraction of its posts that are crewed, so it is a cut sold as an upgrade');
+  } else {
+    ok(`the ${cuts.length} rank${cuts.length === 1 ? '' : 's'} that cut a short-handed room's ` +
+      `output (${cuts.map((l) => `${l}→${l + 1}`).join(', ')}) are never recommended`);
+  }
+}
+
 /** Working or standing watch — the same line economy.js and sprites.js draw. */
 function onDutyStatus(c) {
   return c.status === 'working' || c.status === 'training';

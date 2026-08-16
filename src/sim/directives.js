@@ -1497,6 +1497,7 @@ export function directives(state) {
   // — output scales with the crew in it — and a rank on a seized room is
   // refused by `canUpgrade` for the same reason.
   {
+    const rungSlots = BAL.silo.upgrade.staffSlotsPerLevel;
     const ranked = Object.values(state.silo.rooms)
       .filter((r) => {
         const def = getRoom(r.type);
@@ -1505,6 +1506,24 @@ export function directives(state) {
         // (beds, stores) produces its provision on its own and is worth a rank
         // whatever the roster is doing.
         if (def.staff && !(r.staff?.length > 0)) return false;
+        // AND THE RANK HAS TO BE AN IMPROVEMENT, which two of the four are not.
+        //
+        // `roomCapability` is ceiling x (crew / slots) and `staffSlotsPerLevel`
+        // is [1, 1, 2, 2, 3], so at unchanged crew a step from rank 2 to 3
+        // multiplies a room's output by 0.63 and rank 4 to 5 by 0.78. Those are
+        // not small: a 37% cut sold to the player as an upgrade, on a room they
+        // just paid to improve. The other two rungs are x1.35 and x1.21.
+        //
+        // It is not a corner case either. Measured on the 200-day obedient run,
+        // the silo carries 39 workers against 65 posts with zero idle adults
+        // from about day 50 on — so on the silo this order actually meets, the
+        // post-opening rungs are always a cut. This order sorts lowest-rank
+        // first, so without this line it would have walked every room in the
+        // silo from rank 2 into a 37% loss and called it building up.
+        if (def.staff) {
+          const opens = ((rungSlots[r.level] || 1) - (rungSlots[r.level - 1] || 1)) * r.width;
+          if (opens > 0 && spare < opens) return false;
+        }
         return canUpgrade(state, r.id).ok;
       })
       // Lowest rank first, then the widest, then the busiest: the cheapest
@@ -1522,8 +1541,8 @@ export function directives(state) {
     // Mids, so buying a rank with the lab's money is a bad trade however good
     // the rank is. Paying twice over is a legible line: you are spending money
     // you have two of, not the money you need.
-    const spare = ranked && affordable(state, doubled(upgradeCost(ranked)));
-    if (ranked && spare) {
+    const canPayTwice = ranked && affordable(state, doubled(upgradeCost(ranked)));
+    if (ranked && canPayTwice) {
       const def = getRoom(ranked.type);
       const cost = upgradeCost(ranked);
       const per = BAL.silo.upgrade.outputPerLevel;
@@ -1532,11 +1551,13 @@ export function directives(state) {
       // rank 4 is 0.35/2.05, a little over 17%. Quoting the flat number would
       // be selling the fifth rank at the first rank's price.
       const lift = Math.round((per / (1 + per * (ranked.level - 1))) * 100);
-      const slots = BAL.silo.upgrade.staffSlotsPerLevel;
-      const postsNow = (slots[ranked.level - 1] || 1) * ranked.width;
-      const postsNext = (slots[ranked.level] || 1) * ranked.width;
-      const posts = postsNext > postsNow
-        ? ` and opens ${postsNext - postsNow} more post${postsNext - postsNow === 1 ? '' : 's'} in it`
+      const opens = ((rungSlots[ranked.level] || 1) - (rungSlots[ranked.level - 1] || 1)) * ranked.width;
+      // Only ever a positive number here — the filter above refuses a step
+      // that opens posts the silo has nobody for — but it still has to be said,
+      // because those posts have to be crewed for the rank to be worth
+      // anything and the player is the one who will have to do it.
+      const posts = opens > 0
+        ? ` and opens ${opens} more post${opens === 1 ? '' : 's'} to fill`
         : '';
       add({
         id: 'upgrade',
