@@ -534,31 +534,72 @@ export function lastExcavatedFloor(state) {
 
 // ------------------------------------------------------------- colour ----
 
-export function withAlpha(hex, a) {
-  const { r, g, b } = parseHex(hex);
+export function withAlpha(colour, a) {
+  const { r, g, b } = parseColour(colour);
   return `rgba(${r},${g},${b},${a})`;
 }
 
+/** The three channels of any colour this module can read. */
+export function channels(colour) {
+  const { r, g, b } = parseColour(colour);
+  return [r, g, b];
+}
+
 export function mix(a, b, t) {
-  const A = parseHex(a);
-  const B = parseHex(b);
+  const A = parseColour(a);
+  const B = parseColour(b);
   const r = Math.round(A.r + (B.r - A.r) * t);
   const g = Math.round(A.g + (B.g - A.g) * t);
   const bl = Math.round(A.b + (B.b - A.b) * t);
   return `rgb(${r},${g},${bl})`;
 }
 
-const hexCache = new Map();
-function parseHex(hex) {
-  if (hexCache.has(hex)) return hexCache.get(hex);
-  let h = String(hex).trim().replace('#', '');
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
-  const v = {
-    r: parseInt(h.slice(0, 2), 16) || 0,
-    g: parseInt(h.slice(2, 4), 16) || 0,
-    b: parseInt(h.slice(4, 6), 16) || 0,
-  };
-  hexCache.set(hex, v);
+const colourCache = new Map();
+
+/**
+ * Parse any colour this module can PRODUCE, not only the ones it is handed.
+ *
+ * It used to be called parseHex and read hex only, which was fine for the one
+ * pattern anybody wrote here — mix(PALETTE.a, PALETTE.b, t) — and silently
+ * wrong for the other one. `mix` returns `rgb(r,g,b)`, so the moment a mixed
+ * colour was mixed again the string went through the hex branch: `#` stripped
+ * from a string with no `#`, "rg" parsed as base 16 to NaN and floored to 0,
+ * "b(" parsed to 11, and the third channel read off whatever digits happened
+ * to sit at offset 4.
+ *
+ * That is not a hypothetical. Eleven colours in portraits.js are second
+ * generation, and every one of them was junk: skinShade — the jaw, the nose,
+ * the mouth, the ears, the age lines — resolved to rgb(8,16,~27) for every
+ * citizen in the silo regardless of their skin, so all six skin tones were
+ * modelled in the same near-black; the darkest tone came out rgb(8,16,116),
+ * a violet shadow; and an elder's greyed hair landed on rgb(109,111,~110)
+ * whichever of the five hair colours they actually had, which is why every
+ * old person in the silo had identical slate hair.
+ *
+ * Fixing it here rather than at the eleven call sites is deliberate: the call
+ * sites were all correct, and the next person to compose two mixes should not
+ * have to know this happened.
+ */
+function parseColour(colour) {
+  const key = String(colour);
+  const hit = colourCache.get(key);
+  if (hit) return hit;
+
+  const s = key.trim();
+  const fn = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(s);
+  let v;
+  if (fn) {
+    v = { r: Math.round(+fn[1]), g: Math.round(+fn[2]), b: Math.round(+fn[3]) };
+  } else {
+    let h = s.replace('#', '');
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    v = {
+      r: parseInt(h.slice(0, 2), 16) || 0,
+      g: parseInt(h.slice(2, 4), 16) || 0,
+      b: parseInt(h.slice(4, 6), 16) || 0,
+    };
+  }
+  colourCache.set(key, v);
   return v;
 }
 

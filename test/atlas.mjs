@@ -45,7 +45,8 @@ import {
   adoptAtlas, citizenAction, citizenFrame, citizenRole, isLoaded,
 } from '../src/render/sprites.js';
 import { drawCitizens, citizensInView, deathMarks, deathMarkAt } from '../src/render/citizens.js';
-import { drawRoom } from '../src/render/floors.js';
+import { drawRoom, mix } from '../src/render/floors.js';
+import { PALETTE } from '../src/render/canvas.js';
 
 const failures = [];
 const fail = (m) => failures.push(m);
@@ -508,6 +509,72 @@ drawCitizens(after.ctx, s, cam);
       ok(`and each level redraws it: ${steps.join(', ')} pixels changed per step, ` +
         `${fromBase[fromBase.length - 1]} from new to finished`);
     }
+  }
+}
+
+// ---- 6. a mixed colour can be mixed again ----------------------------------
+//
+// `mix` returns `rgb(r,g,b)` and its parser read hex only, so composing two
+// mixes — the pattern the whole of portraits.js is built on — fell through to
+// the hex branch and came back as noise: "rg" parsed base 16 to NaN and
+// floored to 0, "b(" to 11, the blue channel read off whatever digits sat at
+// offset 4. Eleven colours were affected. Every face in the silo was shaded in
+// rgb(8,16,~27) whatever their skin, the darkest tone shaded VIOLET, and every
+// elder's greyed hair landed on the same rgb(109,111,~110) whichever of the
+// five hair colours they had.
+//
+// Checked against the value the composition means rather than against a
+// recorded constant: a golden number would have been recorded from the broken
+// build and locked the bug in.
+{
+  const parts = (s) => (/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(String(s)) || [])
+    .slice(1).map(Number);
+
+  const skin = mix(PALETTE.bone, PALETTE.rust, 0.34);
+  const shaded = mix(skin, PALETTE.concreteDeeper, 0.3);
+  const [sr, sg, sb] = parts(skin);
+  const [dr, dg, db] = parts(shaded);
+  // concreteDeeper is #1a1d1f, so 30% of the way there from any skin tone.
+  const want = [0x1a, 0x1d, 0x1f].map((e, i) => Math.round([sr, sg, sb][i] + (e - [sr, sg, sb][i]) * 0.3));
+
+  if (dr !== want[0] || dg !== want[1] || db !== want[2]) {
+    fail(`shading a mixed skin tone gave rgb(${dr},${dg},${db}) where the composition means ` +
+      `rgb(${want.join(',')}) — mix() cannot read its own output, so every second-generation ` +
+      'colour in the renderer is noise');
+  } else {
+    ok(`a mixed colour shades correctly: ${skin} → ${shaded}`);
+  }
+
+  // And an elder's greyed hair is still THEIR hair. This is the half a
+  // per-channel check on one colour would not catch on its own.
+  //
+  // Counting distinct results does not do it — measured, the broken parser
+  // greyed all five of portraits.js's hair colours to rgb(109,111,~110), which
+  // is five *technically* different strings and one head of hair. What has to
+  // survive is the SPREAD: mixing halfway to bone halves the distance between
+  // any two colours and nothing more, so the greyed set must stay about half
+  // as wide as the set it came from. Broken it collapsed to zero in red and
+  // green, because those channels no longer depended on the input at all.
+  const hairs = [
+    mix(PALETTE.concreteDeeper, PALETTE.concrete, 0.25),
+    mix(PALETTE.rust, PALETTE.concreteDeeper, 0.45),
+    mix(PALETTE.rust, PALETTE.sodium, 0.35),
+    mix(PALETTE.bone, PALETTE.sodium, 0.45),
+    mix(PALETTE.concrete, PALETTE.concreteDeeper, 0.4),
+  ];
+  const spread = (list) => [0, 1, 2].map((ch) => {
+    const v = list.map((c) => parts(c)[ch]);
+    return Math.max(...v) - Math.min(...v);
+  });
+  const was = spread(hairs);
+  const now = spread(hairs.map((h) => mix(h, PALETTE.bone, 0.5)));
+  const thin = now.findIndex((n, i) => n < was[i] * 0.4);
+  if (thin >= 0) {
+    fail(`greying the ${hairs.length} hair colours with age narrowed channel ${thin} from a range ` +
+      `of ${was[thin]} to ${now[thin]} — every elder in the silo ends up with the same head of ` +
+      'hair, because the grey is mixed from a colour mix() cannot read');
+  } else {
+    ok(`hair keeps its colour through greying: ranges ${was.join('/')} → ${now.join('/')}`);
   }
 }
 
