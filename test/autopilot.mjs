@@ -15,13 +15,13 @@ import { BAL } from '../src/config/balance.js';
 import { getRoom } from '../src/data/rooms.js';
 import { autoAssign } from '../src/sim/jobs.js';
 import {
-  canBuild, build, canExcavate, startExcavation, canUpgrade, upgrade, canRepair, repair,
+  canExcavate, startExcavation, canUpgrade, upgrade, canRepair, repair,
   canShore, shoreFloor, strainedFloors,
 } from '../src/sim/build.js';
 import { canStart, isComplete } from '../src/sim/research.js';
 import { RESEARCH_LIST } from '../src/data/research.js';
 import { readEnvironment } from '../src/sim/population.js';
-import { computeCaps, staffSlots } from '../src/sim/economy.js';
+import { computeCaps, staffSlots, inService } from '../src/sim/economy.js';
 import { employableCitizens } from '../src/sim/jobs.js';
 import {
   formSquad, squadMembers, equipBest, equipGroup, craft, canCraft, craftableItems, unassignedGear,
@@ -174,8 +174,26 @@ export function autopilot(state) {
   // ---- 2. repair first. A sabotaged generator will kill the silo long
   //         before the Maintenance Bay catches up with it, and a damaged
   //         life-support room beats any new construction. -----------------
+  //
+  //         A ROOM IN SERVICE, and that qualifier is the whole of this pass
+  //         now. Since Silo 12 became inherited rather than built, a level
+  //         opens with five furnished rooms on it at ten to thirty condition —
+  //         and to a rule that sorts by condition alone every one of them is a
+  //         generator hall about to die. `repair` on a seized room is not a
+  //         repair, it is a COMMISSIONING: it puts the room into service and
+  //         its draw onto the plant.
+  //
+  //         Measured, without this: the reference player opened four levels in
+  //         its first three weeks and switched on everything it found. Demand
+  //         went from 34 against 30 generated on day 1 to 91 against 30 by day
+  //         21, the silo browned out with no scrap left to repair its way out,
+  //         and everybody was dead on day 47. That is why this file's campaigns
+  //         were ending on day 44 and 60 while an obedient player reached 200 —
+  //         and why `pacing`, `campaign` and `harness`, which all measure
+  //         through this function, were measuring the instrument.
   const CRITICAL = new Set(['generator_hall', 'reactor', 'water_reclaimer', 'air_filtration', 'hydroponics']);
   const damaged = Object.values(state.silo.rooms)
+    .filter((r) => inService(r))
     .filter((r) => r.condition < (CRITICAL.has(r.type) ? 58 : 42))
     .sort((a, b) => {
       const critA = CRITICAL.has(a.type) ? 0 : 1;
@@ -199,7 +217,12 @@ export function autopilot(state) {
   }
 
   // ---- 3. the build queue, in the order a player would panic ----------
-  const count = (type) => Object.values(state.silo.rooms).filter((r) => r.type === type).length;
+  // A room the silo can actually use. A dark Workshop on floor 31 answers
+  // "does the silo have one" with yes and the bootstrap rule then never fires
+  // again — the same fault `has`/`count` in sim/directives.js carries a comment
+  // about, and for the same reason.
+  const count = (type) => Object.values(state.silo.rooms)
+    .filter((r) => r.type === type && inService(r)).length;
 
   const runway = (key) => {
     const net = flow(key);
@@ -403,34 +426,115 @@ export function autopilot(state) {
     }
     return gap;
   };
+  // RESTORE IT, DO NOT BUILD IT. Everything above this line is a priority
+  // queue and all of it still holds; only the verb changed. There is no
+  // construction any more — every bay in the silo arrives furnished, so
+  // `findSpot` returned nothing on any floor and this loop had been quietly
+  // issuing zero orders per campaign. The answer to "the silo wants a
+  // Recycling Plant" is the nearest dead one on a level that is already open,
+  // cheapest first, and if there is none the answer is depth.
+  //
+  // Guarded on the plant, which building never had to be: a restoration puts
+  // a permanent draw on a generator that is already running, and if the plant
+  // cannot take it the silo does not get the room, it gets a brownout.
+  // Generation is exempt — a hall is how the headroom gets bigger.
+  const plantCanCarry = (room) => {
+    const def = getRoom(room.type);
+    if ((def?.produces?.power || 0) > 0) return true;
+    return (def?.consumes?.power || 0) * room.width <= gen - demand;
+  };
+  // Whether the silo is reaching for a room no open level has. That is the one
+  // thing that justifies digging past the dark-room gate below: a Laboratory
+  // it has never owned is worth another seal in a way a fourth Storage Depot
+  // is not.
+  let reachingFor = null;
   for (const type of wants) {
     if (getRoom(type)?.staff && count(type) > 0 && (spareCrew <= 0 || emptyPosts(type) > 0)) continue;
-    const spot = findSpot(state, type);
-    if (!spot) continue;
-    const check = canBuild(state, spot.floor, spot.slot, type);
-    if (!check.ok) continue;
-    actions.push(...build(state, spot.floor, spot.slot, type));
+    const dead = Object.values(state.silo.rooms)
+      .filter((r) => r.type === type && r.found && r.buildingUntilCycle === 0 && plantCanCarry(r))
+      .map((r) => ({ room: r, check: canRepair(state, r.id) }))
+      // Outright, not in instalments: a silo drip-feeding scrap into a found
+      // room holds its whole budget hostage to it for days.
+      .filter((c) => c.check.ok && !c.check.partial)
+      .sort((a, b) => (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
+    if (!dead) {
+      // Nothing standing on an open level is one of these, and the silo has
+      // never had one. Remember the first such want; the dig rule reads it.
+      if (!reachingFor && count(type) === 0) reachingFor = type;
+      continue;
+    }
+    actions.push(...repair(state, dead.room.id));
     break; // one order per pass
   }
 
   // ---- 3. excavate when bays are running out --------------------------
-  const freeBays = state.silo.floors
-    .filter((f) => f.excavated)
-    .reduce((n, f) => n + f.slots.filter((s) => s == null).length, 0);
-  // Silos expand: dig when bays are getting tight, or whenever there's scrap
-  // spare for it. Sitting on a full treasury and an unopened tier is not a
-  // thing a player does.
-  if (!state.silo.excavating && (freeBays < 14 || state.resources.scrap > 400)) {
+  // Not on free bays. There are none: since the silo became inherited every
+  // level opens with all six of its bays furnished, so `freeBays` is zero from
+  // the first morning and the old rule — dig when bays are getting tight —
+  // fired unconditionally, every pass, for ever. Measured: 45 excavations to
+  // floor 48 inside a hundred days, on a silo of thirty people that had
+  // restored eleven rooms.
+  //
+  // The real question is whether the silo has used what it has already opened,
+  // which is the same question `hideoutWarnAt` answers for the standing order:
+  // past about two levels' worth of rooms standing dark, opening a third is
+  // not the move. Scrap spare on top of that, because a dig it cannot pay for
+  // is not a plan.
+  const seized = Object.values(state.silo.rooms).filter((r) => !inService(r)).length;
+  if (!state.silo.excavating && state.resources.scrap > 400 &&
+      (seized < BAL.directives.hideoutWarnAt || reachingFor)) {
     const dig = canExcavate(state);
     if (dig.ok) actions.push(...startExcavation(state));
   }
 
   // ---- 4. spend a surplus on upgrades ---------------------------------
-  if (state.resources.scrap > caps.scrap * 0.8 && state.resources.chits > 200) {
+  //
+  //         A RANK IS THE MOVE WHEN THERE IS NOBODY TO POST, which is the
+  //         deadlock this file walked into the moment construction went away.
+  //         Every rule above wants another room; `plantCanCarry` refuses to
+  //         switch one on without headroom; and the one thing that would make
+  //         headroom — a second hall — is skipped by the crew guard because
+  //         there is nobody spare to stand in it. Measured: the silo dug to
+  //         floor 20 in three weeks, then sat at 30 generated against 34 drawn
+  //         for a hundred and forty days, banking 3,059 scrap it had no way to
+  //         spend, and completed no research at all because the Laboratory it
+  //         had found needed twelve power that never came free.
+  //
+  //         `staffSlotsPerLevel` is [1, 1, 2, 2, 3], so ranks 1→2 and 3→4 open
+  //         no new posts: they make the crew already standing there produce
+  //         more. That is exactly the move a short-handed silo has, and it is
+  //         the same reasoning `power_rank` carries in sim/directives.js.
+  //
+  //         The old gate was `scrap > 80% of cap && chits > 200`. Chits are
+  //         trade currency and have nothing to do with whether a rank is worth
+  //         buying; the silo above never once satisfied it.
+  const rungSlots = BAL.silo.upgrade.staffSlotsPerLevel;
+  const rankable = (r) => {
+    const def = getRoom(r.type);
+    if (!inService(r) || r.level >= BAL.silo.upgrade.maxLevel || r.upgradingUntilCycle !== 0) return false;
+    // A rank on an empty bay buys nothing: output scales with the crew in it.
+    if (def?.staff && !(r.staff?.length > 0)) return false;
+    // And never a rung that opens posts the silo cannot fill — at unchanged
+    // crew those rungs are a cut, not an upgrade.
+    if (def?.staff) {
+      const opens = ((rungSlots[r.level] || 1) - (rungSlots[r.level - 1] || 1)) * r.width;
+      if (opens > 0 && spareCrew < opens) return false;
+    }
+    return canUpgrade(state, r.id).ok;
+  };
+  const shortOfPower = gen > 0 && demand > gen * 0.9;
+  const hall = shortOfPower
+    ? Object.values(state.silo.rooms)
+      .filter((r) => (getRoom(r.type)?.produces?.power || 0) > 0 && rankable(r))
+      .sort((a, b) => a.level - b.level || b.width - a.width)[0]
+    : null;
+  if (hall) {
+    actions.push(...upgrade(state, hall.id));
+  } else if (state.resources.scrap > RESERVE * 2) {
     const target = Object.values(state.silo.rooms)
-      .filter((r) => r.level < BAL.silo.upgrade.maxLevel && r.upgradingUntilCycle === 0)
-      .sort((a, b) => a.level - b.level)[0];
-    if (target && canUpgrade(state, target.id).ok) actions.push(...upgrade(state, target.id));
+      .filter(rankable)
+      .sort((a, b) => a.level - b.level || b.width - a.width)[0];
+    if (target) actions.push(...upgrade(state, target.id));
   }
 
   // ---- 5. the surface -------------------------------------------------

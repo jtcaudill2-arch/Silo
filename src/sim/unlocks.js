@@ -131,7 +131,7 @@
  */
 
 import { BAL } from '../config/balance.js';
-import { getRoom } from '../data/rooms.js';
+import { getRoom, ROOM_LIST } from '../data/rooms.js';
 import { inService } from './economy.js';
 
 /** Is there a room of any of these types in the silo, finished or going up? */
@@ -396,6 +396,17 @@ export function newlyUnlocked(prev, next) {
 const CORE_RESOURCES = ['power', 'food', 'water', 'scrap'];
 
 /**
+ * Every resource the game ever quotes a price in — the union of the room
+ * catalogue's build costs. Derived rather than listed, so a room added with a
+ * new currency in its price is covered without anybody remembering to come
+ * here. `liveResourceKeys` uses it to tell a currency from an upkeep: the
+ * player spends the first and machinery burns the second.
+ */
+const SPENDABLE = new Set(
+  ROOM_LIST.flatMap((def) => Object.keys(def.buildCost || {})).filter((k) => k !== 'labor')
+);
+
+/**
  * Which counters the strip should carry.
  *
  * Eleven of them on the first morning — most reading a starting stock the
@@ -444,11 +455,49 @@ export function liveResourceKeys(state) {
   // The threshold is about whether the player has taken on a *kind* of
   // upkeep, not about this shift's throughput, and a counter that came and
   // went as a crew changed shift would be worse than either answer.
+  //
+  // PRODUCING SOMETHING IS NOT A REASON TO WATCH IT — unless it is something
+  // the player SPENDS. This walk used to add
+  // every key any room `produces` as well, with no threshold — a fourth rule
+  // the three-rule contract above does not mention, and one that was only ever
+  // harmless because nothing in the opening produced anything unusual. The
+  // salvage press on floor 3 does: it makes 1.3 fuel a shift, so FUEL went
+  // live on the first morning, and five counters do not fit. The strip is
+  // 227px and a tile is set by its glyph row — 24px of icon, a gap, and
+  // "WATER" at 29px in a face with no condensed cut — so four is the ceiling,
+  // and the comment against `.res` in styles.css is three separate passes of
+  // scavenging single pixels to keep it there.
+  //
+  // Which is the right answer anyway, and `resourceDrawPerCycle`'s own comment
+  // already said so: a generator hall burning 0.3 fuel a shift "is not a
+  // decision for the first fifty days", and a number that cannot be acted on
+  // teaches the player to stop reading the strip it sits on. Fuel becomes a
+  // decision when the silo draws it faster than it makes it, and the draw rule
+  // below and the runway rule under that both catch exactly that.
+  //
+  // Dropping production outright went too far in the other direction, which
+  // the same measurement caught: PARTS then never appeared at all in three
+  // hundred days. Nothing in the silo burns parts by the shift — they are
+  // spent in lumps, on repairs and restorations — so the draw rule cannot see
+  // them, and they are the second half of every price the game quotes.
+  //
+  // So the line is what the PLAYER spends, read off the price list rather than
+  // hand-written: a key that appears in some room's build cost is a currency,
+  // and a silo that has started producing a currency is a silo that will be
+  // asked to spend it. Parts and alloy are in there; fuel is in no price in
+  // the game, only in upkeep, which is exactly what the draw rule below and
+  // the runway rule under it are for.
+  //
+  // In service only, for the same reason: a seized room spends nothing. Open a
+  // level with a Chem Lab on it and the old walk put FILT on the strip for a
+  // room the silo has never switched on.
   const draw = {};
   for (const room of Object.values(state.silo.rooms)) {
     const def = getRoom(room.type);
-    if (!def) continue;
-    for (const k of Object.keys(def.produces || {})) live.add(k);
+    if (!def || !inService(room)) continue;
+    for (const k of Object.keys(def.produces || {})) {
+      if (SPENDABLE.has(k)) live.add(k);
+    }
     for (const [k, v] of Object.entries(def.consumes || {})) {
       draw[k] = (draw[k] || 0) + v;
     }

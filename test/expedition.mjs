@@ -326,7 +326,12 @@ function store2Launch(run, band) {
   if (s.expeditions.active.length) fail('the expedition never came home');
   else {
     const hist = s.expeditions.history[0];
-    ok(
+    // Guarded, because this section used to CRASH rather than fail when the
+    // fixture could not get a squad out of the door — and a crash here takes
+    // every section below it with it, so one broken fixture read as a whole
+    // suite of silence. A missing history entry is a failure like any other.
+    if (!hist) fail('the run came home but wrote no history entry');
+    else ok(
       `a near run went out and came back: ${hist.survivors.length} home, ` +
         `${hist.casualties.length} lost, ${Math.round(s.resources.scrap - scrapBefore)} net scrap`
     );
