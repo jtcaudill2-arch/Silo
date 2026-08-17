@@ -6906,7 +6906,7 @@ const ERRAND_ROOM = {
   const crew = room ? room.staff.map((id) => s.citizens[id]) : [];
   const spare = s.citizenIds
     .map((id) => s.citizens[id])
-    .filter((c) => c && !c.job && c.status !== 'dead' && c.age >= 20)
+    .filter((c) => c && !c.job && c.status !== 'dead' && c.age >= BAL.citizens.workingAgeMin)
     .slice(0, 2);
 
   if (!room || !crew.length || spare.length < 2) {
@@ -7092,8 +7092,29 @@ const ERRAND_ROOM = {
   //    the one place the cycles in sections.js are pinned to something real —
   //    move a starting room and this goes red rather than the player quietly
   //    learning on their first morning that the plan means nothing.
+  //    Two exemptions, and both are the design rather than a let-off.
+  //
+  //    Lodgers first. `manifestFor` puts a Storage Depot and a Residences on
+  //    the last bays of EVERY level in the silo on purpose — "a silo is a
+  //    place people lived, so there are beds and cupboards on the machine
+  //    floors too". So a rule that every room suits its level is a rule the
+  //    generator breaks 144 times over, and this section was reading the
+  //    opening's own bunks and shelves back as five layout errors. It is the
+  //    FITTED rooms — the level's own kind of work — that the plan governs.
+  //
+  //    And the salvage press on floor 3, which is flagged `improvised` in
+  //    sections.js because the survivors dragged it in and the builders did
+  //    not fit it. That is a claim about the fiction, so it is checked as one:
+  //    the flag has to be there, and it only excuses a room that is genuinely
+  //    off-plan.
+  const LODGER_TYPES = new Set(['storage_depot', 'residences']);
+  const improvised = new Set();
+  for (let n = 1; n <= BAL.silo.startExcavatedFloors; n++) {
+    for (const r of manifestFor(n)) if (r.improvised) improvised.add(`${n}:${r.type}`);
+  }
   const wrong = Object.values(s.silo.rooms)
     .filter((r) => !suitsSection(r.floor, getRoom(r.type)))
+    .filter((r) => !LODGER_TYPES.has(r.type) && !improvised.has(`${r.floor}:${r.type}`))
     .map((r) => `${getRoom(r.type)?.name} on floor ${r.floor} (a ${sectionFor(r.floor)?.name})`);
   if (wrong.length) {
     fail(`the silo opens with ${wrong.length} of ${Object.keys(s.silo.rooms).length} rooms off ` +
@@ -7521,9 +7542,12 @@ const ERRAND_ROOM = {
   const s = store.state;
   const game = new Game(store);
   store.dispatchAll(autoAssign(s));
-  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 4; n++) {
+  // Six seals, not four: the Generator Hall the opening needs to light before
+  // it can switch anything else on stands on floor 9.
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 6; n++) {
     store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
   }
+  lightThePlant(store);
   game.runDays(2);
 
   const dens = hideouts(s);
@@ -7665,9 +7689,12 @@ const ERRAND_ROOM = {
   const s = store.state;
   const game = new Game(store);
   store.dispatchAll(autoAssign(s));
-  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 4; n++) {
+  // Six seals, not four: the Generator Hall the opening needs to light before
+  // it can switch anything else on stands on floor 9.
+  for (let n = BAL.silo.startExcavatedFloors + 1; n <= BAL.silo.startExcavatedFloors + 6; n++) {
     store.dispatch({ type: 'EXCAVATION_COMPLETE', floor: n, outcome: {}, manifest: manifestFor(n) });
   }
+  lightThePlant(store);
   game.runDays(3);
 
   let listed = 0;
@@ -7838,6 +7865,28 @@ const ERRAND_ROOM = {
   } else {
     ok(`Machine Levels vary within every tier: ${perTier.map((t) => `${t.tier} ${t.leads.size} of ${t.count}`).join(', ')}`);
   }
+}
+
+/**
+ * Switch on the generation a newly-opened level came with.
+ *
+ * Since the opening carries a salvage press it also carries the press's draw,
+ * so a silo that has just broken four seals is at its plant's limit and every
+ * order about restoring anything is correctly filtered out. A player's first
+ * move on a level with a Generator Hall on it is to light the hall; these
+ * fixtures have to do the same or they measure a brownout instead of the thing
+ * they were written for.
+ */
+function lightThePlant(store) {
+  const s = store.state;
+  for (const room of Object.values(s.silo.rooms)) {
+    if (room.type !== 'generator_hall' || !room.found) continue;
+    if (!canRepair(s, room.id).ok) continue;
+    store.dispatchAll(repair(s, room.id));
+    store.dispatchAll(autoAssign(s));
+    return true;
+  }
+  return false;
 }
 
 /** Working or standing watch — the same line economy.js and sprites.js draw. */

@@ -286,11 +286,30 @@ const OPENING = {
     { type: 'storage_depot', slot: 3, width: 2 },
     { type: 'residences', slot: 5, width: 1 },
   ],
-  // What keeps it running and breathable.
+  // What keeps it running and breathable — and the press, which is the one
+  // thing on these three floors the builders did not put there.
+  //
+  // THE SILO OPENS SOLVENT. Scrap buys every dig, every repair and every
+  // restoration, and until this the opening made none: measured, the first
+  // Recycling Plant a twenty-person silo could reach was seven levels down and
+  // the trip cost more than the silo had. Over 225 days of an obedient
+  // campaign the Laboratory restore was blocked on scrap for 165 of them, so
+  // research never started once, and everything the game has below the Uppers
+  // is behind research.
+  //
+  // `improvised` says the survivors dragged it in rather than the builders
+  // fitting it. A Machine Level's crane rail and heavy feed are not here, so
+  // it never widens past a single bay — and it sits beside the Generator Hall
+  // because what it makes, besides salvage, is the fuel the hall burns. It
+  // costs the opening two of its four spare pairs of hands and about four
+  // power, and it is the difference between a silo that can pay for its own
+  // advice and one that reads the same unaffordable repair for ninety-seven
+  // days running.
   3: [
     { type: 'generator_hall', slot: 0, width: 2 },
     { type: 'air_filtration', slot: 2, width: 1 },
-    { type: 'storage_depot', slot: 3, width: 2 },
+    { type: 'recycling', slot: 3, width: 1, improvised: true },
+    { type: 'storage_depot', slot: 4, width: 1 },
     { type: 'residences', slot: 5, width: 1 },
   ],
 };

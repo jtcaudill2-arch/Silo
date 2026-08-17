@@ -257,7 +257,26 @@ export const BAL = {
       // The three levels the silo is still living on. Worn, not dead: the
       // people who are left have been keeping them running, so the first
       // useful thing a mayor can do is fix something they can see working.
-      openingCondition: 62,
+      //
+      // It also sets how much power the opening has, which is what decides
+      // whether the silo can afford to switch anything on: generation scales
+      // with the hall's condition, and the salvage press on floor 3 costs four
+      // power the plant did not previously have to find.
+      //
+      // Swept over ten seeds at 300 days, obedient at three actions a day:
+      //
+      //   70   mean 259 days, 4 of 10 alive at 300, 15 research nodes
+      //   78   mean 269 days, 3 of 10 alive,        14 nodes
+      //   85   mean 265 days, 3 of 10 alive,        11 nodes
+      //   92   mean 276 days, 4 of 10 alive,        10 nodes
+      //
+      // Survival rises with condition and RESEARCH FALLS, which is the reason
+      // to take the low end rather than the high one. A silo that starts less
+      // worn generates more, so it restores more, so it spreads its sixteen
+      // adults thinner — it lives longer and does less. Research is the gate on
+      // every system below the Uppers, so fifteen nodes at 259 days beats ten
+      // at 276. It is also the number that still reads as a silo scraping by.
+      openingCondition: 70,
     },
     condition: {
       start: 100,
@@ -622,7 +641,28 @@ export const BAL = {
     // the scrap income, which meant no second generator could ever be
     // afforded. 44 crews the opening five rooms and the three a player adds
     // next, with people spare.
-    startPopulation: 20,
+    // Twenty-two, and the two extra are the salvage press.
+    //
+    // The opening was sized at twelve posts for sixteen working adults — four
+    // spare, and the slack is the point: `crewed()` refuses any order the silo
+    // has no hands for, so at zero spare every order in the game is filtered
+    // out and the standing order reads "wait for people" for the rest of the
+    // campaign. Adding the press to floor 3 took the posts to fourteen and the
+    // slack with them; measured on seed 0xa17c the opening had exactly one
+    // unposted adult, and it was a seventy-year-old.
+    //
+    // Swept over ten seeds at 300 days, obedient at three actions a day:
+    //
+    //   20   mean 259 days, 4 of 10 alive at 300, 15 research nodes
+    //   22   mean 267 days, 4 of 10 alive,        21 nodes
+    //   24   mean 262 days, 4 of 10 alive,        21 nodes
+    //   26   mean 235 days, 3 of 10 alive,        11 nodes
+    //
+    // Twenty-six is past the wall the old comment below describes and lands
+    // exactly where it says: more people than the plant can carry. Twenty-two
+    // buys back the slack the press cost and forty per cent more research than
+    // twenty, and it is still the "about twenty people" the opening is for.
+    startPopulation: 22,
     // The harness's control silo has slack in every direction and about thirty
     // staff posts to fill. Crewing that from a 28-person opening is what a
     // *failing* silo looks like, not a sufficient one — every room runs part-

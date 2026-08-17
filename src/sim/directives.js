@@ -471,11 +471,43 @@ export function directives(state) {
    * bigger, and refusing to restore one because there is no headroom is the
    * deadlock this check would otherwise create.
    */
-  function plantCanCarry(room) {
+  function plantCanCarry(room, reserve = 0) {
     const def = getRoom(room.type);
     if ((def?.produces?.power || 0) > 0) return true;
     const wants = (def?.consumes?.power || 0) * room.width;
-    return wants <= (state.power?.generation || 0) - (state.power?.demand || 0);
+    return wants + reserve <= (state.power?.generation || 0) - (state.power?.demand || 0);
+  }
+
+  /**
+   * Power a higher-ranked order is waiting on, which nothing below it may spend.
+   *
+   * The savings-raid rule, in watts. `holdYieldsAbove` already stops a cheap
+   * building order spending the scrap a dearer one is saving for; headroom
+   * needed exactly the same protection and had none, because a restore blocked
+   * on power does not become a hold — `sourceFor` drops it and the order simply
+   * stops existing, with nothing on the bar to say why.
+   *
+   * Measured on the campaign this was found in. Once the silo had an income the
+   * Laboratory stopped being blocked on scrap and started being blocked on
+   * power: 140 days of 300 with the lab standing on floor 10, affordable,
+   * crewable, and 12 power out of reach — while `restore` at 40, forty places
+   * below the Laboratory order at 76, spent every watt that came free on
+   * whatever was cheapest. Research completed on zero campaigns out of five.
+   *
+   * Only the rooms the silo has no working one of, and only the types some
+   * order in this file actually asks for. The reserve is not a budget the silo
+   * saves up to — it is the specific room that is next in line.
+   */
+  const RESERVED = ['laboratory', 'recycling', 'workshop', 'water_reclaimer', 'hydroponics', 'air_filtration'];
+  let headroomHeld = 0;
+  for (const type of RESERVED) {
+    if (count(state, type) > 0) continue;
+    const waiting = Object.values(state.silo.rooms)
+      .filter((r) => r.type === type && r.found && r.buildingUntilCycle === 0)
+      .find((r) => canRepair(state, r.id).ok);
+    if (!waiting) continue;
+    const def = getRoom(type);
+    headroomHeld = Math.max(headroomHeld, (def?.consumes?.power || 0) * waiting.width);
   }
 
   /**
@@ -1033,8 +1065,9 @@ export function directives(state) {
     .filter((c) => {
       const def = getRoom(c.room.type);
       if ((def?.produces?.power || 0) > 0) return true; // generation is always worth lighting
-      const wants = (def?.consumes?.power || 0) * c.room.width;
-      return wants <= (state.power?.generation || 0) - (state.power?.demand || 0);
+      // ...and it may not spend the headroom a higher-ranked room is waiting
+      // on. `restorable` is weight 40; the Laboratory order is 76.
+      return plantCanCarry(c.room, count(state, c.room.type) > 0 ? headroomHeld : 0);
     })
     .sort((a, b) => staffingRank(a.room.type) - staffingRank(b.room.type)
       || (a.check.cost.scrap || 0) - (b.check.cost.scrap || 0))[0];
