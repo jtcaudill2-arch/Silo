@@ -63,6 +63,13 @@ export const BAL = {
     // morning somebody can read in a minute instead of a menu of twenty-nine
     // rooms over a hundred and forty-four empty floors.
     startExcavatedFloors: 3,
+    // What rank the control silo's generator halls stand at. See the sweep in
+    // core/newgame.js: the builders' plan is generation-sparse — halls on
+    // floors 3, 9 and 15 and nothing between — so a silo standing on the first
+    // nine floors is browned out from the first morning at rank 1, and every
+    // fixture built on it inherits a dark airlock.
+    sufficientPlantRank: 5,
+
     // Six bands across 144. Five stretched over that depth would put thirty
     // levels behind each gate, which is a long time between arrivals — the
     // bands are what make going down feel like getting somewhere, so there is

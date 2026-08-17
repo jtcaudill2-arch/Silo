@@ -251,7 +251,41 @@ export function createNewGame(opts = {}) {
       for (const spec of manifestFor(n)) {
         placeRoom(state, {
           type: spec.type, floor: n, slot: spec.slot, width: spec.width,
-          level: spec.level, condition: BAL.silo.condition.start, strict: true,
+          // A PLANT AT RANK, which is what "sufficient" has to mean now.
+          //
+          // This scenario is the control silo — the one the harness measures
+          // divergence against, the one the expedition and conquest fixtures
+          // are built on, and the one whose whole job is to have already
+          // solved its opening problems. It had not solved the first one. The
+          // builders' plan puts a Generator Hall on floors 3, 9 and 15 and
+          // nowhere between, so a silo standing on floors 1 to 9 has five bays
+          // of generation for thirty-five rooms and a hundred and twenty
+          // people: measured at 91 generated against 153 drawn on day two,
+          // browned out from the first morning, sixteen residents left of a
+          // hundred and twenty by day 100. Every "No working Airlock" in the
+          // expedition and conquest fixtures is that brownout — the airlock
+          // sits low on the shed order and never came up.
+          //
+          // Ranking the plant is the only lever the plan leaves, and it is
+          // also exactly what the game's own upgrade order would have told
+          // this silo to do. Measured over 100 days, generation at rank:
+          //
+          //   1   91 against 153, 16 residents left
+          //   2  121 against 153, 102 left
+          //   3  146 against 153, 101 left
+          //   4  171 against 153, 173 left
+          //   5  197 against 153, 176 left
+          //
+          // Four: the first rank with real headroom, and the campaign grows
+          // rather than shrinking. Ranking every room instead was measured and
+          // is worse in both directions — demand rises faster than generation
+          // (109 against 212 at rank 4) and the posts outrun the people, 92
+          // filled of 141 — which is the same over-building wall the opening
+          // has, reached from the other end.
+          level: (getRoom(spec.type)?.produces?.power || 0) > 0
+            ? Math.max(spec.level, BAL.silo.sufficientPlantRank)
+            : spec.level,
+          condition: BAL.silo.condition.start, strict: true,
         });
       }
     }

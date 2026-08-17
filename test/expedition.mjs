@@ -18,7 +18,8 @@ import { registerCoreReducers } from '../src/core/reducers.js';
 import { createNewGame } from '../src/core/newgame.js';
 import { Game } from '../src/core/game.js';
 import { autoAssign } from '../src/sim/jobs.js';
-import { build, upgrade, allPlacements } from '../src/sim/build.js';
+import { build, upgrade, canUpgrade, allPlacements } from '../src/sim/build.js';
+import { inService } from '../src/sim/economy.js';
 import { craft, formSquad, equipBest, readiness } from '../src/sim/military.js';
 import { launch, canLaunch, resolveExpedition, riskPreview, airlockCapacity } from '../src/sim/expedition.js';
 import { resolve as resolveCombat, rollEnemyForce, unitPower } from '../src/sim/combat.js';
@@ -64,7 +65,17 @@ function expeditionarySilo(seed = SEED) {
   // floor 14 three times, which was the bottom of the silo when fourteen
   // floors came pre-excavated; the opening now starts at six and digs, so a
   // hardcoded floor is a floor that does not exist yet.
+  // USE THE DOOR THE SILO ALREADY HAS. This built an Airlock, a Suit Bay and
+  // an Armory unconditionally, on the reasonable assumption that a silo does
+  // not start with them — and since the pivot the control scenario stands on
+  // floors 1 to 9, and floor 6 is the Gate Level: it arrives with an Airlock
+  // and a Suit Bay already in it. So the fixture put up a SECOND airlock and
+  // then upgraded whichever one `find` happened to return first, which was the
+  // one on floor 6. The squad met "The Airlock can decontaminate 4 at a time.
+  // Bell is 8 strong" for the rest of the run.
+  const standing = (type) => Object.values(s.silo.rooms).find((r) => r.type === type && inService(r));
   for (const type of ['airlock', 'suit_bay', 'armory']) {
+    if (standing(type)) continue;
     const spot = allPlacements(s, type)[0];
     if (!spot) throw new Error(`expedition fixture: nowhere to build a ${type}`);
     store.dispatchAll(build(s, spot.floor, spot.slot, type));
@@ -72,11 +83,19 @@ function expeditionarySilo(seed = SEED) {
   game.runCycles(20); // finish construction
   store.dispatchAll(autoAssign(s)); // crew the new rooms
   // A level-1 Airlock decontaminates four at a time; an eight-strong squad
-  // needs it upgraded. That gate is the design, not an obstacle to route past.
-  const airlock = Object.values(s.silo.rooms).find((r) => r.type === 'airlock');
-  store.dispatchAll(upgrade(s, airlock.id));
-  game.runCycles(BAL.silo.upgrade.downtimeCycles + 2);
-  store.dispatchAll(autoAssign(s));
+  // needs it upgraded. That gate is the design, not an obstacle to route past
+  // — so the fixture pays it, on the door the silo actually leaves through,
+  // and keeps paying until the door is wide enough rather than assuming one
+  // rank does it.
+  for (let rank = 0; rank < BAL.silo.upgrade.maxLevel; rank++) {
+    const door = standing('airlock');
+    if (!door || airlockCapacity(s) >= 8) break;
+    const check = canUpgrade(s, door.id);
+    if (!check.ok) break;
+    store.dispatchAll(upgrade(s, door.id));
+    game.runCycles(BAL.silo.upgrade.downtimeCycles + 2);
+    store.dispatchAll(autoAssign(s));
+  }
   game.runCycles(2); // let the power state settle
 
   // Kit: eight of each, so a full squad can go out properly equipped.

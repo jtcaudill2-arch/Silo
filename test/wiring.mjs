@@ -640,9 +640,24 @@ console.log('');
     }
   }
 
+  // Put the silo back together after enlisting. `SQUAD_MEMBER` strips a
+  // soldier's job, and three columns is up to twenty-four people off their
+  // posts at once — which on this fixture is the whole generating plant. The
+  // airlock sits low on the shed order, so it was the first thing to go dark,
+  // and every round after the first reported "No working Airlock" for the rest
+  // of the run: seven of this suite's failures, all of them the fixture
+  // knocking its own lights out. A player forming a garrison re-crews behind
+  // it; so does this.
+  store.dispatchAll(autoAssign(s));
+  game.runDays(2);
+  if (airlockCapacity(s) <= 0) fail('the conquest fixture lost its airlock to the muster');
+
   const seen = [];
   for (let round = 0; round < 20; round++) {
     if (s.world.silos[TARGET].contact === 'satellite') break;
+    // And again between stages: a returning column goes back on the roster,
+    // and the next one takes its own people off it.
+    store.dispatchAll(autoAssign(s));
     const gate = canLaunchRun(s, TARGET);
     if (!gate.ok) { fail(`conquest stalled at ${nextStage(s, TARGET)}: ${gate.reason}`); break; }
     const free = s.military.squadIds.find(
